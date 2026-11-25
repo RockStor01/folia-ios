@@ -1302,19 +1302,26 @@ index c35036c..9c17aad 100644
  
  /** 列表面板工具行的排序（本地文件夹才有）。 */
 diff --git a/src/library/suites/grid/home/LocalGrid3DView.tsx b/src/library/suites/grid/home/LocalGrid3DView.tsx
-index 70f5244..cc1125b 100644
+index 70f5244..f1deb53 100644
 --- a/src/library/suites/grid/home/LocalGrid3DView.tsx
 +++ b/src/library/suites/grid/home/LocalGrid3DView.tsx
-@@ -1,6 +1,7 @@
+@@ -1,6 +1,6 @@
 -import React from 'react';
 +import React, { useCallback, useRef, useState } from 'react';
  import { useTranslation } from 'react-i18next';
 -import { FolderOpen, Loader2, Music, User, Disc3, RefreshCw } from 'lucide-react';
 +import { FolderOpen, Loader2, Music, User, Disc3, RefreshCw, FileAudio } from 'lucide-react';
-+import { importAudioFiles } from '../../../../services/localMusicService';
  import DesktopGrid3DSurface, { DesktopGrid3DAction } from './DesktopGrid3DSurface';
  import { LocalSong, Theme } from '../../../../types';
  import type { GridViewCollectionDescriptor } from '../../../../components/app/home/gridViewCollectionAdapters';
+@@ -13,6 +13,7 @@ import type { LibraryDeclaredActions } from '../../../core/suite/suite.contract'
+ import type { LocalHomeRow, LocalHomeSectionKey } from '../../../core/home/localHomeModel';
+ import { resolveLocalHomeActions } from '../../../core/home/localHomeModel';
+ import { useLibraryHomeLocal, useLocalDirectoryTrees, useLocalHomeBatchConfig } from '../../../core/home/useLibraryHomeLocal';
++import { useLocalAudioImport } from '../../../../hooks/useLocalAudioImport';
+ import { useLibraryHomeActions } from '../../../core/home/useLibraryHomeActions';
+ import { useLibraryHomeListRegistration } from '../../../core/home/useLibraryHomeSurfaceRegistration';
+ 
 @@ -29,6 +30,7 @@ const SECTION_ICONS: Record<LocalHomeSectionKey, React.ReactNode> = {
  
  const ACTION_ICONS: Record<string, React.ReactNode> = {
@@ -1323,40 +1330,22 @@ index 70f5244..cc1125b 100644
      'refresh-folders': <RefreshCw size={13} />,
  };
  
-@@ -88,6 +90,32 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
+@@ -88,6 +90,14 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
      const local = useLibraryHomeLocal({ localSongs, catalog: localLibraryCatalog, activeRow });
      const { snapshot: actionState, importBusy } = useLibraryHomeActions(homeActions);
  
 +    // 檔案匯入：iOS 上沒有資料夾 API，這是唯一能把歌放進曲庫的路。桌面上留著也方便只補幾首。
-+    const fileInputRef = useRef<HTMLInputElement>(null);
-+    const [importingFiles, setImportingFiles] = useState(false);
-+    const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null);
-+    const handleFileImport = useCallback(async (files: File[]) => {
-+        if (!files.length || importingFiles) return;
-+        setImportingFiles(true);
-+        setImportProgress({ done: 0, total: files.length });
-+        try {
-+            const result = await importAudioFiles(files, {
-+                onProgress: info => {
-+                    if (info.done === 0 || info.done === info.total || info.done % 5 === 0) {
-+                        setImportProgress({ done: info.done, total: info.total });
-+                    }
-+                },
-+            });
-+            if (result.failed.length > 0) {
-+                console.warn('[LocalImport] Some files were skipped:', result.failed);
-+            }
-+        } finally {
-+            setImportingFiles(false);
-+            setImportProgress(null);
-+        }
-+    }, [importingFiles]);
-+    const openFilePicker = useCallback(() => fileInputRef.current?.click(), []);
++    // 邏輯（input、busy、進度）都在 hook 裡，視圖只負責把它接到畫面上。
++    const audioImport = useLocalAudioImport();
++    const fileInputRef = audioImport.inputRef;
++    const importingFiles = audioImport.importing;
++    const importProgress = audioImport.progress;
++    const openFilePicker = audioImport.openPicker;
 +
      const [localFolderIndex, setLocalFolderIndex] = useDebouncedFocusSync(focusedFolderIndex, setFocusedFolderIndex);
      const [localAlbumIndex, setLocalAlbumIndex] = useDebouncedFocusSync(focusedAlbumIndex, setFocusedAlbumIndex);
      const [localArtistIndex, setLocalArtistIndex] = useDebouncedFocusSync(focusedArtistIndex, setFocusedArtistIndex);
-@@ -121,18 +149,30 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
+@@ -121,18 +131,30 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
  
      const runAction = (id: string) => {
          if (id === 'import-folder') void homeActions.importFolder();
@@ -1395,7 +1384,7 @@ index 70f5244..cc1125b 100644
  
      const isEmptyLibrary = directoryTrees.loaded && localSongs.length === 0 && trees.length === 0;
  
-@@ -164,25 +204,60 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
+@@ -164,25 +186,58 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
          },
      });
  
@@ -1406,10 +1395,8 @@ index 70f5244..cc1125b 100644
 +            multiple
 +            hidden
 +            onChange={event => {
-+                // FileList 是活的：先把檔名抓成陣列再清 value，否則清完就變空的。
-+                const files = Array.from(event.target.files ?? []);
-+                event.target.value = '';
-+                void handleFileImport(files);
++                // hook 內部會先抓成陣列再清 value（FileList 是活的）。
++                audioImport.handleFiles(event.target.files);
 +            }}
 +        />
 +    );
@@ -1464,7 +1451,7 @@ index 70f5244..cc1125b 100644
          <DesktopGrid3DSurface
              focusMemoryScope={JSON.stringify(['local', activeSection.key])}
              title={String(activeSection.label)}
-@@ -210,6 +285,7 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
+@@ -210,6 +265,7 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
              ponderControls="local-grid-controls"
              gridMapPonderScope="local-grid-map-page"
          />
@@ -2209,7 +2196,7 @@ index 0000000..df20d8f
 +    }
 +}
 diff --git a/src/services/localMusicService.ts b/src/services/localMusicService.ts
-index 26a0181..adf0534 100644
+index 26a0181..1411741 100644
 --- a/src/services/localMusicService.ts
 +++ b/src/services/localMusicService.ts
 @@ -30,6 +30,7 @@ import { hasLocalCoverBinary } from './localCoverBinaryStore';
@@ -2220,7 +2207,7 @@ index 26a0181..adf0534 100644
  import { useLyricSettingsStore } from '../stores/useLyricSettingsStore';
  import { getLocalLyricFilePriority, isSameLocalLyricFormatOrder, normalizeLocalLyricFormatOrder, type LocalLyricFileFormat } from '../utils/lyrics/localLyricFormatOrder';
  import { readLyricFile } from '../utils/lyrics/lyricFileDecoding';
-@@ -1204,6 +1205,166 @@ export async function importFolder(expectedRootName?: string): Promise<LocalSong
+@@ -1204,6 +1205,187 @@ export async function importFolder(expectedRootName?: string): Promise<LocalSong
      }
  }
  
@@ -2271,97 +2258,118 @@ index 26a0181..adf0534 100644
 +    );
 +
 +    const pendingSave: LocalSong[] = [];
++    /**
++     * 先並行讀幾首的標籤，再照順序存檔。
++     *
++     * 這裡是整批匯入最花時間的一段：讀檔頭、抽封面、算雜湊。以前是「解析一首、存一首」串著做，
++     * 兩千多首等於把解析排成一條長龍；改成一次先把三首丟給 worker 並行算，算完再依序入庫，
++     * 壁鐘時間大約砍到三分之一，而寫入順序、id、封面都跟原本一樣。
++     */
++    const PARSE_WINDOW = 3;
++    let processedCount = 0;
 +
-+    for (let index = 0; index < candidates.length; index += 1) {
-+        const file = candidates[index];
-+        options.onProgress?.({ done: index, total: candidates.length, fileName: file.name });
-+        // 每十首讓出一次主執行緒：整批匯入時畫面才不會被一首接一首的解析壓死，進度也才看得到更新。
-+        if (index > 0 && index % 10 === 0) await new Promise<void>(resolve => { setTimeout(resolve, 0); });
-+        const signature = `${file.name}:${file.size}:${file.lastModified}`;
-+        if (existingSignatures.has(signature)) {
-+            result.skipped += 1;
-+            continue;
-+        }
++    for (let start = 0; start < candidates.length; start += PARSE_WINDOW) {
++        const window = candidates.slice(start, start + PARSE_WINDOW);
++        const fresh = window.filter(file => !existingSignatures.has(`${file.name}:${file.size}:${file.lastModified}`));
++        result.skipped += window.length - fresh.length;
 +
-+        try {
-+            await putImportedAudio(songIdForFile(file), file);
-+
++        // 先並行解析（解析在 worker 裡，主執行緒這時是空的，不會卡畫面）。
++        const parsed = new Map<File, { embeddedMetadata: EmbeddedMetadata; duration: number }>();
++        await Promise.all(fresh.map(async file => {
 +            let embeddedMetadata: EmbeddedMetadata = {};
 +            try {
 +                embeddedMetadata = await extractEmbeddedMetadata(file, true);
 +            } catch (error) {
 +                console.warn(`[LocalMusic][Import] Failed to parse metadata for ${file.name}:`, error);
 +            }
++            parsed.set(file, { embeddedMetadata, duration: embeddedMetadata.duration || 0 });
++        }));
 +
-+            let duration = embeddedMetadata.duration || 0;
-+            if (!duration) {
-+                try {
-+                    duration = await getAudioDuration(file);
-+                } catch (error) {
-+                    console.warn(`[LocalMusic][Import] Failed to read duration for ${file.name}:`, error);
++        for (const file of fresh) {
++            options.onProgress?.({ done: processedCount, total: candidates.length, fileName: file.name });
++            // 每十首讓出一次主執行緒，進度與畫面才跟得上。
++            if (processedCount > 0 && processedCount % 10 === 0) {
++                await new Promise<void>(resolve => { setTimeout(resolve, 0); });
++            }
++            processedCount += 1;
++
++            const signature = `${file.name}:${file.size}:${file.lastModified}`;
++            try {
++                await putImportedAudio(songIdForFile(file), file);
++
++                const { embeddedMetadata } = parsed.get(file) ?? { embeddedMetadata: {} as EmbeddedMetadata, duration: 0 };
++
++                // 標籤裡沒有時長（有些容器不寫）才回頭用 Audio 元素量一次。
++                let duration = embeddedMetadata.duration || 0;
++                if (!duration) {
++                    try {
++                        duration = await getAudioDuration(file);
++                    } catch (error) {
++                        console.warn(`[LocalMusic][Import] Failed to read duration for ${file.name}:`, error);
++                    }
 +                }
-+            }
 +
-+            const metadata = extractMetadataFromFilename(file.name);
-+            const songId = songIdForFile(file);
-+            const importedMetadata = buildImportedMetadataSnapshot({
-+                fileName: file.name,
-+                embeddedTitle: embeddedMetadata.title,
-+                fallbackTitle: metadata.title,
-+                embeddedArtist: embeddedMetadata.artist,
-+                embeddedArtists: embeddedMetadata.artists,
-+                fallbackArtist: metadata.artist,
-+                embeddedAlbum: embeddedMetadata.album,
-+            });
++                const metadata = extractMetadataFromFilename(file.name);
++                const songId = songIdForFile(file);
++                const importedMetadata = buildImportedMetadataSnapshot({
++                    fileName: file.name,
++                    embeddedTitle: embeddedMetadata.title,
++                    fallbackTitle: metadata.title,
++                    embeddedArtist: embeddedMetadata.artist,
++                    embeddedArtists: embeddedMetadata.artists,
++                    fallbackArtist: metadata.artist,
++                    embeddedAlbum: embeddedMetadata.album,
++                });
 +
-+            let localCoverAssetId: string | undefined;
-+            if (embeddedMetadata.cover && embeddedMetadata.coverAssetId) {
-+                if (stageLocalCoverAsset(embeddedMetadata.coverAssetId, embeddedMetadata.cover)) {
-+                    localCoverAssetId = embeddedMetadata.coverAssetId;
++                let localCoverAssetId: string | undefined;
++                if (embeddedMetadata.cover && embeddedMetadata.coverAssetId) {
++                    if (stageLocalCoverAsset(embeddedMetadata.coverAssetId, embeddedMetadata.cover)) {
++                        localCoverAssetId = embeddedMetadata.coverAssetId;
++                    }
 +                }
-+            }
 +
-+            const localSong: LocalSong = {
-+                id: songId,
-+                fileName: file.name,
-+                filePath: `${IMPORTED_LOCAL_ROOT_NAME}/${file.name}`,
-+                duration,
-+                fileSize: file.size,
-+                fileLastModified: file.lastModified,
-+                fileSignature: `${file.name}:${file.size}:${file.lastModified}`,
-+                mimeType: file.type || 'audio/mpeg',
-+                bitrate: embeddedMetadata.bitrate || 0,
-+                addedAt: Date.now(),
-+                title: importedMetadata.title,
-+                titleOrigin: 'import',
-+                importedMetadata,
-+                trackNumber: embeddedMetadata.trackNumber,
-+                discNumber: embeddedMetadata.discNumber,
-+                localCoverAssetId,
-+                localCoverSource: localCoverAssetId ? 'embedded' : undefined,
-+                hasManualLyricSelection: false,
-+                folderName: IMPORTED_LOCAL_ROOT_NAME,
-+                hasEmbeddedLyrics: !!embeddedMetadata.lyrics,
-+                embeddedLyricsContent: embeddedMetadata.lyrics,
-+                hasEmbeddedTranslationLyrics: !!embeddedMetadata.translationLyrics,
-+                embeddedTranslationLyricsContent: embeddedMetadata.translationLyrics,
-+                replayGain: embeddedMetadata.replayGain,
-+                replayGainTrackGain: embeddedMetadata.replayGainTrackGain,
-+                replayGainTrackPeak: embeddedMetadata.replayGainTrackPeak,
-+                replayGainAlbumGain: embeddedMetadata.replayGainAlbumGain,
-+                replayGainAlbumPeak: embeddedMetadata.replayGainAlbumPeak,
-+            };
++                const localSong: LocalSong = {
++                    id: songId,
++                    fileName: file.name,
++                    filePath: `${IMPORTED_LOCAL_ROOT_NAME}/${file.name}`,
++                    duration,
++                    fileSize: file.size,
++                    fileLastModified: file.lastModified,
++                    fileSignature: `${file.name}:${file.size}:${file.lastModified}`,
++                    mimeType: file.type || 'audio/mpeg',
++                    bitrate: embeddedMetadata.bitrate || 0,
++                    addedAt: Date.now(),
++                    title: importedMetadata.title,
++                    titleOrigin: 'import',
++                    importedMetadata,
++                    trackNumber: embeddedMetadata.trackNumber,
++                    discNumber: embeddedMetadata.discNumber,
++                    localCoverAssetId,
++                    localCoverSource: localCoverAssetId ? 'embedded' : undefined,
++                    hasManualLyricSelection: false,
++                    folderName: IMPORTED_LOCAL_ROOT_NAME,
++                    hasEmbeddedLyrics: !!embeddedMetadata.lyrics,
++                    embeddedLyricsContent: embeddedMetadata.lyrics,
++                    hasEmbeddedTranslationLyrics: !!embeddedMetadata.translationLyrics,
++                    embeddedTranslationLyricsContent: embeddedMetadata.translationLyrics,
++                    replayGain: embeddedMetadata.replayGain,
++                    replayGainTrackGain: embeddedMetadata.replayGainTrackGain,
++                    replayGainTrackPeak: embeddedMetadata.replayGainTrackPeak,
++                    replayGainAlbumGain: embeddedMetadata.replayGainAlbumGain,
++                    replayGainAlbumPeak: embeddedMetadata.replayGainAlbumPeak,
++                };
 +
-+            existingSignatures.add(signature);
-+            result.songs.push(localSong);
-+            pendingSave.push(localSong);
-+            // 存檔分批：見 IMPORT_SAVE_BATCH_SIZE 的說明。
-+            if (pendingSave.length >= IMPORT_SAVE_BATCH_SIZE) {
-+                await saveLocalSongs(pendingSave.splice(0));
++                existingSignatures.add(signature);
++                result.songs.push(localSong);
++                pendingSave.push(localSong);
++                // 存檔分批：見 IMPORT_SAVE_BATCH_SIZE 的說明。
++                if (pendingSave.length >= IMPORT_SAVE_BATCH_SIZE) {
++                    await saveLocalSongs(pendingSave.splice(0));
++                }
++            } catch (error) {
++                console.error(`[LocalMusic][Import] Failed to import ${file.name}:`, error);
++                result.failed.push({ fileName: file.name, reason: (error as Error)?.message || 'unknown' });
 +            }
-+        } catch (error) {
-+            console.error(`[LocalMusic][Import] Failed to import ${file.name}:`, error);
-+            result.failed.push({ fileName: file.name, reason: (error as Error)?.message || 'unknown' });
 +        }
 +    }
 +
@@ -2387,7 +2395,7 @@ index 26a0181..adf0534 100644
  /** Imports a folder the caller already holds instead of asking the picker (the dev mock song's OPFS folder). */
  export async function importDirectoryHandle(dirHandle: FileSystemDirectoryHandle): Promise<LocalSong[]> {
      return await runLocalFolderMutation(() => importFolderContents(dirHandle));
-@@ -1614,6 +1775,7 @@ export async function deleteLocalSong(id: string): Promise<void> {
+@@ -1614,6 +1796,7 @@ export async function deleteLocalSong(id: string): Promise<void> {
      await Promise.all([
          dbDeleteLocalSong(id),
          removeCachedCover(`cover_local_${id}`),
@@ -2395,7 +2403,7 @@ index 26a0181..adf0534 100644
      ]);
  }
  
-@@ -1738,6 +1900,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
+@@ -1738,6 +1921,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
          }
      }
  
@@ -2412,7 +2420,7 @@ index 26a0181..adf0534 100644
      // No accessible handle available - permission may need to be restored or the file moved.
      console.warn(`[LocalMusic] No accessible handle for song ${song.id}. Permission restore or re-import is required.`);
      return null;
-@@ -1755,6 +1927,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+@@ -1755,6 +1948,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
          }
      }
  
@@ -2422,7 +2430,7 @@ index 26a0181..adf0534 100644
      const recoveredHandle = await recoverFileHandleFromPersistedDirectory(song);
      if (!recoveredHandle) return null;
      try {
-@@ -1777,6 +1952,14 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+@@ -1777,6 +1973,14 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
  export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuffer | null> {
      const fileHandle = await getAccessibleFileHandle(song);
      if (!fileHandle) {
@@ -2437,7 +2445,7 @@ index 26a0181..adf0534 100644
          console.warn(`[LocalMusic] No accessible handle for song ${song.id} (automix bytes)`);
          return null;
      }
-@@ -1880,6 +2063,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
+@@ -1880,6 +2084,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
      await Promise.all([
          dbDeleteLocalSongs(uniqueSongIds),
          ...uniqueSongIds.map(id => removeCachedCover(`cover_local_${id}`)),
@@ -2445,6 +2453,114 @@ index 26a0181..adf0534 100644
      ]);
      await dropDeletedSongsFromPlaylists(uniqueSongIds);
      await Promise.all(Array.from(affectedRoots).map(cleanupDirHandleIfUnused));
+diff --git a/src/utils/localMetadataWorkerClient.ts b/src/utils/localMetadataWorkerClient.ts
+index 682f39b..4a54a01 100644
+--- a/src/utils/localMetadataWorkerClient.ts
++++ b/src/utils/localMetadataWorkerClient.ts
+@@ -23,32 +23,59 @@ export interface HashedLocalCoverResult {
+     coverAssetId: string;
+ }
+ 
+-let metadataWorker: Worker | null = null;
+ let workerRequestId = 0;
+ const workerCallbacks = new Map<string, (result: unknown | null) => void>();
+ 
++/**
++ * 解析 worker 的數量。
++ *
++ * 為什麼不只開一條：整批匯入時每首歌都要讀檔頭、算封面雜湊，單一 worker 只能一首接一首排隊，
++ * 兩千多首就得排到天荒地老。開兩條讓解析真正並行（手機 CPU 有限，兩條剛好，再多會互相搶）。
++ */
++const METADATA_WORKER_COUNT = 2;
++const metadataWorkers: Worker[] = [];
++/** 每條 worker 手上還沒回覆的請求數；派工時挑最閒的那條。 */
++const workerInFlight: number[] = [];
++
++const createWorker = (index: number): Worker => {
++    const worker = new Worker(
++        new URL('../workers/metadataParser.worker.ts', import.meta.url),
++        { type: 'module' }
++    );
++    worker.onmessage = (e) => {
++        const { type, data, requestId, message } = e.data;
++        const callback = workerCallbacks.get(requestId);
++        if (!callback) return;
++        workerCallbacks.delete(requestId);
++        workerInFlight[index] = Math.max(0, (workerInFlight[index] ?? 1) - 1);
++        if (type === 'result') {
++            callback(data);
++        } else {
++            console.warn('[MetadataWorker] parsing error:', message);
++            callback(null);
++        }
++    };
++    workerInFlight[index] = 0;
++    return worker;
++};
++
+ export const initMetadataWorker = (): Worker => {
+-    if (!metadataWorker) {
+-        metadataWorker = new Worker(
+-            new URL('../workers/metadataParser.worker.ts', import.meta.url),
+-            { type: 'module' }
+-        );
+-        metadataWorker.onmessage = (e) => {
+-            const { type, data, requestId, message } = e.data;
+-            const callback = workerCallbacks.get(requestId);
+-            if (callback) {
+-                workerCallbacks.delete(requestId);
+-                if (type === 'result') {
+-                    callback(data);
+-                } else {
+-                    console.warn('[MetadataWorker] parsing error:', message);
+-                    callback(null);
+-                }
+-            }
+-        };
++    if (metadataWorkers.length === 0) {
++        for (let index = 0; index < METADATA_WORKER_COUNT; index += 1) {
++            metadataWorkers.push(createWorker(index));
++        }
+     }
++    return metadataWorkers[0];
++};
+ 
+-    return metadataWorker;
++/** 挑手上請求最少的那一條；一樣閒就挑前面那條。 */
++const pickWorkerIndex = (): number => {
++    initMetadataWorker();
++    let best = 0;
++    for (let index = 1; index < metadataWorkers.length; index += 1) {
++        if ((workerInFlight[index] ?? 0) < (workerInFlight[best] ?? 0)) best = index;
++    }
++    return best;
+ };
+ 
+ export const parseEmbeddedMetadataAsync = (
+@@ -56,8 +83,10 @@ export const parseEmbeddedMetadataAsync = (
+     includeCover = false
+ ): Promise<EmbeddedMetadataResult | null> => {
+     return new Promise((resolve) => {
+-        const worker = initMetadataWorker();
++        const index = pickWorkerIndex();
++        const worker = metadataWorkers[index];
+         const requestId = `meta_req_${++workerRequestId}`;
++        workerInFlight[index] = (workerInFlight[index] ?? 0) + 1;
+         workerCallbacks.set(requestId, result => resolve(result as EmbeddedMetadataResult | null));
+         worker.postMessage({ type: 'parse-metadata', file, includeCover, requestId });
+     });
+@@ -65,8 +94,10 @@ export const parseEmbeddedMetadataAsync = (
+ 
+ export const hashLocalCoverBlobAsync = (cover: Blob): Promise<HashedLocalCoverResult | null> => {
+     return new Promise((resolve) => {
+-        const worker = initMetadataWorker();
++        const index = pickWorkerIndex();
++        const worker = metadataWorkers[index];
+         const requestId = `cover_hash_req_${++workerRequestId}`;
++        workerInFlight[index] = (workerInFlight[index] ?? 0) + 1;
+         workerCallbacks.set(requestId, result => resolve(result as HashedLocalCoverResult | null));
+         worker.postMessage({ type: 'hash-cover', cover, requestId });
+     });
 diff --git a/test/unit/library/bravais/bravaisEmptyWallHint.test.ts b/test/unit/library/bravais/bravaisEmptyWallHint.test.ts
 index 967c627..aa27953 100644
 --- a/test/unit/library/bravais/bravaisEmptyWallHint.test.ts
