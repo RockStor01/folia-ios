@@ -1,23 +1,146 @@
+diff --git a/src/components/audioQuality/OverviewChart.tsx b/src/components/audioQuality/OverviewChart.tsx
+new file mode 100644
+index 0000000..29b78f9
+--- /dev/null
++++ b/src/components/audioQuality/OverviewChart.tsx
+@@ -0,0 +1,111 @@
++// src/components/audioQuality/OverviewChart.tsx
++// 總覽圖：把好幾份檔案的頻譜曲線疊在同一張圖上比較。
++//
++// 橫軸不是絕對頻率，而是「佔這份檔案 Nyquist 的比例」——44.1 kHz 的檔和 96 kHz 的檔才能放在一起看：
++// 曲線在右邊 100% 的位置突然掉下去，就表示它沒有用滿容器給的頻寬。曲線的取樣本來就是
++// 20 Hz → Nyquist 的對數等距，所以第 i 點的位置就是 i /(點數-1)，不需要再換算。
++
++import React from 'react';
++import type { QualityInspectResult } from '../../services/audioQuality/inspectAudioQuality';
++
++const TOP_DB = 5;
++const BOTTOM_DB = -90;
++const WIDTH = 320;
++const PLOT_HEIGHT = 132;
++
++/** 曲線顏色；超過這個數量就不再往下畫（再多也看不清楚）。 */
++const LINE_COLORS = [
++    '#7dd3fc', '#a78bfa', '#34d399', '#fbbf24', '#f472b6',
++    '#fb7185', '#22d3ee', '#c084fc', '#4ade80', '#facc15',
++];
++
++type Plotted = {
++    result: QualityInspectResult;
++    color: string;
++    /** 截止點在圖上的相對位置（0–1），null = 沒量到。 */
++    cutoffRatio: number | null;
++};
++
++const OverviewChart: React.FC<{ results: QualityInspectResult[] }> = ({ results }) => {
++    const plottable = results.filter(result => result.ok && result.measured?.curve);
++    const shown = plottable.slice(-LINE_COLORS.length);
++    const hidden = plottable.length - shown.length;
++
++    const yOf = (db: number): number => (TOP_DB - Math.max(BOTTOM_DB, Math.min(TOP_DB, db))) / (TOP_DB - BOTTOM_DB);
++    const xOfIndex = (index: number, count: number): number => (count <= 1 ? 0 : index / (count - 1));
++
++    const plotted: Plotted[] = shown.map((result, index) => {
++        const curve = result.measured!.curve!;
++        const cutoff = result.measured!.cutoffHz;
++        const cutoffRatio = cutoff
++            ? Math.log(cutoff / curve.minHz) / Math.log(curve.maxHz / curve.minHz)
++            : null;
++        return { result, color: LINE_COLORS[index % LINE_COLORS.length], cutoffRatio };
++    });
++
++    if (!plotted.length) return null;
++
++    return (
++        <div>
++            <div className="relative" style={{ height: PLOT_HEIGHT }}>
++                <svg
++                    viewBox={`0 0 ${WIDTH} ${PLOT_HEIGHT}`}
++                    preserveAspectRatio="none"
++                    className="block w-full"
++                    style={{ height: PLOT_HEIGHT }}
++                    role="img"
++                    aria-label="quality overview"
++                >
++                    {/* −45 dB 判定線 */}
++                    <line x1="0" y1={(yOf(-45) * PLOT_HEIGHT).toFixed(2)} x2={WIDTH} y2={(yOf(-45) * PLOT_HEIGHT).toFixed(2)}
++                        stroke="#ffffff" strokeOpacity="0.16" strokeWidth="1" strokeDasharray="2 4" vectorEffect="non-scaling-stroke" />
++                    <line x1="0" y1={(yOf(0) * PLOT_HEIGHT).toFixed(2)} x2={WIDTH} y2={(yOf(0) * PLOT_HEIGHT).toFixed(2)}
++                        stroke="#ffffff" strokeOpacity="0.08" strokeWidth="1" vectorEffect="non-scaling-stroke" />
++
++                    {plotted.map(({ result, color, cutoffRatio }) => {
++                        const curve = result.measured!.curve!;
++                        const path = curve.points
++                            .map((db, index) => `${index === 0 ? 'M' : 'L'}${(xOfIndex(index, curve.points.length) * WIDTH).toFixed(2)},${(yOf(db) * PLOT_HEIGHT).toFixed(2)}`)
++                            .join(' ');
++                        return (
++                            <g key={result.fileName}>
++                                <path d={path} fill="none" stroke={color} strokeWidth="1.1" vectorEffect="non-scaling-stroke" opacity="0.95" />
++                                {cutoffRatio !== null && (
++                                    <line
++                                        x1={(cutoffRatio * WIDTH).toFixed(2)} y1={0}
++                                        x2={(cutoffRatio * WIDTH).toFixed(2)} y2={PLOT_HEIGHT}
++                                        stroke={color} strokeWidth="1" strokeDasharray="2 3"
++                                        vectorEffect="non-scaling-stroke" opacity="0.75"
++                                    />
++                                )}
++                            </g>
++                        );
++                    })}
++                </svg>
++            </div>
++
++            <div className="mt-1 flex justify-between text-[10px] leading-none text-[color:var(--st-t3)]">
++                <span>20 Hz</span>
++                <span>Nyquist（各檔自己的上限）</span>
++            </div>
++
++            {/* 圖例：顏色 → 檔案，右端是它自己的截止點 */}
++            <div className="mt-2 flex flex-col gap-1">
++                {plotted.map(({ result, color }) => (
++                    <div key={result.fileName} className="flex items-center gap-2 text-[11px] leading-4">
++                        <span className="h-0.5 w-3 shrink-0 rounded" style={{ backgroundColor: color }} />
++                        <span className="min-w-0 flex-1 truncate text-[color:var(--st-t2)]">{result.fileName}</span>
++                        <span className="shrink-0 tabular-nums text-[color:var(--st-t3)]">
++                            {result.measured?.cutoffHz ? `${(result.measured.cutoffHz / 1000).toFixed(2)} kHz` : '—'}
++                        </span>
++                    </div>
++                ))}
++                {hidden > 0 && (
++                    <span className="text-[11px] text-[color:var(--st-t3)]">另有 {hidden} 筆未畫出（顏色不夠分）</span>
++                )}
++            </div>
++        </div>
++    );
++};
++
++export default OverviewChart;
 diff --git a/src/components/audioQuality/QualityCheckSection.tsx b/src/components/audioQuality/QualityCheckSection.tsx
 new file mode 100644
-index 0000000..b835dfa
+index 0000000..c777d03
 --- /dev/null
 +++ b/src/components/audioQuality/QualityCheckSection.tsx
-@@ -0,0 +1,226 @@
+@@ -0,0 +1,297 @@
 +// src/components/audioQuality/QualityCheckSection.tsx
 +// 設定頁裡那張「音質體檢」的卡片：選檔案，或掃整個曲庫，然後把每一份的結論列出來。
 +//
 +// 這一段是平台無關的：iOS 上沒有 ffmpeg，解碼走 Web Audio（services/audioQuality/），
 +// 所以同一個介面在桌面版、網頁版、iPhone 上都成立，只是桌面版可以另外接 ffmpeg 做更狠的量測。
++//
++// 三種呈現方式，同一份資料換個畫法：
++//   內嵌 —— 每筆下面直接接一張頻譜圖（看得最仔細，清單也最長）
++//   展開 —— 清單只留結論，按「頻譜」才展開那張圖（曲庫大時用這個）
++//   總覽 —— 所有檔的曲線疊在同一張圖上，比誰的頻帶更窄（一眼看出誰有問題）
 +
-+import React, { useCallback, useEffect, useRef, useState } from 'react';
++import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 +import { useTranslation } from 'react-i18next';
-+import { AudioWaveform, FileAudio, FolderSearch, Loader2 } from 'lucide-react';
-+import { Button, Row, type SettingsOptionDef } from '../modal/settings/kit';
++import { AudioWaveform, ChevronDown, ChevronRight, FileAudio, FolderSearch, Loader2 } from 'lucide-react';
++import { Button, Row, Segmented, type SettingsOptionDef } from '../modal/settings/kit';
 +import { inspectAudioFile, type QualityInspectResult } from '../../services/audioQuality/inspectAudioQuality';
 +import { countInspectableLocalSongs, scanLocalLibraryQuality } from '../../services/audioQuality/inspectLocalLibrary';
 +import { getLocalLibraryAvailability } from '../../services/localLibraryAvailability';
 +import SpectrumChart from './SpectrumChart';
++import OverviewChart from './OverviewChart';
 +
 +const LEVEL_STYLES: Record<string, string> = {
 +    bad: 'bg-[color-mix(in_srgb,var(--st-danger,#ef4444)_16%,transparent)] text-[var(--st-danger,#ef4444)]',
@@ -33,8 +156,30 @@ index 0000000..b835dfa
 +    ok: 'qualityCheck.tagOk',
 +};
 +
-+/** 一首的完整結論：標籤 + 兩行量測 + 判定。 */
-+const ResultRow: React.FC<{ result: QualityInspectResult }> = ({ result }) => {
++type ViewMode = 'inline' | 'expand' | 'overview';
++
++const SpectrumBox: React.FC<{ result: QualityInspectResult }> = ({ result }) => {
++    const { measured } = result;
++    if (!measured?.curve) return null;
++    return (
++        <div className="overflow-hidden rounded-md bg-[var(--st-fill)] px-1 pt-1">
++            <SpectrumChart
++                curve={measured.curve}
++                cutoffHz={measured.cutoffHz}
++                nyquistHz={measured.nyquistHz}
++                cutoffLabel={measured.cutoffHz ? `${(measured.cutoffHz / 1000).toFixed(2)} kHz` : null}
++            />
++        </div>
++    );
++};
++
++/** 一首的完整結論：標籤 + 兩行量測 + 判定（依模式決定圖畫在哪）。 */
++const ResultRow: React.FC<{
++    result: QualityInspectResult;
++    mode: ViewMode;
++    expanded: boolean;
++    onToggle: () => void;
++}> = ({ result, mode, expanded, onToggle }) => {
 +    const { t } = useTranslation();
 +    const { container, measured } = result;
 +
@@ -45,6 +190,9 @@ index 0000000..b835dfa
 +            container.codec.toUpperCase(),
 +        ].filter(Boolean).join(' · ')
 +        : null;
++
++    const hasChart = Boolean(result.ok && measured?.curve);
++    const chartVisible = mode === 'inline' || (mode === 'expand' && expanded);
 +
 +    return (
 +        <div className="flex flex-col gap-1.5 border-t border-[color:var(--st-line)] px-4 py-3 first:border-t-0">
@@ -67,18 +215,24 @@ index 0000000..b835dfa
 +                        })}
 +                </div>
 +            )}
-+            {result.ok && measured?.curve && (
++
++            {chartVisible && hasChart && (
 +                <div className="mt-1 pl-6">
-+                    <div className="overflow-hidden rounded-md bg-[var(--st-fill)] px-1 pt-1">
-+                        <SpectrumChart
-+                            curve={measured.curve}
-+                            cutoffHz={measured.cutoffHz}
-+                            nyquistHz={measured.nyquistHz}
-+                            cutoffLabel={measured.cutoffHz ? `${(measured.cutoffHz / 1000).toFixed(2)} kHz` : null}
-+                        />
-+                    </div>
++                    <SpectrumBox result={result} />
 +                </div>
 +            )}
++
++            {mode === 'expand' && hasChart && (
++                <button
++                    type="button"
++                    onClick={onToggle}
++                    className="mt-0.5 flex items-center gap-1 self-start pl-6 text-[11px] text-[color:var(--st-t3)] transition-colors hover:text-[color:var(--st-t1)]"
++                >
++                    {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
++                    {t(expanded ? 'qualityCheck.hideSpectrum' : 'qualityCheck.showSpectrum')}
++                </button>
++            )}
++
 +            <div className="flex flex-col gap-1 pl-6">
 +                {result.ok
 +                    ? result.verdicts.map((verdict, index) => (
@@ -109,6 +263,8 @@ index 0000000..b835dfa
 +    const [busy, setBusy] = useState(false);
 +    const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 +    const [libraryCount, setLibraryCount] = useState<number | null>(null);
++    const [mode, setMode] = useState<ViewMode>('inline');
++    const [expandedKeys, setExpandedKeys] = useState<ReadonlySet<string>>(new Set());
 +    const libraryAvailability = getLocalLibraryAvailability();
 +
 +    useEffect(() => {
@@ -120,11 +276,11 @@ index 0000000..b835dfa
 +        void countInspectableLocalSongs()
 +            .then(count => { if (active) setLibraryCount(count); })
 +            .catch(() => { if (active) setLibraryCount(0); });
-+        return () => {
-+            active = false;
-+            abortRef.current?.abort();
-+        };
++        return () => { active = false; };
 +    }, [libraryAvailability.supported]);
++
++    // 離開頁面時停掉還在跑的掃描
++    useEffect(() => () => { abortRef.current?.abort(); }, []);
 +
 +    const inspectFiles = useCallback(async (files: File[]) => {
 +        if (!files.length || busy) return;
@@ -164,6 +320,11 @@ index 0000000..b835dfa
 +    }, [busy, libraryCount]);
 +
 +    const badCount = results.filter(result => result.level === 'bad').length;
++    const modeChoices = useMemo(() => [
++        { value: 'inline', label: t('qualityCheck.viewInline') },
++        { value: 'expand', label: t('qualityCheck.viewExpand') },
++        { value: 'overview', label: t('qualityCheck.viewOverview') },
++    ], [t]);
 +
 +    return (
 +        <>
@@ -215,15 +376,42 @@ index 0000000..b835dfa
 +            </Row>
 +
 +            {results.length > 0 && (
-+                <Row below={(
-+                    <div className="rounded-lg bg-[var(--st-pv)]">
-+                        {results.map((result, index) => (
-+                            <ResultRow key={`${result.fileName}-${index}`} result={result} />
-+                        ))}
-+                    </div>
-+                )}
-+                    label={t('qualityCheck.resultsTitle', { count: results.length, bad: badCount })}
-+                />
++                <>
++                    <Row label={t('qualityCheck.resultsTitle', { count: results.length, bad: badCount })}>
++                        <Segmented value={mode} options={modeChoices} onChange={value => setMode(value as ViewMode)} />
++                    </Row>
++
++                    {mode === 'overview'
++                        ? (
++                            <Row below={(
++                                <div className="rounded-lg bg-[var(--st-pv)] px-3 py-3">
++                                    <OverviewChart results={results} />
++                                </div>
++                            )} label={t('qualityCheck.overviewTitle')} />
++                        )
++                        : (
++                            <Row below={(
++                                <div className="rounded-lg bg-[var(--st-pv)]">
++                                    {results.map((result, index) => {
++                                        const key = `${result.fileName}-${index}`;
++                                        return (
++                                            <ResultRow
++                                                key={key}
++                                                result={result}
++                                                mode={mode}
++                                                expanded={expandedKeys.has(key)}
++                                                onToggle={() => setExpandedKeys(previous => {
++                                                    const next = new Set(previous);
++                                                    if (next.has(key)) next.delete(key); else next.add(key);
++                                                    return next;
++                                                })}
++                                            />
++                                        );
++                                    })}
++                                </div>
++                            )} />
++                        )}
++                </>
 +            )}
 +        </>
 +    );
@@ -424,10 +612,10 @@ index 92620c2..04852d7 100644
      general,
      interaction,
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..b765d2a 100644
+index 86f3b6d..844d784 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
-@@ -1,77 +1,41 @@
+@@ -1,77 +1,47 @@
  
  
  export default {
@@ -510,6 +698,12 @@ index 86f3b6d..b765d2a 100644
 +    "scanUnsupported": "This device has no folder-access API (iOS Safari does not support it), so the library cannot be imported — use Choose files above",
 +    "scanning": "Analysing {{done}}/{{total}}",
 +    "resultsTitle": "Results: {{count}} files, {{bad}} with problems",
++    "overviewTitle": "Overview: the band of every file",
++    "viewInline": "Inline",
++    "viewExpand": "Tap to open",
++    "viewOverview": "Overview",
++    "showSpectrum": "Spectrum",
++    "hideSpectrum": "Hide",
 +    "tagOk": "Clean",
 +    "tagInfo": "Lossy",
 +    "tagWarn": "Suspect",
@@ -538,7 +732,7 @@ index 86f3b6d..b765d2a 100644
      "title": "Performance check",
      "songTitle": "Performance check",
      "running": "Checking performance",
-@@ -2796,6 +2760,7 @@ export default {
+@@ -2796,6 +2766,7 @@ export default {
      "settingsPageHome": "Home & playlists",
      "settingsPagePlayback": "Playback",
      "settingsPageLyrics": "Lyrics",
@@ -547,10 +741,10 @@ index 86f3b6d..b765d2a 100644
      "settingsPageInteraction": "Shortcuts",
      "settingsPageIntegration": "Connections",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..330469f 100644
+index 0067e9a..a3928b9 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
-@@ -1,6 +1,40 @@
+@@ -1,6 +1,46 @@
  
  
  export default {
@@ -565,6 +759,12 @@ index 0067e9a..330469f 100644
 +    "scanUnsupported": "这台设备没有文件夹权限 API（iOS Safari 不支持），曲库无法导入，请用上面的「选择文件」",
 +    "scanning": "正在分析 {{done}}/{{total}}",
 +    "resultsTitle": "结果：{{count}} 份，其中 {{bad}} 份有问题",
++    "overviewTitle": "总览：所有文件的频带",
++    "viewInline": "内嵌图",
++    "viewExpand": "点开看",
++    "viewOverview": "总览",
++    "showSpectrum": "频谱",
++    "hideSpectrum": "收起",
 +    "tagOk": "正常",
 +    "tagInfo": "有损",
 +    "tagWarn": "可疑",
@@ -591,7 +791,7 @@ index 0067e9a..330469f 100644
    "sourcesSettings": {
      "groupList": "音源",
      "groupNotices": "接管与覆盖",
-@@ -2796,6 +2830,7 @@ export default {
+@@ -2796,6 +2836,7 @@ export default {
      "settingsPageHome": "主页与歌单",
      "settingsPagePlayback": "播放控制",
      "settingsPageLyrics": "歌词",
