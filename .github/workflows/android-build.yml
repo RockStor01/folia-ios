@@ -153,15 +153,16 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon --stacktrace
-          cp app/build/outputs/apk/debug/app-debug.apk ../Folia-debug.apk
-          ls -lh ../Folia-debug.apk
+          # 工作目錄是 folia/android，倉庫根在 ../../，後面的 report/upload 都在根上跑
+          cp app/build/outputs/apk/debug/app-debug.apk ../../Folia-debug.apk
+          ls -lh ../../Folia-debug.apk
 
       - name: Build release APK (unsigned)
         working-directory: folia/android
         run: |
           ./gradlew assembleRelease --no-daemon --stacktrace || echo "release build failed, debug apk is still usable"
-          find app/build/outputs/apk/release -name "*.apk" -exec cp {} ../Folia-release-unsigned.apk \; || true
-          ls -lh ../Folia-release-unsigned.apk 2>/dev/null || true
+          find app/build/outputs/apk/release -name "*.apk" -exec cp {} ../../Folia-release-unsigned.apk \; || true
+          ls -lh ../../Folia-release-unsigned.apk 2>/dev/null || true
 
       - name: Report APK facts
         run: |
