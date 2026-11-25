@@ -6,10 +6,10 @@ name: Build iOS IPA
 on:
   workflow_dispatch:
     inputs:
-      upstream_ref:
-        description: '上游分支或 tag（預設 main）'
+      upstream_commit:
+        description: '上游提交（預設為 quality-inspect.patch 對得上的那個）'
         required: false
-        default: 'main'
+        default: '3b91924f1e2da7b7f8f9cf1e0cd0b25d4a789e6d'
   push:
     branches: [ main ]
 
@@ -28,9 +28,17 @@ jobs:
 
       - name: Fetch upstream Folia source
         run: |
-          git clone --depth 1 --branch "${{ github.event.inputs.upstream_ref || 'main' }}" \
-            https://github.com/chthollyphile/folia-major.git folia
-          echo "Folia @ $(git -C folia rev-parse --short HEAD)"
+          git clone https://github.com/chthollyphile/folia-major.git folia
+          cd folia
+          git fetch --depth 1 origin "${{ github.event.inputs.upstream_commit || '3b91924f1e2da7b7f8f9cf1e0cd0b25d4a789e6d' }}"
+          git checkout --detach FETCH_HEAD
+          echo "Folia @ $(git rev-parse --short HEAD)"
+
+      - name: Apply quality-check patch
+        run: |
+          git -C folia apply --verbose ../quality-inspect.patch
+          test -f folia/src/services/audioQuality/inspectAudioQuality.ts
+          echo "quality check patch applied"
 
       - name: Install dependencies
         working-directory: folia

@@ -1,0 +1,1023 @@
+diff --git a/src/components/audioQuality/QualityCheckSection.tsx b/src/components/audioQuality/QualityCheckSection.tsx
+new file mode 100644
+index 0000000..26c654e
+--- /dev/null
++++ b/src/components/audioQuality/QualityCheckSection.tsx
+@@ -0,0 +1,206 @@
++// src/components/audioQuality/QualityCheckSection.tsx
++// 設定頁裡那張「音質體檢」的卡片：選檔案，或掃整個曲庫，然後把每一份的結論列出來。
++//
++// 這一段是平台無關的：iOS 上沒有 ffmpeg，解碼走 Web Audio（services/audioQuality/），
++// 所以同一個介面在桌面版、網頁版、iPhone 上都成立，只是桌面版可以另外接 ffmpeg 做更狠的量測。
++
++import React, { useCallback, useEffect, useRef, useState } from 'react';
++import { useTranslation } from 'react-i18next';
++import { AudioWaveform, FileAudio, FolderSearch, Loader2 } from 'lucide-react';
++import { Button, Row, type SettingsOptionDef } from '../modal/settings/kit';
++import { inspectAudioFile, type QualityInspectResult } from '../../services/audioQuality/inspectAudioQuality';
++import { countInspectableLocalSongs, scanLocalLibraryQuality } from '../../services/audioQuality/inspectLocalLibrary';
++
++const LEVEL_STYLES: Record<string, string> = {
++    bad: 'bg-[color-mix(in_srgb,var(--st-danger,#ef4444)_16%,transparent)] text-[var(--st-danger,#ef4444)]',
++    warn: 'bg-[color-mix(in_srgb,var(--st-warning,#f59e0b)_16%,transparent)] text-[var(--st-warning,#f59e0b)]',
++    info: 'bg-[var(--st-pv)] text-[color:var(--st-t2)]',
++    ok: 'bg-[color-mix(in_srgb,var(--st-success,#22c55e)_16%,transparent)] text-[var(--st-success,#22c55e)]',
++};
++
++const TAG_KEYS: Record<string, string> = {
++    bad: 'qualityCheck.tagBad',
++    warn: 'qualityCheck.tagWarn',
++    info: 'qualityCheck.tagInfo',
++    ok: 'qualityCheck.tagOk',
++};
++
++/** 一首的完整結論：標籤 + 兩行量測 + 判定。 */
++const ResultRow: React.FC<{ result: QualityInspectResult }> = ({ result }) => {
++    const { t } = useTranslation();
++    const { container, measured } = result;
++
++    const spec = container
++        ? [
++            `${(container.sampleRate / 1000).toFixed(container.sampleRate % 1000 ? 1 : 0)} kHz`,
++            container.bitDepth ? `${container.bitDepth} bit` : null,
++            container.codec.toUpperCase(),
++        ].filter(Boolean).join(' · ')
++        : null;
++
++    return (
++        <div className="flex flex-col gap-1.5 border-t border-[color:var(--st-line)] px-4 py-3 first:border-t-0">
++            <div className="flex items-center gap-2">
++                <FileAudio size={14} className="shrink-0 text-[color:var(--st-t3)]" />
++                <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[color:var(--st-t1)]">{result.fileName}</span>
++                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${LEVEL_STYLES[result.level] ?? LEVEL_STYLES.info}`}>
++                    {t(result.ok ? TAG_KEYS[result.level] : 'qualityCheck.tagFailed')}
++                </span>
++            </div>
++            {result.ok && measured && (
++                <div className="pl-6 text-[11px] leading-4 text-[color:var(--st-t3)]">
++                    {spec}
++                    {'　'}
++                    {measured.transitionHz === null
++                        ? t('qualityCheck.measureLineNoTransition', { cutoff: measured.cutoffHz ? (measured.cutoffHz / 1000).toFixed(2) : '—' })
++                        : t('qualityCheck.measureLine', {
++                            cutoff: measured.cutoffHz ? (measured.cutoffHz / 1000).toFixed(2) : '—',
++                            transition: measured.transitionHz,
++                        })}
++                </div>
++            )}
++            <div className="flex flex-col gap-1 pl-6">
++                {result.ok
++                    ? result.verdicts.map((verdict, index) => (
++                        <span key={`${verdict.kind}-${index}`} className="text-[12px] leading-5 text-[color:var(--st-t2)]">
++                            {t(`qualityCheck.verdict.${verdict.kind}`, verdict.params)}
++                        </span>
++                    ))
++                    : (
++                        <span className="text-[12px] leading-5 text-[color:var(--st-t2)]">
++                            {t(`qualityCheck.error.${result.error ?? 'decodeFailed'}`)}
++                        </span>
++                    )}
++            </div>
++        </div>
++    );
++};
++
++interface QualityCheckSectionProps {
++    pickOption: SettingsOptionDef;
++    scanOption: SettingsOptionDef;
++}
++
++const QualityCheckSection: React.FC<QualityCheckSectionProps> = ({ pickOption, scanOption }) => {
++    const { t } = useTranslation();
++    const inputRef = useRef<HTMLInputElement>(null);
++    const abortRef = useRef<AbortController | null>(null);
++    const [results, setResults] = useState<QualityInspectResult[]>([]);
++    const [busy, setBusy] = useState(false);
++    const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
++    const [libraryCount, setLibraryCount] = useState<number | null>(null);
++
++    useEffect(() => {
++        let active = true;
++        void countInspectableLocalSongs()
++            .then(count => { if (active) setLibraryCount(count); })
++            .catch(() => { if (active) setLibraryCount(0); });
++        return () => {
++            active = false;
++            abortRef.current?.abort();
++        };
++    }, []);
++
++    const inspectFiles = useCallback(async (files: File[]) => {
++        if (!files.length || busy) return;
++        setBusy(true);
++        setProgress({ done: 0, total: files.length });
++        try {
++            for (let index = 0; index < files.length; index += 1) {
++                const result = await inspectAudioFile(files[index]);
++                setResults(previous => [...previous, result]);
++                setProgress({ done: index + 1, total: files.length });
++                // 讓出一個節拍，iOS 才有機會刷新介面
++                await new Promise(resolve => setTimeout(resolve, 0));
++            }
++        } finally {
++            setBusy(false);
++            setProgress(null);
++        }
++    }, [busy]);
++
++    const scanLibrary = useCallback(async () => {
++        if (busy) return;
++        setBusy(true);
++        const controller = new AbortController();
++        abortRef.current = controller;
++        setProgress({ done: 0, total: libraryCount ?? 0 });
++        try {
++            await scanLocalLibraryQuality({
++                abort: controller.signal,
++                onProgress: (done, total) => setProgress({ done, total }),
++                onResult: result => setResults(previous => [...previous, result]),
++            });
++        } finally {
++            abortRef.current = null;
++            setBusy(false);
++            setProgress(null);
++        }
++    }, [busy, libraryCount]);
++
++    const badCount = results.filter(result => result.level === 'bad').length;
++
++    return (
++        <>
++            <input
++                ref={inputRef}
++                type="file"
++                accept="audio/*,.flac,.wav,.aiff,.aif,.mp3,.m4a,.aac,.ogg,.opus,.ape,.wv"
++                multiple
++                className="hidden"
++                onChange={event => {
++                    const files = Array.from(event.target.files ?? []);
++                    event.target.value = '';
++                    void inspectFiles(files);
++                }}
++            />
++
++            <Row option={pickOption} hint={t('qualityCheck.pickFilesHint')}>
++                <Button
++                    icon={AudioWaveform}
++                    disabled={busy}
++                    onClick={() => inputRef.current?.click()}
++                >
++                    {t('qualityCheck.pickFiles')}
++                </Button>
++            </Row>
++
++            <Row
++                option={scanOption}
++                hint={libraryCount === null
++                    ? t('qualityCheck.scanLibraryHintCounting')
++                    : t('qualityCheck.scanLibraryHint', { count: libraryCount })}
++            >
++                {busy && progress
++                    ? (
++                        <span className="flex items-center gap-1.5 text-[12px] text-[color:var(--st-t3)]">
++                            <Loader2 size={13} className="animate-spin" />
++                            {t('qualityCheck.scanning', { done: progress.done, total: progress.total || '?' })}
++                        </span>
++                    )
++                    : null}
++                <Button
++                    icon={FolderSearch}
++                    disabled={busy || libraryCount === 0}
++                    onClick={() => void scanLibrary()}
++                >
++                    {t('qualityCheck.scanLibrary')}
++                </Button>
++            </Row>
++
++            {results.length > 0 && (
++                <Row below={(
++                    <div className="rounded-lg bg-[var(--st-pv)]">
++                        {results.map((result, index) => (
++                            <ResultRow key={`${result.fileName}-${index}`} result={result} />
++                        ))}
++                    </div>
++                )}
++                    label={t('qualityCheck.resultsTitle', { count: results.length, bad: badCount })}
++                />
++            )}
++        </>
++    );
++};
++
++export default QualityCheckSection;
+diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
+index 1ea56f3..629323e 100644
+--- a/src/components/modal/settings/navigation/settingsNavModel.ts
++++ b/src/components/modal/settings/navigation/settingsNavModel.ts
+@@ -1,4 +1,4 @@
+-import { Boxes, Cable, Contrast, Database, Gauge, Keyboard, LayoutGrid, Link2, Monitor, MonitorPlay, PictureInPicture2, PlayCircle, SlidersHorizontal, Sparkles, Terminal, TextAlignStart, type LucideIcon } from 'lucide-react';
++import { AudioWaveform, Boxes, Cable, Contrast, Database, Gauge, Keyboard, LayoutGrid, Link2, Monitor, MonitorPlay, PictureInPicture2, PlayCircle, SlidersHorizontal, Sparkles, Terminal, TextAlignStart, type LucideIcon } from 'lucide-react';
+ // src/components/modal/settings/navigation/settingsNavModel.ts
+ // Single source of truth for the settings categories: their order in the side list, their grouping,
+ // icons and names. A category is cut by what the listener is looking at or doing, so each page holds
+@@ -11,6 +11,7 @@ export type SettingsSectionId =
+     | 'graphics'
+     | 'playback'
+     | 'lyrics'
++    | 'quality'
+     | 'sources'
+     | 'general'
+     | 'interaction'
+@@ -67,6 +68,8 @@ export const SETTINGS_NAV_GROUP_SPECS: GroupSpec[] = [
+         sections: [
+             { id: 'playback', icon: PlayCircle, labelKey: 'options.settingsPagePlayback' },
+             { id: 'lyrics', icon: TextAlignStart, labelKey: 'options.settingsPageLyrics' },
++            // 假無損／採樣率虛標的體檢：只吃本機檔案，網頁版與 iOS 一樣有。
++            { id: 'quality', icon: AudioWaveform, labelKey: 'options.settingsPageQuality' },
+             // Folium 2.0 (plan §5.3): every online source's state. The states live in the desktop main process.
+             { id: 'sources', icon: Cable, labelKey: 'options.settingsPageSources', electronOnly: true },
+         ],
+diff --git a/src/components/modal/settings/pages/QualityPage.tsx b/src/components/modal/settings/pages/QualityPage.tsx
+new file mode 100644
+index 0000000..4047bc3
+--- /dev/null
++++ b/src/components/modal/settings/pages/QualityPage.tsx
+@@ -0,0 +1,30 @@
++// src/components/modal/settings/pages/QualityPage.tsx
++// 音樂 → 音質體檢：驗你手上的「無損」是不是真的。
++//
++// 放在「音樂」這一組而不是桌面專屬的「音源」頁，因為這件事在 iPhone 上一樣要做 ——
++// 它只吃本機檔案，不需要主行程，也不需要任何音源連線。
++
++import React from 'react';
++import { useTranslation } from 'react-i18next';
++import QualityCheckSection from '../../../audioQuality/QualityCheckSection';
++import { Group, option, type SettingsGroupDef, type SettingsOptionDef } from '../kit';
++
++const CHECK: SettingsGroupDef = { id: 'qualityCheck', titleKey: 'qualityCheck.title' };
++
++const O = {
++    pick: option(CHECK, 'qualityCheckPick', 'qualityCheck.pickFiles'),
++    scan: option(CHECK, 'qualityCheckScan', 'qualityCheck.scanLibrary'),
++};
++
++export const OPTIONS: SettingsOptionDef[] = Object.values(O);
++
++const QualityPage: React.FC = () => {
++    const { t } = useTranslation();
++    return (
++        <Group def={CHECK} foot={t('qualityCheck.foot')}>
++            <QualityCheckSection pickOption={O.pick} scanOption={O.scan} />
++        </Group>
++    );
++};
++
++export default QualityPage;
+diff --git a/src/components/modal/settings/pages/index.ts b/src/components/modal/settings/pages/index.ts
+index 92620c2..04852d7 100644
+--- a/src/components/modal/settings/pages/index.ts
++++ b/src/components/modal/settings/pages/index.ts
+@@ -14,6 +14,7 @@ import * as lyrics from './LyricsPage';
+ import * as mods from './ModsPage';
+ import * as playback from './PlaybackPage';
+ import * as player from './PlayerPage';
++import * as quality from './QualityPage';
+ import * as remote from './RemotePage';
+ import * as sources from './SourcesPage';
+ import * as storage from './StoragePage';
+@@ -32,6 +33,7 @@ const PAGE_MODULES: Record<SettingsSectionId, PageModule> = {
+     home,
+     playback,
+     lyrics,
++    quality,
+     sources,
+     general,
+     interaction,
+diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
+index 86f3b6d..3166990 100644
+--- a/src/i18n/locales/en.ts
++++ b/src/i18n/locales/en.ts
+@@ -1,77 +1,40 @@
+ 
+ 
+ export default {
+-  "sourcesSettings": {
+-    "groupList": "Sources",
+-    "groupNotices": "Takeovers and overrides",
+-    "groupInstall": "Install",
+-    "groupOther": "Other sources",
+-    "searchStates": "Enabled, only for matching, disabled",
+-    "listFoot": "A disabled source leaves the switcher, the sign-in window, search and the lyric sources; its songs stay in queues and playlists and come back when it is enabled. \"Only for matching\" just finds lyrics and details for local songs, signed out. The eraser clears data: it signs out and deletes the cache and mod data, after asking; disabling keeps data.",
+-    "empty": "No sources were read.",
+-    "stateEnabled": "Enabled",
+-    "stateMatching": "Only for matching",
+-    "stateDisabled": "Disabled",
+-    "matchOnlyUnknown": "It has not run on this computer yet: enable it once to find out whether it can be used only for matching",
+-    "tierHost": "Built into the app (not a mod yet)",
+-    "tierBuiltin": "Built-in mod",
+-    "tierOverride": "Override copy",
+-    "tierUser": "Third-party mod",
+-    "tierTakeover": "Takeover mod",
+-    "runHost": "Its main-process part runs as usual",
+-    "runHostHidden": "Only hidden in the interface; its main-process part runs as usual",
+-    "run_starting": "Starting",
+-    "run_stopped": "Not running",
+-    "run_mod-off": "Its mod is off on the Mods page; this has no effect for now",
+-    "runFailed": "Could not start: {{error}}",
+-    "usage": "Data {{data}} · cache {{cache}}",
+-    "hostNote": "This platform is not a source mod yet; the app registers it itself. Disabling it or keeping it only for matching only changes where it shows: its main-process part is not affected and runs as usual. Clearing its data comes once it is a mod; to remove the sign-in now, enable it again first, then sign out in the sign-in window.",
+-    "selfSignedNote": "When it connects to a server you enter yourself (such as a NAS at home), it accepts that server's self-signed certificate.",
+-    "clearData": "Clear data",
+-    "clearDataTip": "Clear the data of {{name}}…",
+-    "clearDone": "The data of {{name}} was cleared; the next time it runs it is signed out.",
+-    "clearPartial": "The data of {{name}} was only partly cleared; what was left is in the runtime log.",
+-    "clearFailed": "The data of {{name}} was not cleared: {{reason}}",
+-    "switchFailed": "{{name}} was not switched: {{reason}}",
+-    "noticeActionFailed": "\"{{name}}\" was not changed: {{reason}}",
+-    "actionAssignClaim": "Let it take over…",
+-    "actionConfirmOverride": "Confirm the override…",
+-    "notice_claim-unconfirmed": "\"{{mod}}\" claims {{source}} but you have not confirmed it yet, so it runs under its own name. Once confirmed it uses the sign-in you already have on that platform.",
+-    "notice_claim-taken": "\"{{mod}}\" also claims {{source}}, but \"{{other}}\" holds {{source}} now, so it was not loaded.",
+-    "notice_claim-signature-invalid": "The files of \"{{mod}}\" changed after it was signed, so it cannot take over another source and runs under its own name only.",
+-    "notice_claim-unknown-source": "{{source}}, which \"{{mod}}\" claims, is not in the trusted table of built-in sources; it cannot be taken over.",
+-    "notice_claim-outside-row": "The old data \"{{mod}}\" claims goes beyond what {{source}} had; it cannot take it over.",
+-    "notice_override-unconfirmed": "The mods folder holds v{{version}} of \"{{mod}}\" (officially signed, newer than the built-in one); once confirmed it replaces the built-in copy.",
+-    "notice_override-not-verified": "v{{version}} of \"{{mod}}\" in the mods folder did not pass the official signature check; the built-in copy stays.",
+-    "notice_override-not-newer": "v{{version}} of \"{{mod}}\" in the mods folder is not newer than the built-in copy; the built-in copy stays.",
+-    "notice_override-host-range": "v{{version}} of \"{{mod}}\" in the mods folder needs another Folia version; the built-in copy stays.",
+-    "notice_override-superseded": "v{{version}} of \"{{mod}}\" was not loaded: \"{{other}}\" already replaces the built-in copy.",
+-    "notice_bundled-source-missing": "The installation says it carries {{source}}, but its built-in copy is missing; the installation may be damaged, please reinstall Folia. \"{{mod}}\" was not loaded because of it.",
+-    "notice_shadowed": "The built-in \"{{mod}}\" is replaced by \"{{other}}\" now.",
+-    "notice_override-running": "\"{{mod}}\" runs v{{version}} from the mods folder in place of the built-in copy.",
+-    "installLabel": "Install a source mod",
+-    "installHint": "Installed source mods are managed with the other mods; you can also drop a zip onto the mod list.",
+-    "installZipLabel": "Install a source mod from a zip",
+-    "installZipHint": "While community mods are off, only officially signed source mods install.",
+-    "installZipButton": "Choose zip",
+-    "installButton": "Open Mods",
+-    "navidromeLabel": "Navidrome",
+-    "navidromeHint": "A music server you run yourself, not a source mod. Connect it in Settings → Connections.",
+-    "navidromeButton": "Connect",
+-    "openFromLyrics": "Open it in Sources",
+-    "errors": {
+-      "source-cannot-match-only": "This source cannot be used only for matching",
+-      "source-not-found": "The source was not found",
+-      "source-not-a-mod": "It is not a source mod yet, so its data cannot be cleared here",
+-      "no-electron-bridge": "Only the desktop app can do this",
+-      "mod-content-unverifiable": "The mod's files could not be read",
+-      "claim-signature-invalid": "The signature does not match the files",
+-      "mod-does-not-claim": "This mod does not claim it",
+-      "source-is-carried": "The installation carries this source; no other mod can take it over",
+-      "unknown": "Unknown reason"
++  "qualityCheck": {
++    "title": "Audio quality check",
++    "foot": "Verdict: a lossless container is called fake only when its content ends more than 1.5 kHz below the container's ceiling AND the transition band is narrower than 800 Hz — a wide band is more likely a master filter or an upsample. Only 20 seconds from the middle are analysed, so an all-quiet passage or a file that has been compressed twice may pass. Files above 96 kHz cannot be judged on iOS.",
++    "pickFiles": "Choose files",
++    "pickFilesHint": "Several at once; analysed one by one",
++    "scanLibrary": "Scan local library",
++    "scanLibraryHint": "{{count}} inspectable local files in the library",
++    "scanLibraryHintCounting": "Counting the library…",
++    "scanning": "Analysing {{done}}/{{total}}",
++    "resultsTitle": "Results: {{count}} files, {{bad}} with problems",
++    "tagOk": "Clean",
++    "tagInfo": "Lossy",
++    "tagWarn": "Suspect",
++    "tagBad": "Fake / mislabelled",
++    "tagFailed": "Unreadable",
++    "measureLine": "content ends at {{cutoff}} kHz · transition {{transition}} Hz",
++    "measureLineNoTransition": "content ends at {{cutoff}} kHz · the roll-off has no measurable edge",
++    "verdict": {
++      "ok": "Nothing wrong: {{sampleRate}} kHz / {{bitDepth}} bit, content reaches {{cutoff}} kHz",
++      "fakeLossless": "Fake lossless: the container says {{sampleRate}} kHz, but content stops at {{cutoff}} kHz with a {{transition}} Hz transition — the fingerprint of a codec low-pass",
++      "narrowBand": "Narrow band: content stops at {{cutoff}} kHz with a {{transition}} Hz transition — a gentle slope, probably a master low-pass or an upsample",
++      "upsampled": "Sample rate mislabelled: the container says {{sampleRate}} kHz while the band only reaches {{cutoff}} kHz — the rest is filled in",
++      "depthMismatch": "Depth does not match the rate: {{bitDepth}} bit at {{sampleRate}} kHz — real high-rate recordings are 24 bit or more",
++      "lossy": "Lossy format ({{codec}}): content ends at {{cutoff}} kHz, roughly {{bitrate}} kbps",
++      "containerUnknown": "Container specs unreadable; only the band was estimated"
++    },
++    "error": {
++      "decodeFailed": "Cannot decode this file: unsupported format, or too large for this device to decode",
++      "tooShort": "Too short for one full spectrum window",
++      "hiresTooWide": "Files above 96 kHz cannot be judged on iOS (Web Audio stops at 96 kHz)",
++      "unsupportedContainer": "Unrecognised container"
+     }
+   },
+-  "perfCheck": {
++ "perfCheck": {
+     "title": "Performance check",
+     "songTitle": "Performance check",
+     "running": "Checking performance",
+@@ -2796,6 +2759,7 @@ export default {
+     "settingsPageHome": "Home & playlists",
+     "settingsPagePlayback": "Playback",
+     "settingsPageLyrics": "Lyrics",
++    "settingsPageQuality": "Audio quality check",
+     "settingsPageGeneral": "General",
+     "settingsPageInteraction": "Shortcuts",
+     "settingsPageIntegration": "Connections",
+diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
+index 0067e9a..1d4540c 100644
+--- a/src/i18n/locales/zh-CN.ts
++++ b/src/i18n/locales/zh-CN.ts
+@@ -1,6 +1,39 @@
+ 
+ 
+ export default {
++  "qualityCheck": {
++    "title": "音质体检",
++    "foot": "判据：无损失容器里，内容在离容器上限还差 1.5 kHz 以上就结束、且过渡带窄于 800 Hz，才判「假无损」；过渡带很宽的多半是母带滤波或升频。只抽中段 20 秒分析，整首安静、或已经被再次压缩过的文件可能看不出来。超过 96 kHz 的文件在 iOS 上无法判断。",
++    "pickFiles": "选择文件",
++    "pickFilesHint": "可多选，逐份分析",
++    "scanLibrary": "扫描本地曲库",
++    "scanLibraryHint": "曲库里有 {{count}} 首可检查的本地文件",
++    "scanLibraryHintCounting": "正在数曲库…",
++    "scanning": "正在分析 {{done}}/{{total}}",
++    "resultsTitle": "结果：{{count}} 份，其中 {{bad}} 份有问题",
++    "tagOk": "正常",
++    "tagInfo": "有损",
++    "tagWarn": "可疑",
++    "tagBad": "假无损/虚标",
++    "tagFailed": "读不了",
++    "measureLine": "实测止于 {{cutoff}} kHz · 过渡带 {{transition}} Hz",
++    "measureLineNoTransition": "实测止于 {{cutoff}} kHz · 过渡带平缓，量不出断点",
++    "verdict": {
++      "ok": "未见异常：{{sampleRate}} kHz / {{bitDepth}} bit，内容延伸到 {{cutoff}} kHz",
++      "fakeLossless": "假无损：容器写着 {{sampleRate}} kHz，内容在 {{cutoff}} kHz 就断了，过渡带只有 {{transition}} Hz —— 这是编码器低通的指纹",
++      "narrowBand": "频带偏窄：内容止于 {{cutoff}} kHz，过渡带 {{transition}} Hz，属缓坡，疑似母带低通或升频",
++      "upsampled": "采样率虚标：容器 {{sampleRate}} kHz，频带只到 {{cutoff}} kHz，上面那层是补出来的",
++      "depthMismatch": "位深与采样率对不上：{{bitDepth}} bit 装 {{sampleRate}} kHz，真实高采样率录音一律 24 bit 起",
++      "lossy": "有损格式（{{codec}}）：实测止于 {{cutoff}} kHz，对应码率约 {{bitrate}} kbps",
++      "containerUnknown": "读不出容器规格，只做了频带估计"
++    },
++    "error": {
++      "decodeFailed": "解不开这份文件：格式不受支持，或体积超出这台设备的解码能力",
++      "tooShort": "音频太短，凑不出一整窗频谱",
++      "hiresTooWide": "超过 96 kHz 的文件在 iOS 上无法判断（Web Audio 的采样率上限就是 96 kHz）",
++      "unsupportedContainer": "无法识别容器"
++    }
++  },
+   "sourcesSettings": {
+     "groupList": "音源",
+     "groupNotices": "接管与覆盖",
+@@ -2796,6 +2829,7 @@ export default {
+     "settingsPageHome": "主页与歌单",
+     "settingsPagePlayback": "播放控制",
+     "settingsPageLyrics": "歌词",
++    "settingsPageQuality": "音质体检",
+     "settingsPageGeneral": "通用",
+     "settingsPageInteraction": "快捷操作",
+     "settingsPageIntegration": "连接与集成",
+diff --git a/src/services/audioQuality/inspectAudioQuality.ts b/src/services/audioQuality/inspectAudioQuality.ts
+new file mode 100644
+index 0000000..ed0d882
+--- /dev/null
++++ b/src/services/audioQuality/inspectAudioQuality.ts
+@@ -0,0 +1,185 @@
++// src/services/audioQuality/inspectAudioQuality.ts
++// 一次體檢：檔頭讀容器的自稱規格 → 用 Web Audio 解碼 → 量頻譜 → 出結論。
++//
++// 這是 Aurora（com.aurora.music）那套「音質檢測」的網頁／iOS 版：iOS 沒有 ffmpeg，
++// 所以解碼靠 decodeAudioData，量化靠 qualitySpectrum.ts 的 FFT。平台限制也寫在這裡：
++// WebKit 的 OfflineAudioContext 取樣率上限 96 kHz，超過的檔案只能標記為「無法在此裝置判斷」。
++
++import { decodeAtRate } from '../analysis/trackAudio';
++import { probeContainer, type ContainerProbe } from './qualityProbe';
++import { averageSpectrum, summariseBand } from './qualitySpectrum';
++
++export type QualityLevel = 'ok' | 'info' | 'warn' | 'bad';
++
++export type QualityVerdictKind =
++    | 'ok'
++    | 'fakeLossless'
++    | 'narrowBand'
++    | 'upsampled'
++    | 'depthMismatch'
++    | 'lossy'
++    | 'containerUnknown';
++
++export interface QualityVerdict {
++    kind: QualityVerdictKind;
++    /** 已經格式化好的字串，直接丟進 i18n 的 {{}} 佔位符。 */
++    params: Record<string, string>;
++}
++
++export interface QualityMeasurement {
++    cutoffHz: number | null;
++    nyquistHz: number;
++    transitionHz: number | null;
++    refDb: number;
++    frames: number;
++}
++
++export interface QualityInspectResult {
++    fileName: string;
++    ok: boolean;
++    /** 失敗原因，也是 i18n 鍵（qualityCheck.error.*）。 */
++    error?: 'unsupportedContainer' | 'decodeFailed' | 'tooShort' | 'hiresTooWide';
++    container: ContainerProbe | null;
++    measured: QualityMeasurement | null;
++    verdicts: QualityVerdict[];
++    level: QualityLevel;
++}
++
++/** 分析的窗長（秒）、WebKit 的取樣率上限，以及 FFT 至少需要一整窗。 */
++const WINDOW_SECONDS = 20;
++const MAX_CONTEXT_RATE = 96000;
++const QUALITY_MIN_SAMPLES = 8192;
++
++/** 有損編碼器按截止點反推的碼率區間；只是粗略對照，不是量測。 */
++const approximateBitrate = (cutoffHz: number): string => {
++    const ratio = cutoffHz / 44100;
++    if (ratio < 0.35) return '64–96';
++    if (ratio < 0.42) return '128';
++    if (ratio < 0.47) return '192';
++    if (ratio < 0.49) return '256–320';
++    return '';
++};
++
++const fmtK = (hz: number): string => (hz / 1000).toFixed(2);
++const fmtRate = (hz: number): string => (hz / 1000).toFixed(hz % 1000 === 0 ? 0 : 1);
++
++/** 取中段一段樣本，避開片頭淡入與靜音段。 */
++const pickWindow = (buffer: AudioBuffer): Float32Array => {
++    const rate = buffer.sampleRate;
++    const wantFrames = Math.min(buffer.length, Math.round(WINDOW_SECONDS * rate));
++    const start = buffer.length > wantFrames * 2
++        ? Math.min(Math.round(buffer.length * 0.25), buffer.length - wantFrames)
++        : 0;
++    const left = buffer.getChannelData(0);
++    const samples = new Float32Array(wantFrames);
++    if (buffer.numberOfChannels > 1) {
++        const right = buffer.getChannelData(1);
++        for (let i = 0; i < wantFrames; i += 1) samples[i] = (left[start + i] + right[start + i]) / 2;
++    } else {
++        for (let i = 0; i < wantFrames; i += 1) samples[i] = left[start + i];
++    }
++    return samples;
++};
++
++const judge = (container: ContainerProbe | null, cutoffHz: number | null, transitionHz: number | null): { verdicts: QualityVerdict[]; level: QualityLevel } => {
++    const verdicts: QualityVerdict[] = [];
++    let level: QualityLevel = 'ok';
++
++    if (!container || !container.sampleRate) {
++        verdicts.push({ kind: 'containerUnknown', params: {} });
++        return { verdicts, level: 'info' };
++    }
++
++    const nyquist = container.sampleRate / 2;
++    const gap = cutoffHz ? nyquist - cutoffHz : null;
++
++    if (container.lossless && cutoffHz && gap !== null && gap > 1500 && cutoffHz < nyquist * 0.97) {
++        if (transitionHz !== null && transitionHz < 800) {
++            verdicts.push({ kind: 'fakeLossless', params: { sampleRate: fmtRate(container.sampleRate), cutoff: fmtK(cutoffHz), transition: String(transitionHz) } });
++            level = 'bad';
++        } else {
++            verdicts.push({ kind: 'narrowBand', params: { cutoff: fmtK(cutoffHz), transition: String(transitionHz ?? 0) } });
++            level = 'warn';
++        }
++    }
++
++    if (container.sampleRate >= 88200 && cutoffHz && cutoffHz <= nyquist * 0.6) {
++        verdicts.push({ kind: 'upsampled', params: { sampleRate: fmtRate(container.sampleRate), cutoff: fmtK(cutoffHz) } });
++        level = 'bad';
++    }
++
++    if (container.bitDepth > 0 && container.bitDepth <= 16 && container.sampleRate >= 88200) {
++        verdicts.push({ kind: 'depthMismatch', params: { bitDepth: String(container.bitDepth), sampleRate: fmtRate(container.sampleRate) } });
++        if (level !== 'bad') level = 'warn';
++    }
++
++    if (!container.lossless && cutoffHz) {
++        const bitrate = approximateBitrate(cutoffHz);
++        verdicts.push({
++            kind: 'lossy',
++            params: { codec: container.codec.toUpperCase(), cutoff: fmtK(cutoffHz), bitrate },
++        });
++        if (level === 'ok') level = 'info';
++    }
++
++    if (!verdicts.length) {
++        verdicts.push({
++            kind: 'ok',
++            params: {
++                sampleRate: fmtRate(container.sampleRate),
++                bitDepth: container.bitDepth ? String(container.bitDepth) : '?',
++                cutoff: fmtK(cutoffHz ?? nyquist),
++            },
++        });
++    }
++    return { verdicts, level };
++};
++
++/** 檢查一份音訊的位元組。檔案名稱只用來判斷格式與顯示。 */
++export const inspectAudioBytes = async (bytes: ArrayBuffer, fileName: string): Promise<QualityInspectResult> => {
++    const container = probeContainer(bytes);
++    const failed = (error: QualityInspectResult['error']): QualityInspectResult => ({
++        fileName, ok: false, error, container, measured: null, verdicts: [], level: 'warn',
++    });
++
++    if (container && container.sampleRate > MAX_CONTEXT_RATE) return failed('hiresTooWide');
++
++    // 容器取樣率就是解碼取樣率：decodeAudioData 會重採樣到 context 的取樣率，
++    // 用它自己的取樣率建 context，量到的 Nyquist 才跟容器說的一致。
++    const rate = container?.sampleRate
++        ? Math.min(Math.max(container.sampleRate, 8000), MAX_CONTEXT_RATE)
++        : 48000;
++    const decoded = await decodeAtRate(bytes, rate);
++    if (!decoded) return failed('decodeFailed');
++    if (decoded.length < QUALITY_MIN_SAMPLES) return failed('tooShort');
++
++    const spectrum = averageSpectrum(pickWindow(decoded), decoded.sampleRate);
++    if (!spectrum) return failed('tooShort');
++    const band = summariseBand(spectrum);
++    const { verdicts, level } = judge(container, band.cutoffHz, band.transitionHz);
++
++    return {
++        fileName,
++        ok: true,
++        container,
++        measured: {
++            cutoffHz: band.cutoffHz,
++            nyquistHz: decoded.sampleRate / 2,
++            transitionHz: band.transitionHz,
++            refDb: Math.round(band.refDb * 10) / 10,
++            frames: spectrum.frames,
++        },
++        verdicts,
++        level,
++    };
++};
++
++/** 檔案選擇器拿到的 File。 */
++export const inspectAudioFile = async (file: File): Promise<QualityInspectResult> => {
++    try {
++        return await inspectAudioBytes(await file.arrayBuffer(), file.name);
++    } catch (error) {
++        console.warn('[QualityInspect] could not read file', error);
++        return { fileName: file.name, ok: false, error: 'decodeFailed', container: null, measured: null, verdicts: [], level: 'warn' };
++    }
++};
+diff --git a/src/services/audioQuality/inspectLocalLibrary.ts b/src/services/audioQuality/inspectLocalLibrary.ts
+new file mode 100644
+index 0000000..5eb0584
+--- /dev/null
++++ b/src/services/audioQuality/inspectLocalLibrary.ts
+@@ -0,0 +1,53 @@
++// src/services/audioQuality/inspectLocalLibrary.ts
++// 掃本地曲庫：把每一首已經在庫裡的本機檔案拿來體檢，找出被撐大的「無損」。
++//
++// 一次只讀一首、量完就丟（decodeAudioData 的 AudioBuffer 動輒幾十 MB，iOS 上不能留），
++// 而且照順序跑：同時解碼好幾首會直接把手機記憶體打爆。掃描可以中止，結果逐筆回報。
++
++import { getLocalSongs } from '../db';
++import { getLocalSongArrayBuffer } from '../localMusicService';
++import type { LocalSong } from '../../types';
++import { inspectAudioBytes, type QualityInspectResult } from './inspectAudioQuality';
++
++export interface LibraryScanOptions {
++    /** 最多檢查幾首（從最近加入的開始）；不給就全部。 */
++    limit?: number;
++    abort?: AbortSignal;
++    /** 每完成一首就回報一次，讓介面即時長出結果。 */
++    onProgress?: (done: number, total: number) => void;
++    onResult?: (result: QualityInspectResult) => void;
++}
++
++const AUDIO_FILE = /\.(flac|wav|aiff|aif|mp3|m4a|aac|ogg|opus|wma|ape|wv|dsf|dff)$/i;
++
++/** 讀不到的檔案（權限掉了、檔案搬走了）不算結果，跳過就好。 */
++export const scanLocalLibraryQuality = async ({ limit, abort, onProgress, onResult }: LibraryScanOptions = {}): Promise<QualityInspectResult[]> => {
++    const songs = (await getLocalSongs() as LocalSong[])
++        .filter(song => AUDIO_FILE.test(song.fileName))
++        .sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0));
++    const queue = limit && limit > 0 ? songs.slice(0, limit) : songs;
++
++    const results: QualityInspectResult[] = [];
++    for (let index = 0; index < queue.length; index += 1) {
++        if (abort?.aborted) break;
++        const song = queue[index];
++        try {
++            const bytes = await getLocalSongArrayBuffer(song);
++            if (bytes) {
++                const result = await inspectAudioBytes(bytes, song.fileName);
++                results.push(result);
++                onResult?.(result);
++            }
++        } catch (error) {
++            console.warn('[QualityInspect] could not inspect a local song', song.fileName, error);
++        }
++        onProgress?.(index + 1, queue.length);
++    }
++    return results;
++};
++
++/** 曲庫裡有多少首能檢查的檔案（介面上先說清楚範圍）。 */
++export const countInspectableLocalSongs = async (): Promise<number> => {
++    const songs = await getLocalSongs() as LocalSong[];
++    return songs.filter(song => AUDIO_FILE.test(song.fileName)).length;
++};
+diff --git a/src/services/audioQuality/qualityProbe.ts b/src/services/audioQuality/qualityProbe.ts
+new file mode 100644
+index 0000000..d4475a1
+--- /dev/null
++++ b/src/services/audioQuality/qualityProbe.ts
+@@ -0,0 +1,160 @@
++// src/services/audioQuality/qualityProbe.ts
++// 只讀檔頭：容器「自稱」是幾 kHz、幾 bit，不碰音訊資料。
++//
++// Web Audio 的 decodeAudioData 只給回解碼後的 AudioBuffer，取樣率已經被重採樣到 context 的
++// 取樣率，所以「容器標稱」必須從位元組自己讀，否則量到的 Nyquist 永遠是我們自己選的。
++// 這裡只處理常見的幾種容器；讀不出來的（m4a、ogg…）交給呼叫端當「無法判斷容器」處理。
++
++export interface ContainerProbe {
++    codec: string;
++    /** 容器自稱的取樣率（Hz）；0 = 讀不出來。 */
++    sampleRate: number;
++    /** 容器自稱的位元（FLAC / WAV / AIFF 才有）；0 = 不知道。 */
++    bitDepth: number;
++    channels: number;
++    /** 容器本身是否無損（判斷「假無損」的前提）。 */
++    lossless: boolean;
++    /** 總長（秒）；null = 不知道。 */
++    durationSec: number | null;
++}
++
++const MPEG1_RATES = [44100, 48000, 32000];
++const MPEG2_RATES = [22050, 24000, 16000];
++const MPEG25_RATES = [11025, 12000, 8000];
++
++const probeFlac = (bytes: Uint8Array): ContainerProbe | null => {
++    if (bytes.length < 34 || bytes[0] !== 0x66 || bytes[1] !== 0x4c || bytes[2] !== 0x61 || bytes[3] !== 0x43) return null;
++    // STREAMINFO 的資料從 offset 8 開始：minBlock 2 + maxBlock 2 + minFrame 3 + maxFrame 3 = 10 bytes
++    // 之後 8 bytes 依序是：取樣率 20 bit、聲道 3 bit、位深 5 bit、總樣本數 36 bit。
++    const b18 = bytes[18];
++    const b19 = bytes[19];
++    const b20 = bytes[20];
++    const b21 = bytes[21];
++    const sampleRate = (b18 << 12) | (b19 << 4) | (b20 >> 4);
++    const channels = ((b20 >> 1) & 0x07) + 1;
++    const bitDepth = (((b20 & 0x01) << 4) | (b21 >> 4)) + 1;
++    const totalSamples = (b21 & 0x0f) * 2 ** 32
++        + bytes[22] * 2 ** 24 + bytes[23] * 2 ** 16 + bytes[24] * 2 ** 8 + bytes[25];
++    if (!sampleRate) return null;
++    return {
++        codec: 'flac',
++        sampleRate,
++        bitDepth,
++        channels,
++        lossless: true,
++        durationSec: totalSamples ? totalSamples / sampleRate : null,
++    };
++};
++
++const probeWav = (bytes: Uint8Array): ContainerProbe | null => {
++    if (bytes.length < 44) return null;
++    const tag = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
++    if (tag !== 'RIFF') return null;
++    if (String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]) !== 'WAVE') return null;
++
++    let offset = 12;
++    let sampleRate = 0;
++    let channels = 0;
++    let bitDepth = 0;
++    let dataBytes = 0;
++    while (offset + 8 <= bytes.length) {
++        const id = String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
++        const size = bytes[offset + 4] | (bytes[offset + 5] << 8) | (bytes[offset + 6] << 16) | (bytes[offset + 7] << 24);
++        const body = offset + 8;
++        if (id === 'fmt ' && body + 16 <= bytes.length) {
++            channels = bytes[body + 2] | (bytes[body + 3] << 8);
++            sampleRate = bytes[body + 4] | (bytes[body + 5] << 8) | (bytes[body + 6] << 16) | (bytes[body + 7] << 24);
++            bitDepth = bytes[body + 14] | (bytes[body + 15] << 8);
++            if (!bitDepth) {
++                // WAVE_FORMAT_EXTENSIBLE：容器位深在 validBitsPerSample
++                const valid = body + 18 <= bytes.length ? (bytes[body + 18] | (bytes[body + 19] << 8)) : 0;
++                bitDepth = valid || 0;
++            }
++        } else if (id === 'data') {
++            dataBytes = Math.max(0, size);
++            break;
++        }
++        offset = body + size + (size % 2);
++        if (size <= 0) break;
++    }
++    if (!sampleRate) return null;
++    const durationSec = (channels && bitDepth && dataBytes)
++        ? dataBytes / (sampleRate * channels * Math.max(1, bitDepth / 8))
++        : null;
++    return { codec: 'wav', sampleRate, bitDepth, channels, lossless: true, durationSec };
++};
++
++/** AIFF 的取樣率是 80-bit IEEE 754 extended 格式。 */
++const readExtendedFloat = (bytes: Uint8Array, offset: number): number => {
++    const sign = bytes[offset] & 0x80 ? -1 : 1;
++    const exponent = ((bytes[offset] & 0x7f) << 8) | bytes[offset + 1];
++    if (exponent === 0 && bytes[offset + 2] === 0) return 0;
++    let mantissa = 0;
++    for (let i = 0; i < 8; i += 1) mantissa = mantissa * 256 + bytes[offset + 2 + i];
++    return sign * mantissa * 2 ** (exponent - 16383 - 63);
++};
++
++const probeAiff = (bytes: Uint8Array): ContainerProbe | null => {
++    if (bytes.length < 12) return null;
++    if (String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]) !== 'FORM') return null;
++    const form = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]);
++    if (form !== 'AIFF' && form !== 'AIFC') return null;
++
++    let offset = 12;
++    while (offset + 8 <= bytes.length) {
++        const id = String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
++        const size = bytes[offset + 4] * 2 ** 24 + bytes[offset + 5] * 2 ** 16 + bytes[offset + 6] * 2 ** 8 + bytes[offset + 7];
++        const body = offset + 8;
++        if (id === 'COMM' && body + 18 <= bytes.length) {
++            const channels = bytes[body] * 2 ** 8 + bytes[body + 1];
++            const frames = bytes[body + 2] * 2 ** 24 + bytes[body + 3] * 2 ** 16 + bytes[body + 4] * 2 ** 8 + bytes[body + 5];
++            const bitDepth = bytes[body + 6] * 2 ** 8 + bytes[body + 7];
++            const sampleRate = readExtendedFloat(bytes, body + 8);
++            if (!sampleRate) return null;
++            return {
++                codec: form === 'AIFC' ? 'aifc' : 'aiff',
++                sampleRate: Math.round(sampleRate),
++                bitDepth,
++                channels,
++                lossless: true,
++                durationSec: frames ? frames / sampleRate : null,
++            };
++        }
++        if (size <= 0) break;
++        offset = body + size + (size % 2);
++    }
++    return null;
++};
++
++const probeMp3 = (bytes: Uint8Array): ContainerProbe | null => {
++    let start = 0;
++    if (bytes.length > 10 && bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
++        // ID3v2 標頭 10 bytes，大小是 syncsafe 整數
++        const size = (bytes[6] & 0x7f) * 2 ** 21 + (bytes[7] & 0x7f) * 2 ** 14 + (bytes[8] & 0x7f) * 2 ** 7 + (bytes[9] & 0x7f);
++        start = 10 + size;
++    }
++    const limit = Math.min(bytes.length - 4, start + 4096);
++    for (let i = start; i < limit; i += 1) {
++        if (bytes[i] !== 0xff || (bytes[i + 1] & 0xe0) !== 0xe0) continue;
++        const versionBits = (bytes[i + 1] >> 3) & 0x03;
++        const layerBits = (bytes[i + 1] >> 1) & 0x03;
++        const rateIndex = (bytes[i + 2] >> 2) & 0x03;
++        if (layerBits === 0 || rateIndex === 3) continue;
++        const rates = versionBits === 3 ? MPEG1_RATES : versionBits === 2 ? MPEG2_RATES : MPEG25_RATES;
++        return {
++            codec: 'mp3',
++            sampleRate: rates[rateIndex],
++            bitDepth: 0,
++            channels: ((bytes[i + 3] >> 6) & 0x03) === 3 ? 1 : 2,
++            lossless: false,
++            durationSec: null,
++        };
++    }
++    return null;
++};
++
++/** 讀檔頭得到容器自稱的規格；讀不出來時回 null。 */
++export const probeContainer = (buffer: ArrayBuffer): ContainerProbe | null => {
++    const bytes = new Uint8Array(buffer, 0, Math.min(buffer.byteLength, 64 * 1024));
++    return probeFlac(bytes) ?? probeWav(bytes) ?? probeAiff(bytes) ?? probeMp3(bytes);
++};
+diff --git a/src/services/audioQuality/qualitySpectrum.ts b/src/services/audioQuality/qualitySpectrum.ts
+new file mode 100644
+index 0000000..d8a16cb
+--- /dev/null
++++ b/src/services/audioQuality/qualitySpectrum.ts
+@@ -0,0 +1,132 @@
++// src/services/audioQuality/qualitySpectrum.ts
++// 音質體檢的頻譜部分：8192 點 FFT + Welch 平均，得出「內容到底延伸到哪個頻率」。
++//
++// 判斷假無損的關鍵不是「有沒有高頻」，而是兩件事：
++//   1. 截止點 —— 從高往低，連續 3 個 bin 都高於參考電平 −45 dB 的最高頻率；
++//   2. 過渡帶 —— 截止點減去最後一個還站在 −10 dB 以內的頻率。
++// 編碼器低通是斷崖（幾百 Hz 掉 60 dB）；母帶濾波或升頻是緩坡（好幾 kHz 才掉下去）。
++// 全部用原始 bin，不做頻帶平滑，平滑會把斷崖抹平成緩坡，正是先前誤判的原因。
++
++/** FFT 點數：44.1 kHz 下每 bin 5.38 Hz，夠分辨編碼器的低通牆。 */
++export const QUALITY_FFT_SIZE = 8192;
++const HOP = 4096;
++
++export interface Spectrum {
++    /** 每個 bin 的功率，dB。 */
++    db: Float64Array;
++    /** 每個 bin 的頻寬（Hz）。 */
++    freqPerBin: number;
++    /** 參與平均的 FFT 幀數。 */
++    frames: number;
++}
++
++export interface BandSummary {
++    /** 內容實際延伸到哪（Hz）；找不到時為 null。 */
++    cutoffHz: number | null;
++    /** 音樂本體的參考電平（dB），取 1–8 kHz 的中位數。 */
++    refDb: number;
++    /** 從 −10 dB 掉到截止點的寬度（Hz）；斷崖幾百 Hz，緩坡幾 kHz。 */
++    transitionHz: number | null;
++}
++
++const fft = (re: Float64Array, im: Float64Array): void => {
++    const n = re.length;
++    for (let i = 1, j = 0; i < n; i += 1) {
++        let bit = n >> 1;
++        for (; j & bit; bit >>= 1) j ^= bit;
++        j ^= bit;
++        if (i < j) {
++            const tr = re[i]; re[i] = re[j]; re[j] = tr;
++            const ti = im[i]; im[i] = im[j]; im[j] = ti;
++        }
++    }
++    for (let len = 2; len <= n; len <<= 1) {
++        const ang = (-2 * Math.PI) / len;
++        const wr = Math.cos(ang);
++        const wi = Math.sin(ang);
++        for (let i = 0; i < n; i += len) {
++            let cr = 1;
++            let ci = 0;
++            for (let k = 0; k < len / 2; k += 1) {
++                const a = i + k;
++                const b = i + k + len / 2;
++                const vr = re[b] * cr - im[b] * ci;
++                const vi = re[b] * ci + im[b] * cr;
++                re[b] = re[a] - vr; im[b] = im[a] - vi;
++                re[a] += vr; im[a] += vi;
++                const ncr = cr * wr - ci * wi;
++                ci = cr * wi + ci * wr; cr = ncr;
++            }
++        }
++    }
++};
++
++const median = (values: number[]): number => {
++    if (!values.length) return 0;
++    const sorted = [...values].sort((a, b) => a - b);
++    return sorted[Math.floor(sorted.length / 2)];
++};
++
++/** Welch 平均功率譜：單聲道樣本 + 取樣率 → 每個 bin 的 dB。 */
++export const averageSpectrum = (samples: Float32Array, sampleRate: number): Spectrum | null => {
++    const n = QUALITY_FFT_SIZE;
++    const frames = Math.floor((samples.length - n) / HOP) + 1;
++    if (frames <= 0) return null;
++
++    const win = new Float64Array(n);
++    for (let i = 0; i < n; i += 1) win[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1));
++
++    const acc = new Float64Array(n / 2 + 1);
++    const re = new Float64Array(n);
++    const im = new Float64Array(n);
++    for (let f = 0; f < frames; f += 1) {
++        const offset = f * HOP;
++        for (let i = 0; i < n; i += 1) {
++            re[i] = samples[offset + i] * win[i];
++            im[i] = 0;
++        }
++        fft(re, im);
++        for (let k = 0; k <= n / 2; k += 1) acc[k] += re[k] * re[k] + im[k] * im[k];
++    }
++
++    const db = new Float64Array(acc.length);
++    for (let k = 0; k < acc.length; k += 1) db[k] = 10 * Math.log10(acc[k] / frames + 1e-20);
++    return { db, freqPerBin: sampleRate / n, frames };
++};
++
++/** 截止點、參考電平、過渡帶寬度。 */
++export const summariseBand = (spectrum: Spectrum): BandSummary => {
++    const { db, freqPerBin } = spectrum;
++    const refBins: number[] = [];
++    for (let k = 0; k < db.length; k += 1) {
++        const f = k * freqPerBin;
++        if (f >= 1000 && f <= 8000) refBins.push(db[k]);
++    }
++    const refDb = median(refBins);
++
++    let cutoffHz: number | null = null;
++    for (let k = db.length - 3; k >= 3; k -= 1) {
++        const f = k * freqPerBin;
++        if (f < 2000) break;
++        if (db[k] > refDb - 45 && db[k - 1] > refDb - 45 && db[k - 2] > refDb - 45) {
++            cutoffHz = f;
++            break;
++        }
++    }
++
++    let lastStrongHz: number | null = null;
++    for (let k = db.length - 2; k >= 3; k -= 1) {
++        const f = k * freqPerBin;
++        if (f < 2000) break;
++        if (db[k] >= refDb - 10 && db[k - 1] >= refDb - 10) {
++            lastStrongHz = f;
++            break;
++        }
++    }
++
++    const transitionHz = (cutoffHz !== null && lastStrongHz !== null && cutoffHz > lastStrongHz)
++        ? Math.round(cutoffHz - lastStrongHz)
++        : null;
++
++    return { cutoffHz, refDb, transitionHz };
++};
