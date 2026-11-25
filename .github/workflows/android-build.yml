@@ -1,0 +1,166 @@
+name: Build Android APK
+
+# 給安卓車機／平板用的 APK。跟 iOS 那條 workflow 一樣的骨架：clone 上游 → 打補丁 → 建 web bundle
+# → Capacitor 生成 android 工程 → gradlew 出 APK。
+#
+# 產物有兩個：
+#   Folia-debug.apk   用 debug keystore 簽過，可以直接裝（車機上 sideload 用這個）
+#   Folia-release-unsigned.apk  沒簽名，要自己 apksigner 簽（想上應用商店或長期使用時用）
+#
+# 全程用 ubuntu-latest 自帶的 Android SDK，不需要 macOS，也不需要你的電腦裝風水。
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_commit:
+        description: '上游提交（預設與 quality-inspect.patch 對得上那個）'
+        required: false
+        default: '3b91924f1e2da7b7f8f9cf1e0cd0b25d4a789e6d'
+  push:
+    branches: [ main ]
+    paths:
+      - 'quality-inspect.patch'
+      - '.github/workflows/android-build.yml'
+      - 'capacitor.config.json'
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Fetch upstream Folia source
+        run: |
+          git clone https://github.com/chthollyphile/folia-major.git folia
+          cd folia
+          git fetch --depth 1 origin "${{ github.event.inputs.upstream_commit || '3b91924f1e2da7b7f8f9cf1e0cd0b25d4a789e6d' }}"
+          git checkout --detach FETCH_HEAD
+          echo "Folia @ $(git rev-parse --short HEAD)"
+
+      - name: Apply patch
+        run: |
+          git -C folia apply --verbose ../quality-inspect.patch
+          test -f folia/src/services/localImportedAudioStore.ts
+          echo "patch applied"
+
+      - name: Install dependencies
+        working-directory: folia
+        run: npm ci --allow-remote=all --no-audit --no-fund
+
+      - name: Build web bundle
+        working-directory: folia
+        env:
+          NODE_OPTIONS: --max-old-space-size=6000
+          VITE_NETEASE_API_BASE: ${{ vars.VITE_NETEASE_API_BASE }}
+          VITE_KUGOU_API_BASE: ${{ vars.VITE_KUGOU_API_BASE }}
+          VITE_QQ_API_BASE: ${{ vars.VITE_QQ_API_BASE }}
+        run: |
+          npm run build
+          test -d dist || { echo "dist missing"; exit 1; }
+
+      - name: Install Capacitor
+        working-directory: folia
+        run: |
+          npm install --no-save @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
+          cp ../capacitor.config.json capacitor.config.json
+          node -e "
+            const fs=require('fs');
+            const c=JSON.parse(fs.readFileSync('capacitor.config.json','utf8'));
+            c.android={ allowMixedContent:true, backgroundColor:'#09090b' };
+            fs.writeFileSync('capacitor.config.json', JSON.stringify(c,null,2));
+          "
+          cat capacitor.config.json
+
+      - name: Add Android platform
+        working-directory: folia
+        run: |
+          npx --yes cap add android
+          npx --yes cap sync android
+
+      - name: Tune the Android project for a 9-inch head unit
+        working-directory: folia/android
+        shell: bash
+        run: |
+          set -e
+          MAN=app/src/main/AndroidManifest.xml
+          VERSION=$(node -p "require('../package.json').version")
+
+          # 車機是橫屏固定安裝的：鎖 sensorLandscape（允許左右橫放，不允許轉成豎屏）。
+          # resizeableActivity=false 避免車機的分屏把畫面切碎；hardwareAccelerated 預設就有。
+          python3 - "$MAN" "$VERSION" <<'PY'
+          import re, sys
+          path, version = sys.argv[1], sys.argv[2]
+          src = open(path).read()
+
+          # 版本號寫進 manifest 的 ... 由 build.gradle 出，這裡不動。
+          if 'android:screenOrientation' not in src:
+              src = src.replace('<activity', '<activity android:screenOrientation="sensorLandscape" android:resizeableActivity="false"', 1)
+          if 'android:usesCleartextTraffic' not in src:
+              src = src.replace('<application', '<application android:usesCleartextTraffic="true"', 1)
+          open(path, 'w').write(src)
+          print(open(path).read()[:400])
+          PY
+
+          # versionName / versionCode 跟 package.json 對齊
+          sed -i "s/versionName \".*\"/versionName \"$VERSION\"/" app/build.gradle
+          grep -n "versionName" app/build.gradle
+
+      - name: App icon (from the same 1024 png as iOS)
+        working-directory: folia/android
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
+          SRC=../assets/icon-1024.png
+          IM=convert; command -v convert >/dev/null || IM="magick convert"
+          set -- "mipmap-mdpi 48" "mipmap-hdpi 72" "mipmap-xhdpi 96" "mipmap-xxhdpi 144" "mipmap-xxxhdpi 192"
+          for pair in "$@"; do
+            dir="app/src/main/res/${pair%% *}"
+            size="${pair##* }"
+            mkdir -p "$dir"
+            $IM "$SRC" -resize "${size}x${size}" "$dir/ic_launcher.png"
+            $IM "$SRC" -resize "${size}x${size}" "$dir/ic_launcher_round.png"
+            $IM "$SRC" -resize "$((size * 3))x$((size * 3))" "$dir/ic_launcher_foreground.png" || true
+          done
+          find app/src/main/res -name "ic_launcher*.png" | head -20
+
+      - name: Build debug APK (installable)
+        working-directory: folia/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+          cp app/build/outputs/apk/debug/app-debug.apk ../Folia-debug.apk
+          ls -lh ../Folia-debug.apk
+
+      - name: Build release APK (unsigned)
+        working-directory: folia/android
+        run: |
+          ./gradlew assembleRelease --no-daemon --stacktrace || echo "release build failed, debug apk is still usable"
+          find app/build/outputs/apk/release -name "*.apk" -exec cp {} ../Folia-release-unsigned.apk \; || true
+          ls -lh ../Folia-release-unsigned.apk 2>/dev/null || true
+
+      - name: Report APK facts
+        run: |
+          AAPT=$(ls $ANDROID_HOME/build-tools/*/aapt2 | tail -1)
+          echo "aapt2: $AAPT"
+          $AAPT dump badging Folia-debug.apk | head -8 || true
+          unzip -l Folia-debug.apk | tail -3
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Folia-apk
+          path: |
+            Folia-debug.apk
+            Folia-release-unsigned.apk
+          if-no-files-found: error
