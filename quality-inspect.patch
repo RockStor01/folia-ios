@@ -663,10 +663,10 @@ index 92620c2..04852d7 100644
      interaction,
 diff --git a/src/hooks/useLocalAudioImport.ts b/src/hooks/useLocalAudioImport.ts
 new file mode 100644
-index 0000000..795650c
+index 0000000..b50d19d
 --- /dev/null
 +++ b/src/hooks/useLocalAudioImport.ts
-@@ -0,0 +1,55 @@
+@@ -0,0 +1,67 @@
 +// src/hooks/useLocalAudioImport.ts
 +// 「從檔案匯入」在每個首頁 suite 裡都一樣：一顆隱藏的 input、一個 busy 旗標、一個 handler。
 +// 抽出來是因為 Bravais 空牆、Grid3D 空狀態、TUI 清單都要同一件事，分散寫三份遲早對不上。
@@ -678,6 +678,8 @@ index 0000000..795650c
 +    /** 要掛在 input 上的 ref（input 必須真的在 DOM 裡）。 */
 +    inputRef: React.RefObject<HTMLInputElement | null>;
 +    importing: boolean;
++    /** 匯入進度（第 done 首／共 total 首）；沒在匯入時是 null。 */
++    progress: { done: number; total: number } | null;
 +    /** 開系統選檔器（iOS 走「檔案」App，安卓走 SAF 文件選擇器）。 */
 +    openPicker: () => void;
 +    /** 給 <input type="file" multiple onChange> 用的處理函式。 */
@@ -688,6 +690,7 @@ index 0000000..795650c
 +export const useLocalAudioImport = (): LocalAudioImportController => {
 +    const inputRef = useRef<HTMLInputElement | null>(null);
 +    const [importing, setImporting] = useState(false);
++    const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 +    const [lastResult, setLastResult] = useState<LocalAudioImportController['lastResult']>(null);
 +    const busyRef = useRef(false);
 +
@@ -703,9 +706,17 @@ index 0000000..795650c
 +
 +        busyRef.current = true;
 +        setImporting(true);
++        setProgress({ done: 0, total: picked.length });
 +        void (async () => {
 +            try {
-+                const result = await importAudioFiles(picked);
++                // 進度每五首刷一次就好：每首刷新等於讓整面牆跟著重繪兩千次，反而更卡。
++                const result = await importAudioFiles(picked, {
++                    onProgress: info => {
++                        if (info.done === 0 || info.done === info.total || info.done % 5 === 0) {
++                            setProgress({ done: info.done, total: info.total });
++                        }
++                    },
++                });
 +                setLastResult({ count: result.songs.length, failed: result.failed.length, skipped: result.skipped });
 +                if (result.failed.length > 0) {
 +                    console.warn('[LocalImport] Some files could not be imported:', result.failed);
@@ -716,14 +727,15 @@ index 0000000..795650c
 +            } finally {
 +                busyRef.current = false;
 +                setImporting(false);
++                setProgress(null);
 +            }
 +        })();
 +    }, []);
 +
-+    return { inputRef, importing, openPicker, handleFiles, lastResult };
++    return { inputRef, importing, progress, openPicker, handleFiles, lastResult };
 +};
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..4ee68a2 100644
+index 86f3b6d..a296d48 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -861,13 +873,14 @@ index 86f3b6d..4ee68a2 100644
      "settingsPageGeneral": "General",
      "settingsPageInteraction": "Shortcuts",
      "settingsPageIntegration": "Connections",
-@@ -5242,8 +5214,12 @@ export default {
+@@ -5242,8 +5214,13 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
 +    "importFiles": "Import Files",
 +    "importFilesHint": "Pick audio files from this device and play them straight from local storage. iPhones have no folder picker, so this is the way in.",
 +    "importingFiles": "Importing…",
++    "importingProgress": "Importing {{done}}/{{total}}",
      "sortDescending": "Descending",
      "importFolder": "Import Folder",
 +    "importFolderNothingNew": "Nothing new was added: the picker may have been cancelled, the folder was already imported, or it holds no audio. If this device cannot open a folder picker, use “Import files”.",
@@ -875,7 +888,7 @@ index 86f3b6d..4ee68a2 100644
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..dc7686d 100644
+index 0067e9a..03f0b4b 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -943,13 +956,14 @@ index 0067e9a..dc7686d 100644
      "settingsPageGeneral": "通用",
      "settingsPageInteraction": "快捷操作",
      "settingsPageIntegration": "连接与集成",
-@@ -5242,8 +5284,12 @@ export default {
+@@ -5242,8 +5284,13 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
 +    "importFiles": "导入文件",
 +    "importFilesHint": "选择手机里的音频文件，直接从本地播放；iPhone 上没有文件夹权限，用的是这条路。",
 +    "importingFiles": "正在导入…",
++    "importingProgress": "正在导入 {{done}}/{{total}}",
      "sortDescending": "降序",
      "importFolder": "导入文件夹",
 +    "importFolderNothingNew": "没有新增歌曲：可能取消了选择，也可能这个文件夹已经导入过、或里面没有音频文件（这台装置打不开文件夹选择器的话，请用「导入文件」）。",
@@ -1062,7 +1076,7 @@ index a7b7cc1..b4ca84a 100644
              id: 'refresh-folders',
              labelKey: scanning ? 'options.scanning' : 'options.refresh',
 diff --git a/src/library/suites/bravais/BravaisHomeSources.tsx b/src/library/suites/bravais/BravaisHomeSources.tsx
-index 7ca8d91..a4117e1 100644
+index 7ca8d91..be7940e 100644
 --- a/src/library/suites/bravais/BravaisHomeSources.tsx
 +++ b/src/library/suites/bravais/BravaisHomeSources.tsx
 @@ -29,6 +29,7 @@ import type { BravaisSeamMenuItem } from './bravaisSeamModels';
@@ -1073,7 +1087,7 @@ index 7ca8d91..a4117e1 100644
  import { useBravaisHomeAccount } from './useBravaisHomeAccount';
  import { quickPriority } from './bravaisSeamQuickCells';
  
-@@ -161,7 +162,18 @@ export const BravaisHomeLocal: React.FC<BravaisHomeSourceCommonProps & {
+@@ -161,7 +162,19 @@ export const BravaisHomeLocal: React.FC<BravaisHomeSourceCommonProps & {
      const isEmptyLibrary = directoryTrees.loaded && localSongs.length === 0 && directoryTrees.trees.length === 0;
      // 空曲库时墙面上写一段背景说明（从缝的「⋯」导入文件夹）。
      const canImportFolder = localActions.some(action => action.id === 'import-folder');
@@ -1088,12 +1102,13 @@ index 7ca8d91..a4117e1 100644
 +            onImportFolder: () => void homeActions.importFolder(),
 +            onPickFiles: fileImport.openPicker,
 +            importing: fileImport.importing,
++            progress: fileImport.progress,
 +        }, t)
-+        : undefined), [canImportFolder, isEmptyLibrary, localLibrarySupportsFolders, t, fileImport.importing, fileImport.openPicker, homeActions]);
++        : undefined), [canImportFolder, isEmptyLibrary, localLibrarySupportsFolders, t, fileImport.importing, fileImport.progress, fileImport.openPicker, homeActions]);
  
      useLibraryHomeListRegistration({
          enabled: !isEmptyLibrary,
-@@ -227,6 +239,14 @@ export const BravaisHomeLocal: React.FC<BravaisHomeSourceCommonProps & {
+@@ -227,6 +240,14 @@ export const BravaisHomeLocal: React.FC<BravaisHomeSourceCommonProps & {
      );
  
      return (
@@ -1108,7 +1123,7 @@ index 7ca8d91..a4117e1 100644
          <BravaisHomeDirectory
              {...common}
              layerKey="home:local"
-@@ -245,6 +265,7 @@ export const BravaisHomeLocal: React.FC<BravaisHomeSourceCommonProps & {
+@@ -245,6 +266,7 @@ export const BravaisHomeLocal: React.FC<BravaisHomeSourceCommonProps & {
              onOpen={onOpen}
              shortcutCards={isEmptyLibrary ? NO_CARDS : shortcutCards}
          />
@@ -1204,10 +1219,10 @@ index f8476f7..2a29009 100644
      from { opacity: 0; transform: translateY(6px); }
      to { opacity: 1; transform: none; }
 diff --git a/src/library/suites/bravais/bravaisEmptyWallHint.ts b/src/library/suites/bravais/bravaisEmptyWallHint.ts
-index 4c47f22..6af0afc 100644
+index 4c47f22..8475fcc 100644
 --- a/src/library/suites/bravais/bravaisEmptyWallHint.ts
 +++ b/src/library/suites/bravais/bravaisEmptyWallHint.ts
-@@ -30,11 +30,46 @@ export const onlineWallHint = (
+@@ -30,11 +30,50 @@ export const onlineWallHint = (
      };
  };
  
@@ -1230,15 +1245,19 @@ index 4c47f22..6af0afc 100644
 +        onImportFolder?: () => void;
 +        onPickFiles?: () => void;
 +        importing?: boolean;
++        /** 匯入進度。有就顯示「第幾／共幾首」，因為一次匯入上千首時轉圈圈看起來像卡死。 */
++        progress?: { done: number; total: number } | null;
 +    },
 +    t: TFunction,
 +): BravaisWallHint => {
-+    const { canImportFolder, canPickFiles, onImportFolder, onPickFiles, importing = false } = options;
++    const { canImportFolder, canPickFiles, onImportFolder, onPickFiles, importing = false, progress = null } = options;
 +    const actions: { label: string; onClick: () => void; primary?: boolean }[] = [];
 +
 +    if (canPickFiles && onPickFiles) {
 +        actions.push({
-+            label: importing ? t('localMusic.importingFiles') : t('localMusic.importFiles'),
++            label: importing
++                ? (progress ? t('localMusic.importingProgress', { done: progress.done, total: progress.total }) : t('localMusic.importingFiles'))
++                : t('localMusic.importFiles'),
 +            onClick: onPickFiles,
 +            primary: true,
 +        });
@@ -1283,7 +1302,7 @@ index c35036c..9c17aad 100644
  
  /** 列表面板工具行的排序（本地文件夹才有）。 */
 diff --git a/src/library/suites/grid/home/LocalGrid3DView.tsx b/src/library/suites/grid/home/LocalGrid3DView.tsx
-index 70f5244..93906a6 100644
+index 70f5244..cc1125b 100644
 --- a/src/library/suites/grid/home/LocalGrid3DView.tsx
 +++ b/src/library/suites/grid/home/LocalGrid3DView.tsx
 @@ -1,6 +1,7 @@
@@ -1304,23 +1323,32 @@ index 70f5244..93906a6 100644
      'refresh-folders': <RefreshCw size={13} />,
  };
  
-@@ -88,6 +90,23 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
+@@ -88,6 +90,32 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
      const local = useLibraryHomeLocal({ localSongs, catalog: localLibraryCatalog, activeRow });
      const { snapshot: actionState, importBusy } = useLibraryHomeActions(homeActions);
  
 +    // 檔案匯入：iOS 上沒有資料夾 API，這是唯一能把歌放進曲庫的路。桌面上留著也方便只補幾首。
 +    const fileInputRef = useRef<HTMLInputElement>(null);
 +    const [importingFiles, setImportingFiles] = useState(false);
++    const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null);
 +    const handleFileImport = useCallback(async (files: File[]) => {
 +        if (!files.length || importingFiles) return;
 +        setImportingFiles(true);
++        setImportProgress({ done: 0, total: files.length });
 +        try {
-+            const result = await importAudioFiles(files);
++            const result = await importAudioFiles(files, {
++                onProgress: info => {
++                    if (info.done === 0 || info.done === info.total || info.done % 5 === 0) {
++                        setImportProgress({ done: info.done, total: info.total });
++                    }
++                },
++            });
 +            if (result.failed.length > 0) {
 +                console.warn('[LocalImport] Some files were skipped:', result.failed);
 +            }
 +        } finally {
 +            setImportingFiles(false);
++            setImportProgress(null);
 +        }
 +    }, [importingFiles]);
 +    const openFilePicker = useCallback(() => fileInputRef.current?.click(), []);
@@ -1328,7 +1356,7 @@ index 70f5244..93906a6 100644
      const [localFolderIndex, setLocalFolderIndex] = useDebouncedFocusSync(focusedFolderIndex, setFocusedFolderIndex);
      const [localAlbumIndex, setLocalAlbumIndex] = useDebouncedFocusSync(focusedAlbumIndex, setFocusedAlbumIndex);
      const [localArtistIndex, setLocalArtistIndex] = useDebouncedFocusSync(focusedArtistIndex, setFocusedArtistIndex);
-@@ -121,18 +140,30 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
+@@ -121,18 +149,30 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
  
      const runAction = (id: string) => {
          if (id === 'import-folder') void homeActions.importFolder();
@@ -1367,7 +1395,7 @@ index 70f5244..93906a6 100644
  
      const isEmptyLibrary = directoryTrees.loaded && localSongs.length === 0 && trees.length === 0;
  
-@@ -164,25 +195,56 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
+@@ -164,25 +204,60 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
          },
      });
  
@@ -1408,7 +1436,11 @@ index 70f5244..93906a6 100644
 +                        className="px-6 py-3 rounded-full transition-colors text-sm flex items-center gap-2 bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
 +                    >
 +                        {importingFiles ? <Loader2 size={16} className="animate-spin" /> : <FileAudio size={16} />}
-+                        {importingFiles ? t('localMusic.importingFiles') : t('localMusic.importFiles')}
++                        {importingFiles
++                            ? (importProgress
++                                ? t('localMusic.importingProgress', { done: importProgress.done, total: importProgress.total })
++                                : t('localMusic.importingFiles'))
++                            : t('localMusic.importFiles')}
 +                    </button>
 +                    {localLibrarySupportsFolders && (
 +                        <button
@@ -1432,7 +1464,7 @@ index 70f5244..93906a6 100644
          <DesktopGrid3DSurface
              focusMemoryScope={JSON.stringify(['local', activeSection.key])}
              title={String(activeSection.label)}
-@@ -210,6 +272,7 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
+@@ -210,6 +285,7 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
              ponderControls="local-grid-controls"
              gridMapPonderScope="local-grid-map-page"
          />
@@ -2177,7 +2209,7 @@ index 0000000..df20d8f
 +    }
 +}
 diff --git a/src/services/localMusicService.ts b/src/services/localMusicService.ts
-index 26a0181..c3efa48 100644
+index 26a0181..adf0534 100644
 --- a/src/services/localMusicService.ts
 +++ b/src/services/localMusicService.ts
 @@ -30,6 +30,7 @@ import { hasLocalCoverBinary } from './localCoverBinaryStore';
@@ -2188,7 +2220,7 @@ index 26a0181..c3efa48 100644
  import { useLyricSettingsStore } from '../stores/useLyricSettingsStore';
  import { getLocalLyricFilePriority, isSameLocalLyricFormatOrder, normalizeLocalLyricFormatOrder, type LocalLyricFileFormat } from '../utils/lyrics/localLyricFormatOrder';
  import { readLyricFile } from '../utils/lyrics/lyricFileDecoding';
-@@ -1204,6 +1205,136 @@ export async function importFolder(expectedRootName?: string): Promise<LocalSong
+@@ -1204,6 +1205,166 @@ export async function importFolder(expectedRootName?: string): Promise<LocalSong
      }
  }
  
@@ -2201,6 +2233,20 @@ index 26a0181..c3efa48 100644
 +    failed: { fileName: string; reason: string }[];
 +}
 +
++export interface ImportAudioFilesOptions {
++    /** 每處理完一個檔就叫一次，讓介面能顯示「第幾首／共幾首」。 */
++    onProgress?: (info: { done: number; total: number; fileName: string }) => void;
++}
++
++/**
++ * 一次寫進資料庫的批次大小。
++ *
++ * 為什麼要批次：每次寫入都會先跑 ensureLocalLibraryInitialized（把整庫主鍵掃兩遍），
++ * 2216 首的曲子庫、一首一首地存，就等於把整庫掃了 2000 多次——畫面看起來就是「卡死不動」。
++ * 25 首一存，同一個成本只付 1/25。
++ */
++const IMPORT_SAVE_BATCH_SIZE = 25;
++
 +/**
 + * 直接吃 <input type=file> 挑回來的檔案，把它們當成本地曲庫裡的歌。
 + *
@@ -2209,7 +2255,10 @@ index 26a0181..c3efa48 100644
 + * （時長、抽到的標籤、內嵌封面、ReplayGain 都照舊），所以之後的播放、歌單、歌詞匹配、音質
 + * 體檢都不用改，看到的就是一群普通的本機歌曲。
 + */
-+export async function importAudioFiles(files: File[]): Promise<ImportAudioFilesResult> {
++export async function importAudioFiles(
++    files: File[],
++    options: ImportAudioFilesOptions = {},
++): Promise<ImportAudioFilesResult> {
 +    const result: ImportAudioFilesResult = { songs: [], skipped: 0, failed: [] };
 +    const candidates = files.filter(file => KNOWN_AUDIO_EXTENSIONS.test(file.name));
 +    if (candidates.length === 0) return result;
@@ -2221,8 +2270,13 @@ index 26a0181..c3efa48 100644
 +            .map(song => `${song.fileName}:${song.fileSize}:${song.fileLastModified ?? 0}`),
 +    );
 +
++    const pendingSave: LocalSong[] = [];
++
 +    for (let index = 0; index < candidates.length; index += 1) {
 +        const file = candidates[index];
++        options.onProgress?.({ done: index, total: candidates.length, fileName: file.name });
++        // 每十首讓出一次主執行緒：整批匯入時畫面才不會被一首接一首的解析壓死，進度也才看得到更新。
++        if (index > 0 && index % 10 === 0) await new Promise<void>(resolve => { setTimeout(resolve, 0); });
 +        const signature = `${file.name}:${file.size}:${file.lastModified}`;
 +        if (existingSignatures.has(signature)) {
 +            result.skipped += 1;
@@ -2298,14 +2352,22 @@ index 26a0181..c3efa48 100644
 +                replayGainAlbumPeak: embeddedMetadata.replayGainAlbumPeak,
 +            };
 +
-+            await saveLocalSong(localSong);
 +            existingSignatures.add(signature);
 +            result.songs.push(localSong);
++            pendingSave.push(localSong);
++            // 存檔分批：見 IMPORT_SAVE_BATCH_SIZE 的說明。
++            if (pendingSave.length >= IMPORT_SAVE_BATCH_SIZE) {
++                await saveLocalSongs(pendingSave.splice(0));
++            }
 +        } catch (error) {
 +            console.error(`[LocalMusic][Import] Failed to import ${file.name}:`, error);
 +            result.failed.push({ fileName: file.name, reason: (error as Error)?.message || 'unknown' });
 +        }
 +    }
++
++    // 尾巴那批沒滿的也寫進去。
++    if (pendingSave.length > 0) await saveLocalSongs(pendingSave.splice(0));
++    options.onProgress?.({ done: candidates.length, total: candidates.length, fileName: '' });
 +
 +    if (result.songs.length > 0) notifyLocalMusicUpdated();
 +    console.log(`[LocalMusic][Import] Imported ${result.songs.length} file(s), skipped ${result.skipped}, failed ${result.failed.length}`);
@@ -2325,7 +2387,7 @@ index 26a0181..c3efa48 100644
  /** Imports a folder the caller already holds instead of asking the picker (the dev mock song's OPFS folder). */
  export async function importDirectoryHandle(dirHandle: FileSystemDirectoryHandle): Promise<LocalSong[]> {
      return await runLocalFolderMutation(() => importFolderContents(dirHandle));
-@@ -1614,6 +1745,7 @@ export async function deleteLocalSong(id: string): Promise<void> {
+@@ -1614,6 +1775,7 @@ export async function deleteLocalSong(id: string): Promise<void> {
      await Promise.all([
          dbDeleteLocalSong(id),
          removeCachedCover(`cover_local_${id}`),
@@ -2333,7 +2395,7 @@ index 26a0181..c3efa48 100644
      ]);
  }
  
-@@ -1738,6 +1870,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
+@@ -1738,6 +1900,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
          }
      }
  
@@ -2350,7 +2412,7 @@ index 26a0181..c3efa48 100644
      // No accessible handle available - permission may need to be restored or the file moved.
      console.warn(`[LocalMusic] No accessible handle for song ${song.id}. Permission restore or re-import is required.`);
      return null;
-@@ -1755,6 +1897,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+@@ -1755,6 +1927,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
          }
      }
  
@@ -2360,7 +2422,7 @@ index 26a0181..c3efa48 100644
      const recoveredHandle = await recoverFileHandleFromPersistedDirectory(song);
      if (!recoveredHandle) return null;
      try {
-@@ -1777,6 +1922,14 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+@@ -1777,6 +1952,14 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
  export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuffer | null> {
      const fileHandle = await getAccessibleFileHandle(song);
      if (!fileHandle) {
@@ -2375,7 +2437,7 @@ index 26a0181..c3efa48 100644
          console.warn(`[LocalMusic] No accessible handle for song ${song.id} (automix bytes)`);
          return null;
      }
-@@ -1880,6 +2033,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
+@@ -1880,6 +2063,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
      await Promise.all([
          dbDeleteLocalSongs(uniqueSongIds),
          ...uniqueSongIds.map(id => removeCachedCover(`cover_local_${id}`)),
