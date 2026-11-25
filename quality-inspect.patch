@@ -734,8 +734,98 @@ index 0000000..b50d19d
 +
 +    return { inputRef, importing, progress, openPicker, handleFiles, lastResult };
 +};
+diff --git a/src/hooks/useTrackQualityLabels.ts b/src/hooks/useTrackQualityLabels.ts
+new file mode 100644
+index 0000000..8e34f78
+--- /dev/null
++++ b/src/hooks/useTrackQualityLabels.ts
+@@ -0,0 +1,84 @@
++// src/hooks/useTrackQualityLabels.ts
++// 曲庫列表「音質」欄的資料來源：把列表上的本機歌 id 一批丟進去，逐首讀檔頭、必要時再量真假無損。
++// 只處理前 MAX_HEADER_ROWS 首（列表一次也看不完那麼多），量測更少（MAX_MEASURE_ROWS），
++// 免得一打開兩千首的曲庫就開始解碼兩千次。
++
++import { useEffect, useRef, useState } from 'react';
++import type { LocalSong } from '../types';
++import {
++    measureLocalQuality,
++    readLocalQuality,
++    resolveLocalSong,
++    type LocalQualityEntry,
++} from '../services/audioQuality/localQualityIndex';
++
++/** 讀檔頭的行數上限（很便宜，但也不該一次排兩千個）。 */
++const MAX_HEADER_ROWS = 150;
++/** 真的解碼量光譜的行數上限：解一首就要讀整檔 + 20 秒 FFT。 */
++const MAX_MEASURE_ROWS = 40;
++
++export type TrackQualityRow = Pick<LocalQualityEntry, 'sampleRate' | 'bitDepth' | 'verdict'>;
++
++/**
++ * `entries` 是「行的鍵 → 本機歌 id」；沒有本機歌的行（在線歌）不放進來，介面顯示成空白。
++ * 回傳的 Map 只用行的鍵當 key，與列表的 entryKey 一致。
++ */
++export const useTrackQualityLabels = (
++    entries: ReadonlyArray<{ key: string; songId: string }>,
++): Map<string, TrackQualityRow> => {
++    const [rows, setRows] = useState<Map<string, TrackQualityRow>>(() => new Map());
++    const entriesRef = useRef(entries);
++    entriesRef.current = entries;
++    // 換清單（換頁／換集合）就從頭再跑：同一份曲庫靠 service 的記憶體與 metadata_cache 命中，成本很低。
++    const signature = entries.slice(0, MAX_HEADER_ROWS).map(entry => entry.songId).join('|');
++
++    useEffect(() => {
++        let cancelled = false;
++        const queue = entriesRef.current.slice(0, MAX_HEADER_ROWS);
++        if (queue.length === 0) {
++            setRows(new Map());
++            return () => { cancelled = true; };
++        }
++
++        const emit = (key: string, row: TrackQualityRow) => {
++            if (cancelled) return;
++            setRows(previous => {
++                const next = new Map(previous);
++                next.set(key, row);
++                return next;
++            });
++        };
++
++        void (async () => {
++            // 第一輪：只讀檔頭。有損編碼在這裡就定案，無損先掛「待量」。
++            const losslessQueue: Array<{ key: string; song: LocalSong }> = [];
++            for (let index = 0; index < queue.length; index += 1) {
++                if (cancelled) return;
++                const { key, songId } = queue[index];
++                const song = await resolveLocalSong(songId);
++                if (!song) continue;
++                const entry = await readLocalQuality(song);
++                if (!entry) continue;
++                emit(key, { sampleRate: entry.sampleRate, bitDepth: entry.bitDepth, verdict: entry.verdict });
++                if (entry.lossless && !entry.verdict && losslessQueue.length < MAX_MEASURE_ROWS) {
++                    losslessQueue.push({ key, song });
++                }
++                // 每十首讓出主執行緒：讀檔頭也是 I/O，別把畫面卡住。
++                if (index > 0 && index % 10 === 0) await new Promise<void>(resolve => { setTimeout(resolve, 0); });
++            }
++
++            // 第二輪：無損容器逐首解碼量光譜（一次一首，記憶體才撐得住）。
++            for (const item of losslessQueue) {
++                if (cancelled) return;
++                const entry = await measureLocalQuality(item.song);
++                if (!entry) continue;
++                emit(item.key, { sampleRate: entry.sampleRate, bitDepth: entry.bitDepth, verdict: entry.verdict });
++                await new Promise<void>(resolve => { setTimeout(resolve, 0); });
++            }
++        })();
++
++        return () => { cancelled = true; };
++    }, [signature]);
++
++    return rows;
++};
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..067484a 100644
+index 86f3b6d..c0bad99 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -865,7 +955,20 @@ index 86f3b6d..067484a 100644
      },
      "special": {"liked": "Liked Songs", "cloud": "Cloud Drive", "personal-fm": "Personal FM", "fm-station": "Radio", "daily": "Daily Picks", "all-songs": "All Songs", "local-favorites": "Favorites", "navidrome-random": "Random", "navidrome-favorites": "Starred"}
    },
-@@ -619,7 +590,7 @@ export default {
+@@ -606,6 +577,12 @@ export default {
+     "columnArtist": "Artist",
+     "columnAlbum": "Album",
+     "columnTime": "Time",
++    "columnQuality": "Quality",
++    "qualityTrueLossless": "Lossless",
++    "qualityFakeLossless": "Fake lossless",
++    "qualityLossy": "Lossy",
++    "qualityUnknown": "Unknown",
++    "qualityPending": "Measuring",
+     "enqueue": "Add to queue",
+     "hints": "↑↓ move · PgUp/PgDn page · Home/End · Enter play · Shift+Enter queue · {{mod}}+Enter play all · {{mod}}+Shift+Enter queue all · Esc back",
+     "hintRemove": "Del remove",
+@@ -619,7 +596,7 @@ export default {
      "confirmDelete": "Delete “{{name}}”?",
      "rendererSwitch": "Collection view",
      "rendererGrid": "Grid",
@@ -874,7 +977,7 @@ index 86f3b6d..067484a 100644
      "homeTitle": "library",
      "homeSources": "sources",
      "columnName": "Name",
-@@ -2796,6 +2767,7 @@ export default {
+@@ -2796,6 +2773,7 @@ export default {
      "settingsPageHome": "Home & playlists",
      "settingsPagePlayback": "Playback",
      "settingsPageLyrics": "Lyrics",
@@ -882,7 +985,7 @@ index 86f3b6d..067484a 100644
      "settingsPageGeneral": "General",
      "settingsPageInteraction": "Shortcuts",
      "settingsPageIntegration": "Connections",
-@@ -5242,8 +5214,13 @@ export default {
+@@ -5242,8 +5220,13 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -896,7 +999,7 @@ index 86f3b6d..067484a 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6030,13 @@ export default {
+@@ -6053,8 +6036,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -912,7 +1015,7 @@ index 86f3b6d..067484a 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..016c9e1 100644
+index 0067e9a..b0165cd 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -972,7 +1075,20 @@ index 0067e9a..016c9e1 100644
      },
      "special": {"liked": "我喜欢的音乐", "cloud": "云盘", "personal-fm": "私人FM", "fm-station": "电台", "daily": "每日推荐", "all-songs": "全部歌曲", "local-favorites": "我喜欢", "navidrome-random": "随机音乐", "navidrome-favorites": "收藏"}
    },
-@@ -619,7 +660,7 @@ export default {
+@@ -606,6 +647,12 @@ export default {
+     "columnArtist": "歌手",
+     "columnAlbum": "专辑",
+     "columnTime": "时长",
++    "columnQuality": "音質",
++    "qualityTrueLossless": "真無損",
++    "qualityFakeLossless": "假無損",
++    "qualityLossy": "有損",
++    "qualityUnknown": "無法判斷",
++    "qualityPending": "量測中",
+     "enqueue": "加入播放队列",
+     "hints": "↑↓ 移动 · PgUp/PgDn 翻页 · Home/End · Enter 播放 · Shift+Enter 入队 · {{mod}}+Enter 播放全部 · {{mod}}+Shift+Enter 全部入队 · Esc 返回",
+     "hintRemove": "Del 删除",
+@@ -619,7 +666,7 @@ export default {
      "confirmDelete": "删除「{{name}}」？",
      "rendererSwitch": "集合视图",
      "rendererGrid": "网格",
@@ -981,7 +1097,7 @@ index 0067e9a..016c9e1 100644
      "homeTitle": "曲库",
      "homeSources": "来源",
      "columnName": "名称",
-@@ -2796,6 +2837,7 @@ export default {
+@@ -2796,6 +2843,7 @@ export default {
      "settingsPageHome": "主页与歌单",
      "settingsPagePlayback": "播放控制",
      "settingsPageLyrics": "歌词",
@@ -989,7 +1105,7 @@ index 0067e9a..016c9e1 100644
      "settingsPageGeneral": "通用",
      "settingsPageInteraction": "快捷操作",
      "settingsPageIntegration": "连接与集成",
-@@ -5242,8 +5284,13 @@ export default {
+@@ -5242,8 +5290,13 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -1003,7 +1119,7 @@ index 0067e9a..016c9e1 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6098,13 @@ export default {
+@@ -6051,8 +6104,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -1612,6 +1728,103 @@ index 347bbc3..6d2f379 100644
              />
              <LibraryTuiDirectory
                  {...common}
+diff --git a/src/library/suites/tui/LibraryTuiRow.tsx b/src/library/suites/tui/LibraryTuiRow.tsx
+index c1d9db4..882186c 100644
+--- a/src/library/suites/tui/LibraryTuiRow.tsx
++++ b/src/library/suites/tui/LibraryTuiRow.tsx
+@@ -8,7 +8,7 @@ import { canResolveSongCatalogRef } from '../../../services/onlineMusic/catalogR
+ import { resolveTrackAlbumLink, resolveTrackArtistLinks, type TrackArtistLink } from '../../core/shared/trackLinks';
+ 
+ // src/library/suites/tui/LibraryTuiRow.tsx
+-// TUI 的一行：序号、歌名、歌手、专辑、时长，等宽排列。单击移动焦点，双击播放，[+] 入队；
++// TUI 的一行：序号、歌名、歌手、专辑、时长、音質，等宽排列。单击移动焦点，双击播放，[+] 入队；
+ // 本地歌在集合支持时多一个 [i]（手动匹配在线信息，打开宿主挂载的对话框）。删除请求还没回来的行标 `~` 并变淡。
+ // 歌手名与专辑名在能解析出目录引用时是按钮（P4.4，规则与网格卡片同一份：core/shared/trackLinks），点了打开嵌套的
+ // 歌手页 / 专辑；样式与歌手页歌曲行上的链接一致（data-tui-link）。
+@@ -38,9 +38,11 @@ export type LibraryTuiRowProps = {
+     onOpenAlbumRow?: (row: number) => void;
+     /** suite 声明了 open-artist 才给：能解析出目录引用的歌手名画成按钮。 */
+     onOpenArtistRow?: (row: number, link: TrackArtistLink) => void;
++    /** 每行的音質欄文字（鍵是 entryKey）；沒有本機檔的行留空。 */
++    qualityText: ReadonlyMap<string, string>;
+ };
+ 
+-export const LIBRARY_TUI_COLUMNS = 'grid-cols-[2ch_6ch_minmax(0,3fr)_minmax(0,2fr)_minmax(0,2fr)_6ch_7ch]';
++export const LIBRARY_TUI_COLUMNS = 'grid-cols-[2ch_6ch_minmax(0,3fr)_minmax(0,2fr)_minmax(0,2fr)_6ch_16ch_7ch]';
+ 
+ const cell = 'truncate whitespace-pre';
+ const linkClass = 'hover:underline hover:opacity-100';
+@@ -65,6 +67,7 @@ const LibraryTuiRow = ({
+     onMatchRow,
+     onOpenAlbumRow,
+     onOpenArtistRow,
++    qualityText,
+ }: RowComponentProps<LibraryTuiRowProps>): React.ReactElement | null => {
+     const displayIndex = rowDisplayIndexes[index];
+     const track = displayIndex === undefined ? undefined : tracks[displayIndex];
+@@ -139,6 +142,7 @@ const LibraryTuiRow = ({
+                 ) : albumName}
+             </span>
+             <span className="tabular-nums opacity-55">{formatTime((track.durationMs || 0) / 1000)}</span>
++            <span className="truncate whitespace-pre tabular-nums opacity-60" data-tui-quality>{qualityText.get(entryKey) ?? ''}</span>
+             <span className="flex gap-x-1">
+                 {canMatch ? (
+                     <button
+diff --git a/src/library/suites/tui/LibraryTuiView.tsx b/src/library/suites/tui/LibraryTuiView.tsx
+index d5a1e1c..0545888 100644
+--- a/src/library/suites/tui/LibraryTuiView.tsx
++++ b/src/library/suites/tui/LibraryTuiView.tsx
+@@ -22,6 +22,8 @@ import { colorWithAlpha } from '../../../utils/colorMix';
+ import { PRIMARY_MODIFIER_LABEL } from '../../../utils/platform';
+ import LibraryTuiHeader from './LibraryTuiHeader';
+ import LibraryTuiRow, { LIBRARY_TUI_COLUMNS, LIBRARY_TUI_ROW_HEIGHT, type LibraryTuiRowProps } from './LibraryTuiRow';
++import { formatTrackQuality } from './libraryTuiQuality';
++import { useTrackQualityLabels } from '../../../hooks/useTrackQualityLabels';
+ import LibraryTuiPrompt, { type LibraryTuiPromptRequest } from './LibraryTuiPrompt';
+ import { useLibraryTuiFocus } from './useLibraryTuiFocus';
+ import { useLibraryTuiKeyboard } from './useLibraryTuiKeyboard';
+@@ -256,6 +258,21 @@ const LibraryTuiView: React.FC<LibraryCollectionSurfaceProps> = ({
+     }, [focus.focusedRow, focus.rowDisplayIndexes.length, listRef]);
+ 
+     const accentColor = theme.accentColor || 'currentColor';
++
++    // 「音質」欄：只問行上的本機歌（localRef.songId），在線歌沒有本機檔可量，留空。
++    const qualityEntries = useMemo(() => focus.rowDisplayIndexes
++        .map((displayIndex, row) => {
++            const songId = (view.displayTracks[displayIndex] as { localRef?: { songId?: string } } | undefined)?.localRef?.songId;
++            const key = focus.rowKeys[row];
++            return songId && key ? { key, songId } : null;
++        })
++        .filter((entry): entry is { key: string; songId: string } => entry !== null),
++    [focus.rowDisplayIndexes, focus.rowKeys, view.displayTracks]);
++    const qualityRows = useTrackQualityLabels(qualityEntries);
++    const qualityText = useMemo(() => new Map(
++        [...qualityRows].map(([key, row]) => [key, formatTrackQuality(row, t)]),
++    ), [qualityRows, t]);
++
+     const rowProps = useMemo<LibraryTuiRowProps>(() => ({
+         tracks: view.displayTracks,
+         rowDisplayIndexes: focus.rowDisplayIndexes,
+@@ -274,9 +291,10 @@ const LibraryTuiView: React.FC<LibraryCollectionSurfaceProps> = ({
+         onMatchRow: canMatchSong ? matchRow : undefined,
+         onOpenAlbumRow: canOpenAlbum ? openAlbumAt : undefined,
+         onOpenArtistRow: canOpenArtist ? openArtistAt : undefined,
++        qualityText,
+     // playRow / enqueueRow / matchRow / openAlbumAt / openArtistAt 每次渲染都是新函数，但它们只读当前的 focus、view 与控制器。
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+-    }), [accentColor, canMatchSong, canOpenAlbum, canOpenArtist, focus.focusRow, focus.focusedRow, focus.rowDisplayIndexes, focus.rowKeys, isDaylight, pendingKeys, t, view.displayTracks]);
++    }), [accentColor, canMatchSong, canOpenAlbum, canOpenArtist, focus.focusRow, focus.focusedRow, focus.rowDisplayIndexes, focus.rowKeys, isDaylight, pendingKeys, qualityText, t, view.displayTracks]);
+ 
+     const isEmpty = focus.rowDisplayIndexes.length === 0;
+     const isLoading = !snapshot || snapshot.status === 'idle' || snapshot.status === 'loading';
+@@ -327,6 +345,7 @@ const LibraryTuiView: React.FC<LibraryCollectionSurfaceProps> = ({
+                 <span>{t('libraryTui.columnArtist')}</span>
+                 <span>{t('libraryTui.columnAlbum')}</span>
+                 <span>{t('libraryTui.columnTime')}</span>
++                <span>{t('libraryTui.columnQuality')}</span>
+                 <span />
+             </div>
+             <div ref={listRegionRef} role="listbox" aria-label={collection.name} className="relative min-h-0 flex-1">
 diff --git a/src/library/suites/tui/entry.ts b/src/library/suites/tui/entry.ts
 index 2882444..96ed0e0 100644
 --- a/src/library/suites/tui/entry.ts
@@ -2371,7 +2584,7 @@ index 0000000..df20d8f
 +    }
 +}
 diff --git a/src/services/localMusicService.ts b/src/services/localMusicService.ts
-index 26a0181..1411741 100644
+index 26a0181..1345ea3 100644
 --- a/src/services/localMusicService.ts
 +++ b/src/services/localMusicService.ts
 @@ -30,6 +30,7 @@ import { hasLocalCoverBinary } from './localCoverBinaryStore';
@@ -2605,22 +2818,60 @@ index 26a0181..1411741 100644
      const recoveredHandle = await recoverFileHandleFromPersistedDirectory(song);
      if (!recoveredHandle) return null;
      try {
-@@ -1777,6 +1973,14 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
- export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuffer | null> {
+@@ -1774,14 +1970,16 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+  * from its own handle. Mirrors getAudioFromLocalSong's resolution (accessible handle, else a recover)
+  * but returns the ArrayBuffer. Null when no handle can be reached - permission not restored, or moved.
+  */
+-export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuffer | null> {
++async function readLocalSongFile(song: LocalSong): Promise<File | null> {
      const fileHandle = await getAccessibleFileHandle(song);
      if (!fileHandle) {
+-        console.warn(`[LocalMusic] No accessible handle for song ${song.id} (automix bytes)`);
 +        const importedFile = await readImportedAudio(song.id);
-+        if (importedFile) {
-+            try {
-+                return await importedFile.arrayBuffer();
-+            } catch (error) {
-+                console.error('[LocalMusic] Failed to read imported bytes:', error);
-+            }
-+        }
-         console.warn(`[LocalMusic] No accessible handle for song ${song.id} (automix bytes)`);
++        if (importedFile) return importedFile;
++        console.warn(`[LocalMusic] No accessible handle for song ${song.id}`);
          return null;
      }
-@@ -1880,6 +2084,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
+     try {
+-        return await (await fileHandle.getFile()).arrayBuffer();
++        return await fileHandle.getFile();
+     } catch (error) {
+         console.error('[LocalMusic] Failed to read local bytes:', error);
+         fileHandleMap.delete(song.id);
+@@ -1789,6 +1987,32 @@ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuf
+     }
+ }
+ 
++export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuffer | null> {
++    const file = await readLocalSongFile(song);
++    if (!file) return null;
++    try {
++        return await file.arrayBuffer();
++    } catch (error) {
++        console.error('[LocalMusic] Failed to read bytes:', error);
++        return null;
++    }
++}
++
++/**
++ * 只讀開頭幾十 KB：音質欄位要的是容器自稱的取樣率／位深，`probeContainer` 也只讀前 64 KB。
++ * 整首讀進來（FLAC 動輒五十 MB）只為了看檔頭，列表一滾就把記憶體吃光，所以切一段就好。
++ */
++export async function getLocalSongHeaderBytes(song: LocalSong, byteLength = 65536): Promise<ArrayBuffer | null> {
++    const file = await readLocalSongFile(song);
++    if (!file) return null;
++    try {
++        return await file.slice(0, Math.min(byteLength, file.size)).arrayBuffer();
++    } catch (error) {
++        console.error('[LocalMusic] Failed to read header bytes:', error);
++        return null;
++    }
++}
++
+ // Extracts and persists one song's embedded cover after an explicit playback-time request.
+ async function extractAndPersistSongCover(
+     song: LocalSong,
+@@ -1880,6 +2104,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
      await Promise.all([
          dbDeleteLocalSongs(uniqueSongIds),
          ...uniqueSongIds.map(id => removeCachedCover(`cover_local_${id}`)),
