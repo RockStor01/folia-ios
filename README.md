@@ -39,3 +39,46 @@
 - iOS 端相對於桌面版功能縮水：沒有桌面歌詞、遙控窗、Wallpaper 模式、Folium 模組、影片匯出
 - 本機音樂在 iOS 上只能透過「檔案」App 匯入，沒有資料夾掃描
 - AGPL-3.0：自己編譯自用沒問題，對外分發需要同樣開源
+
+---
+
+# Folia Android（APK）自行構建包
+
+同一份補丁、同一套流程，換成 Android 骨幹。目標裝置是**梁山嘟嘟 S3 這類 9 寸安卓車機**，但普通安卓手機／平板同樣能裝。
+
+## 包含什麼
+
+| 檔案 | 作用 |
+| --- | --- |
+| `.github/workflows/android-build.yml` | clone 上游 → 打補丁 → `npm ci` + `npm run build` → Capacitor 加 Android 平台 → 改 Manifest（橫屏鎖定、cleartext）→ 換圖示 → `gradlew assembleDebug` / `assembleRelease` → 上傳 APK |
+| `capacitor.config.json` | 加上 `android.allowMixedContent`、背景色 `#09090b`（避免啟動白屏） |
+| `assets/icon-1024.png` | 同一張圖示，workflow 會縮成 mdpi～xxxhdpi 各尺寸 |
+
+## 產物
+
+一次 build 出兩個 APK：
+
+- **Folia-debug.apk**（約 18 MB）——用 Actions runner 自帶的 debug keystore 簽過，**可以直接安裝**。車機 sideload 就用這個。
+- **Folia-release-unsigned.apk**（約 16 MB）——沒簽名。要自己簽：`apksigner sign --ks 你的.keystore --out Folia.apk Folia-release-unsigned.apk`
+
+## 裝到車機上
+
+1. U 盤／TF 卡把 `Folia-debug.apk` 放進去，插到車機，用自帶的檔案管理器點開安裝（多數車機會攔「未知來源」，要去設定裡放行）。
+2. 或走 adb：`adb connect <車機IP>:5555` → `adb install -r Folia-debug.apk`（嘟嘟車機一般要先去開發者選項開 USB 調試／網絡調試）。
+3. 裝完第一次開可能會空白幾秒——那是 WebView 在載入 9 寸屏的完整前端，不是卡死。
+
+## 針對 9 寸車機做的設定
+
+- `android:screenOrientation="sensorLandscape"`：鎖橫屏，允許左右橫放，不會被車機轉成豎屏。
+- `android:resizeableActivity="false"`：不進分屏，避免車機的分屏把畫面切碎。
+- `android:usesCleartextTraffic="true"`：要接自己架的 HTTP 音源 API 才不會被攔。
+- `versionName` 跟 `package.json` 對齊（目前 0.8.0），包名 `top.izuna.foliamajor`。
+- minSdk 23（Android 6.0）/ compileSdk 34，嘟嘟這類 Android 10 車機沒問題。
+
+## 已知限制（照實說）
+
+- **這兩個 APK 我沒在真的車機上跑過**（手上只有 Linux 雲主機，沒有安卓裝置也沒有模擬器）。編譯、簽名、內容我都驗過（`aapt2 dump badging` 確認包名版本、`META-INF/CERT.RSA` 確認已簽、`assets/public` 裡確認含新介面），但**車機那一側的表現要你裝上去看**。
+- 車機的 WebView 版本是關鍵：安卓車機的 System WebView 常常很舊（甚至沒連網更新過）。Folia 用了不少現代前端特性，WebView 低於 Chrome 80 很可能白屏。真遇到就裝一個獨立的 Android System WebView APK 更新它。
+- 車機的 GPU 多半沒有 WebGL2，歌詞視覺器會走降級路徑（能播，但特效少）。
+- 沒有桌面版的歌詞視窗、遙控窗、Wallpaper 模式、Folium 模組、影片匯出。
+- 本機音樂在安卓上跟 iOS 一樣只能靠「導入文件」匯入（這版已內建），沒有資料夾掃描——要資料夾掃描得等有人做 Android 的 SAF 適配。

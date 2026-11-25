@@ -168,7 +168,9 @@ jobs:
         run: |
           AAPT=$(ls $ANDROID_HOME/build-tools/*/aapt2 | tail -1)
           echo "aapt2: $AAPT"
-          $AAPT dump badging Folia-debug.apk | head -8 || true
+          $AAPT dump badging Folia-debug.apk | head -10 || true
+          echo "--- manifest（確認橫屏鎖定與 cleartext 有寫進去）"
+          $AAPT dump xmltree --file AndroidManifest.xml Folia-debug.apk | grep -iE "screenOrientation|resizeableActivity|usesCleartextTraffic|minSdk" || true
           unzip -l Folia-debug.apk | tail -3
 
       - name: Upload APK
