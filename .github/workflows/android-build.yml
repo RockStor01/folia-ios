@@ -26,6 +26,8 @@ on:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -184,3 +186,13 @@ jobs:
             Folia-debug.apk
             Folia-release-unsigned.apk
           if-no-files-found: error
+
+      - name: Publish to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: build-${{ github.run_number }}
+          prerelease: true
+          files: |
+            Folia-debug.apk
+            Folia-release-unsigned.apk

@@ -133,3 +133,12 @@ jobs:
           name: Folia-ipa
           path: Folia.ipa
           if-no-files-found: error
+
+      - name: Publish to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}-ios
+          name: build-${{ github.run_number }}-ios
+          prerelease: true
+          files: |
+            Folia.ipa
