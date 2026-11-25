@@ -723,7 +723,7 @@ index 0000000..795650c
 +    return { inputRef, importing, openPicker, handleFiles, lastResult };
 +};
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..45a4171 100644
+index 86f3b6d..4ee68a2 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -861,7 +861,7 @@ index 86f3b6d..45a4171 100644
      "settingsPageGeneral": "General",
      "settingsPageInteraction": "Shortcuts",
      "settingsPageIntegration": "Connections",
-@@ -5242,6 +5214,9 @@ export default {
+@@ -5242,8 +5214,12 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -870,9 +870,12 @@ index 86f3b6d..45a4171 100644
 +    "importingFiles": "Importing…",
      "sortDescending": "Descending",
      "importFolder": "Import Folder",
++    "importFolderNothingNew": "Nothing new was added: the picker may have been cancelled, the folder was already imported, or it holds no audio. If this device cannot open a folder picker, use “Import files”.",
      "importing": "Importing...",
+     "importPlaylist": "Import Playlist",
+     "importingPlaylist": "Importing playlist...",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..0b95ac7 100644
+index 0067e9a..dc7686d 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -940,7 +943,7 @@ index 0067e9a..0b95ac7 100644
      "settingsPageGeneral": "通用",
      "settingsPageInteraction": "快捷操作",
      "settingsPageIntegration": "连接与集成",
-@@ -5242,6 +5284,9 @@ export default {
+@@ -5242,8 +5284,12 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -949,7 +952,10 @@ index 0067e9a..0b95ac7 100644
 +    "importingFiles": "正在导入…",
      "sortDescending": "降序",
      "importFolder": "导入文件夹",
++    "importFolderNothingNew": "没有新增歌曲：可能取消了选择，也可能这个文件夹已经导入过、或里面没有音频文件（这台装置打不开文件夹选择器的话，请用「导入文件」）。",
      "importing": "导入中...",
+     "importPlaylist": "导入歌单",
+     "importingPlaylist": "正在导入歌单...",
 diff --git a/src/index.css b/src/index.css
 index 45c14da..a9fce0d 100644
 --- a/src/index.css
@@ -981,27 +987,100 @@ index 45c14da..a9fce0d 100644
 +  .group .group-hover\:max-w-28 { max-width: 7rem; }
 +  .group .group-hover\:ml-1\.5 { margin-left: 0.375rem; }
 +}
+diff --git a/src/library/core/home/homeModel.contract.ts b/src/library/core/home/homeModel.contract.ts
+index 53d20bb..aea1238 100644
+--- a/src/library/core/home/homeModel.contract.ts
++++ b/src/library/core/home/homeModel.contract.ts
+@@ -185,6 +185,8 @@ export type LibraryHomeScanProgress = {
+ 
+ /** 首页动作控制器的快照：哪个导入在进行、扫描进度。 */
+ export type LibraryHomeActionsSnapshot = {
++    /** 這台裝置能不能叫出資料夾選擇器（iPhone、安卓 WebView 不行）。動作產生層據此決定給不給「導入文件夾」；缺省當成可以。 */
++    canImportFolder?: boolean;
+     importingFolder: boolean;
+     refreshingFolders: boolean;
+     importingPlaylist: boolean;
+diff --git a/src/library/core/home/libraryHomeActions.service.ts b/src/library/core/home/libraryHomeActions.service.ts
+index bb971a5..e043349 100644
+--- a/src/library/core/home/libraryHomeActions.service.ts
++++ b/src/library/core/home/libraryHomeActions.service.ts
+@@ -27,6 +27,7 @@ const UNSUPPORTED: LibraryHomeActionResult = { ok: false, reason: 'unsupported'
+ const FAILED: LibraryHomeActionResult = { ok: false, reason: 'failed' };
+ 
+ const IDLE: LibraryHomeActionsSnapshot = {
++    canImportFolder: true,
+     importingFolder: false,
+     refreshingFolders: false,
+     importingPlaylist: false,
+@@ -35,7 +36,8 @@ const IDLE: LibraryHomeActionsSnapshot = {
+ 
+ /** 创建首页动作控制器。端口在调用时现读（宿主每次渲染都可能换新的曲库与回调）。 */
+ export const createLibraryHomeActions = (port: LibraryHomePort): LibraryHomeActionsController => {
+-    let snapshot = IDLE;
++    // 有沒有資料夾能力是這台裝置的事實（secure context + showDirectoryPicker），整個 session 不會變，開場問一次就夠。
++    let snapshot: LibraryHomeActionsSnapshot = { ...IDLE, canImportFolder: port.localAvailability().supported };
+     const listeners = new Set<() => void>();
+     let stopScanProgress: (() => void) | null = null;
+ 
+@@ -84,6 +86,9 @@ export const createLibraryHomeActions = (port: LibraryHomePort): LibraryHomeActi
+             try {
+                 const imported = await port.importFolder();
+                 if (imported > 0) void port.refreshLocalSongs();
++                // 0 首也要说话：以前按完文件夹选择器被取消、或这台装置的 WebView 打不开选择器时，
++                // 画面上什么都不变，看起来就是「按了没反应」。
++                else port.notify({ kind: 'status', type: 'info', message: { key: 'localMusic.importFolderNothingNew' } });
+                 return OK;
+             } catch (error) {
+                 console.error('[LibraryHome] Failed to import local folder:', error);
+diff --git a/src/library/core/home/localHomeModel.ts b/src/library/core/home/localHomeModel.ts
+index a7b7cc1..b4ca84a 100644
+--- a/src/library/core/home/localHomeModel.ts
++++ b/src/library/core/home/localHomeModel.ts
+@@ -255,18 +255,21 @@ export const buildLocalHomeCards = (groups: readonly LocalLibraryGroup[]): Libra
+ /** 本地 section 的批量类型（文件夹、专辑、歌手都支持）。 */
+ export const localBatchSelectionType = (section: LocalHomeSectionKey): LibraryDirectorySelectionType | null => section;
+ 
+-/** 本地页签右上角的两个导入动作（导入歌单文件搬去了 Folia 页）：文案随进行中的动作变，任何一个在进行或扫描中时都禁用。 */
++/** 本地页签右上角的导入动作（导入歌单文件搬去了 Folia 页）：文案随进行中的动作变，任何一个在进行或扫描中时都禁用。 */
+ export const resolveLocalHomeActions = (snapshot: LibraryHomeActionsSnapshot): LibraryHomeListAction[] => {
++    // 没有目录 API 的装置（iPhone、安卓 WebView）就别给「导入文件夹」：按下去只会弹一句「不支持」，
++    // 或者干脆什么都不发生，比没有这颗按钮更糟。能力跟着快照走，三套界面一次改到。
++    const canImportFolder = snapshot.canImportFolder ?? true;
+     const busy = isHomeImportBusy(snapshot);
+     const scanning = Boolean(snapshot.scan?.active) || snapshot.refreshingFolders;
+     return [
+-        {
++        ...(canImportFolder ? [{
+             id: 'import-folder',
+             labelKey: snapshot.importingFolder ? 'localMusic.importing' : 'localMusic.importFolder',
+             titleKey: 'localMusic.importFolder',
+             pending: snapshot.importingFolder,
+             disabled: busy,
+-        },
++        }] : []),
+         {
+             id: 'refresh-folders',
+             labelKey: scanning ? 'options.scanning' : 'options.refresh',
 diff --git a/src/library/suites/bravais/BravaisHomeSources.tsx b/src/library/suites/bravais/BravaisHomeSources.tsx
-index 7ca8d91..f442b95 100644
+index 7ca8d91..a4117e1 100644
 --- a/src/library/suites/bravais/BravaisHomeSources.tsx
 +++ b/src/library/suites/bravais/BravaisHomeSources.tsx
-@@ -29,6 +29,8 @@ import type { BravaisSeamMenuItem } from './bravaisSeamModels';
+@@ -29,6 +29,7 @@ import type { BravaisSeamMenuItem } from './bravaisSeamModels';
  import type { BravaisHomeChrome } from './useBravaisHomeChrome';
  import BravaisHomeDirectory from './BravaisHomeDirectory';
  import { availableLocalTabLabel, localWallHint, onlineWallHint } from './bravaisEmptyWallHint';
 +import { useLocalAudioImport } from '../../../hooks/useLocalAudioImport';
-+import { getLocalLibraryAvailability } from '../../../services/localLibraryAvailability';
  import { useBravaisHomeAccount } from './useBravaisHomeAccount';
  import { quickPriority } from './bravaisSeamQuickCells';
  
-@@ -161,7 +163,18 @@ export const BravaisHomeLocal: React.FC<BravaisHomeSourceCommonProps & {
+@@ -161,7 +162,18 @@ export const BravaisHomeLocal: React.FC<BravaisHomeSourceCommonProps & {
      const isEmptyLibrary = directoryTrees.loaded && localSongs.length === 0 && directoryTrees.trees.length === 0;
      // 空曲库时墙面上写一段背景说明（从缝的「⋯」导入文件夹）。
      const canImportFolder = localActions.some(action => action.id === 'import-folder');
 -    const wallHint = useMemo(() => (isEmptyLibrary ? localWallHint(canImportFolder, t) : undefined), [canImportFolder, isEmptyLibrary, t]);
 +    // 檔案匯入是 iOS／車機上唯一能把歌放進曲庫的路，空牆上直接給入口。
 +    const fileImport = useLocalAudioImport();
-+    const localLibrarySupportsFolders = getLocalLibraryAvailability().supported;
++    const localLibrarySupportsFolders = actionState.canImportFolder !== false;
 +    const wallHint = useMemo(() => (isEmptyLibrary
 +        ? localWallHint({
 +            canImportFolder: canImportFolder && localLibrarySupportsFolders,
@@ -1014,7 +1093,7 @@ index 7ca8d91..f442b95 100644
  
      useLibraryHomeListRegistration({
          enabled: !isEmptyLibrary,
-@@ -227,6 +240,14 @@ export const BravaisHomeLocal: React.FC<BravaisHomeSourceCommonProps & {
+@@ -227,6 +239,14 @@ export const BravaisHomeLocal: React.FC<BravaisHomeSourceCommonProps & {
      );
  
      return (
@@ -1029,7 +1108,7 @@ index 7ca8d91..f442b95 100644
          <BravaisHomeDirectory
              {...common}
              layerKey="home:local"
-@@ -245,6 +266,7 @@ export const BravaisHomeLocal: React.FC<BravaisHomeSourceCommonProps & {
+@@ -245,6 +265,7 @@ export const BravaisHomeLocal: React.FC<BravaisHomeSourceCommonProps & {
              onOpen={onOpen}
              shortcutCards={isEmptyLibrary ? NO_CARDS : shortcutCards}
          />
@@ -1204,7 +1283,7 @@ index c35036c..9c17aad 100644
  
  /** 列表面板工具行的排序（本地文件夹才有）。 */
 diff --git a/src/library/suites/grid/home/LocalGrid3DView.tsx b/src/library/suites/grid/home/LocalGrid3DView.tsx
-index 70f5244..37df252 100644
+index 70f5244..93906a6 100644
 --- a/src/library/suites/grid/home/LocalGrid3DView.tsx
 +++ b/src/library/suites/grid/home/LocalGrid3DView.tsx
 @@ -1,6 +1,7 @@
@@ -1249,7 +1328,7 @@ index 70f5244..37df252 100644
      const [localFolderIndex, setLocalFolderIndex] = useDebouncedFocusSync(focusedFolderIndex, setFocusedFolderIndex);
      const [localAlbumIndex, setLocalAlbumIndex] = useDebouncedFocusSync(focusedAlbumIndex, setFocusedAlbumIndex);
      const [localArtistIndex, setLocalArtistIndex] = useDebouncedFocusSync(focusedArtistIndex, setFocusedArtistIndex);
-@@ -121,18 +140,29 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
+@@ -121,18 +140,30 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
  
      const runAction = (id: string) => {
          if (id === 'import-folder') void homeActions.importFolder();
@@ -1257,6 +1336,7 @@ index 70f5244..37df252 100644
          else if (id === 'refresh-folders') void homeActions.refreshFolders();
      };
  
++    const localLibrarySupportsFolders = actionState.canImportFolder !== false;
      const localActions = resolveLocalHomeActions(actionState);
 -    const actions: DesktopGrid3DAction[] = localActions.map(action => ({
 -        id: action.id,
@@ -1287,7 +1367,7 @@ index 70f5244..37df252 100644
  
      const isEmptyLibrary = directoryTrees.loaded && localSongs.length === 0 && trees.length === 0;
  
-@@ -164,25 +194,54 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
+@@ -164,25 +195,56 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
          },
      });
  
@@ -1330,14 +1410,16 @@ index 70f5244..37df252 100644
 +                        {importingFiles ? <Loader2 size={16} className="animate-spin" /> : <FileAudio size={16} />}
 +                        {importingFiles ? t('localMusic.importingFiles') : t('localMusic.importFiles')}
 +                    </button>
-+                    <button
-+                        onClick={() => void homeActions.importFolder()}
-+                        disabled={importBusy}
-+                        className="px-6 py-3 rounded-full transition-colors text-sm flex items-center gap-2 bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
-+                    >
-+                        {importBusy ? <Loader2 size={16} className="animate-spin" /> : <FolderOpen size={16} />}
-+                        {scanning ? t('options.scanning') : actionState.importingFolder ? t('localMusic.importing') : t('localMusic.importFolder')}
-+                    </button>
++                    {localLibrarySupportsFolders && (
++                        <button
++                            onClick={() => void homeActions.importFolder()}
++                            disabled={importBusy}
++                            className="px-6 py-3 rounded-full transition-colors text-sm flex items-center gap-2 bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
++                        >
++                            {importBusy ? <Loader2 size={16} className="animate-spin" /> : <FolderOpen size={16} />}
++                            {scanning ? t('options.scanning') : actionState.importingFolder ? t('localMusic.importing') : t('localMusic.importFolder')}
++                        </button>
++                    )}
 +                </div>
 +                <p className="max-w-md text-center text-xs opacity-70">{t('localMusic.importFilesHint')}</p>
              </div>
@@ -1350,7 +1432,7 @@ index 70f5244..37df252 100644
          <DesktopGrid3DSurface
              focusMemoryScope={JSON.stringify(['local', activeSection.key])}
              title={String(activeSection.label)}
-@@ -210,6 +269,7 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
+@@ -210,6 +272,7 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
              ponderControls="local-grid-controls"
              gridMapPonderScope="local-grid-map-page"
          />
@@ -2339,3 +2421,19 @@ index 967c627..aa27953 100644
      });
  
      it('only names a local tab that can be opened', () => {
+diff --git a/test/unit/library/core/localHomeModel.test.ts b/test/unit/library/core/localHomeModel.test.ts
+index d4588ef..a574d93 100644
+--- a/test/unit/library/core/localHomeModel.test.ts
++++ b/test/unit/library/core/localHomeModel.test.ts
+@@ -140,6 +140,11 @@ describe('resolveLocalHomeActions', () => {
+         ]);
+     });
+ 
++    it('drops the folder import on devices without a folder picker', () => {
++        // iPhone / 安卓 WebView：按下去什么都不会发生，所以这颗按钮根本不该出现，只留「刷新」。
++        expect(resolveLocalHomeActions({ ...idle, canImportFolder: false }).map(action => action.id)).toEqual(['refresh-folders']);
++    });
++
+     it('a scan shows refresh as scanning', () => {
+         const actions = resolveLocalHomeActions({ ...idle, scan: { active: true, folderName: 'A', totalSongs: 2, completedSongs: 1 } });
+         expect(actions[1]).toMatchObject({ labelKey: 'options.scanning', pending: true, disabled: true });
