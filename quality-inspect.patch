@@ -1,3 +1,53 @@
+diff --git a/index.html b/index.html
+index 39ec48c..114cb4d 100644
+--- a/index.html
++++ b/index.html
+@@ -2,7 +2,7 @@
+ <html lang="en">
+   <head>
+     <meta charset="UTF-8" />
+-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
++    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+     <meta name="referrer" content="no-referrer" />
+     <meta name="description" content="一个动态歌词播放器，支持 AI 主题生成" />
+     <meta name="theme-color" content="#09090b" />
+@@ -11,7 +11,7 @@
+     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+     <meta name="apple-mobile-web-app-title" content="Folia" />
+     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+-    <link rel="apple-touch-icon" href="/icon.svg" />
++    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png" />
+     <title>Folia</title>
+     <script src="/runtime-config.js"></script>
+   <script type="importmap">
+diff --git a/src/components/FloatingPlayerControls.tsx b/src/components/FloatingPlayerControls.tsx
+index 8692eec..c8fca72 100644
+--- a/src/components/FloatingPlayerControls.tsx
++++ b/src/components/FloatingPlayerControls.tsx
+@@ -721,7 +721,9 @@ const FloatingPlayerControls: React.FC<FloatingPlayerControlsProps> = ({
+                         : currentView === 'home'
+                             ? 'max-w-[calc(100vw-120px)] md:max-w-[min(calc(32rem_+_var(--folium-player-bar-extra,0px)),calc(100vw-120px))]'
+                             : 'max-w-[min(calc(32rem_+_var(--folium-player-bar-extra,0px)),100vw)] px-4'}`}
+-                style={{ bottom: bottomBarBottomPx }}
++                // bottomBarBottomPx 是 MotionValue，不能塞進 calc 字串裡（會變 [object Object]），
++                // 所以安全區的讓位改用這一層的 padding 推上去。
++                style={{ bottom: bottomBarBottomPx, paddingBottom: 'var(--folia-safe-bottom, 0px)' }}
+                 onUpdate={invalidateLayout}
+             >
+             {/* 这一层的透明度、位移和缩放全由下面的 animate 驱动，不再叠一层 CSS transition：
+diff --git a/src/components/ProgressBar.tsx b/src/components/ProgressBar.tsx
+index 5a41159..f6c1be0 100644
+--- a/src/components/ProgressBar.tsx
++++ b/src/components/ProgressBar.tsx
+@@ -258,7 +258,7 @@ const ProgressBar: React.FC<ProgressBarProps> = ({
+                     onInput={handleInput}
+                     onChange={() => { }} // React requires this
+                     onClick={(e) => e.stopPropagation()}
+-                    className={`absolute w-full opacity-0 ${isLine ? 'inset-x-0 -top-1.5 h-[calc(100%+12px)]' : 'inset-0 h-full'} ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
++                    className={`absolute w-full opacity-0 ${isLine ? 'inset-x-0 -top-1.5 h-[calc(100%+12px)]' : 'inset-x-0 -top-3 h-[calc(100%+24px)]'} ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                 />
+                 <SongNoteMarks duration={duration} onSeek={onSeek} disabled={disabled} />
+                 <FoliumProgressLayers ctx={foliumCtx} />
 diff --git a/src/components/audioQuality/OverviewChart.tsx b/src/components/audioQuality/OverviewChart.tsx
 new file mode 100644
 index 0000000..29b78f9
@@ -612,7 +662,7 @@ index 92620c2..04852d7 100644
      general,
      interaction,
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..844d784 100644
+index 86f3b6d..5fccebd 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -740,8 +790,18 @@ index 86f3b6d..844d784 100644
      "settingsPageGeneral": "General",
      "settingsPageInteraction": "Shortcuts",
      "settingsPageIntegration": "Connections",
+@@ -5242,6 +5213,9 @@ export default {
+     "sortByModifiedDate": "Modified date",
+     "sortByAlbumTrack": "Album number",
+     "sortAscending": "Ascending",
++    "importFiles": "Import Files",
++    "importFilesHint": "Pick audio files from this device and play them straight from local storage. iPhones have no folder picker, so this is the way in.",
++    "importingFiles": "Importing…",
+     "sortDescending": "Descending",
+     "importFolder": "Import Folder",
+     "importing": "Importing...",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..a3928b9 100644
+index 0067e9a..0e76d7c 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -799,6 +859,202 @@ index 0067e9a..a3928b9 100644
      "settingsPageGeneral": "通用",
      "settingsPageInteraction": "快捷操作",
      "settingsPageIntegration": "连接与集成",
+@@ -5242,6 +5283,9 @@ export default {
+     "sortByModifiedDate": "修改日期",
+     "sortByAlbumTrack": "专辑号",
+     "sortAscending": "升序",
++    "importFiles": "导入文件",
++    "importFilesHint": "选择手机里的音频文件，直接从本地播放；iPhone 上没有文件夹权限，用的是这条路。",
++    "importingFiles": "正在导入…",
+     "sortDescending": "降序",
+     "importFolder": "导入文件夹",
+     "importing": "导入中...",
+diff --git a/src/index.css b/src/index.css
+index 45c14da..a9fce0d 100644
+--- a/src/index.css
++++ b/src/index.css
+@@ -462,3 +462,26 @@ html[data-click-through='active'] body .click-through-interactive * {
+     animation: none;
+     opacity: 0.9;
+ }
++
++/* ── 觸屏與 iPhone 安全區 ────────────────────────────────────────────────
++   兩件事只動「手指用得到什麼」，不改任何版面比例或視覺風格：
++
++   1. iOS 沒有 hover。原本靠 group-hover 才浮出來的操作（待播清單列右邊的按鈕、
++      卡片上的播放遮罩、拖拽把手）在觸屏上永遠出不來，這裡讓它們常顯。
++   2. 安全區只有 viewport-fit=cover + env() 才算得出來；底部膠囊的讓位在
++      FloatingPlayerControls 裡吃 --folia-safe-bottom。家指示條、劉海都不再壓住東西。 */
++:root {
++  --folia-safe-bottom: env(safe-area-inset-bottom, 0px);
++  --folia-safe-top: env(safe-area-inset-top, 0px);
++  --folia-safe-left: env(safe-area-inset-left, 0px);
++  --folia-safe-right: env(safe-area-inset-right, 0px);
++}
++
++@media (hover: none) {
++  /* group-hover 的產物在沒有 hover 的裝置上直接顯示，不再等一個永遠不會來的指針。 */
++  .group .group-hover\:opacity-100 { opacity: 1; }
++  .group .group-hover\:w-auto { width: auto; }
++  .group .group-hover\:translate-x-0 { translate: 0 0; transform: none; }
++  .group .group-hover\:max-w-28 { max-width: 7rem; }
++  .group .group-hover\:ml-1\.5 { margin-left: 0.375rem; }
++}
+diff --git a/src/library/suites/grid/home/LocalGrid3DView.tsx b/src/library/suites/grid/home/LocalGrid3DView.tsx
+index 70f5244..37df252 100644
+--- a/src/library/suites/grid/home/LocalGrid3DView.tsx
++++ b/src/library/suites/grid/home/LocalGrid3DView.tsx
+@@ -1,6 +1,7 @@
+-import React from 'react';
++import React, { useCallback, useRef, useState } from 'react';
+ import { useTranslation } from 'react-i18next';
+-import { FolderOpen, Loader2, Music, User, Disc3, RefreshCw } from 'lucide-react';
++import { FolderOpen, Loader2, Music, User, Disc3, RefreshCw, FileAudio } from 'lucide-react';
++import { importAudioFiles } from '../../../../services/localMusicService';
+ import DesktopGrid3DSurface, { DesktopGrid3DAction } from './DesktopGrid3DSurface';
+ import { LocalSong, Theme } from '../../../../types';
+ import type { GridViewCollectionDescriptor } from '../../../../components/app/home/gridViewCollectionAdapters';
+@@ -29,6 +30,7 @@ const SECTION_ICONS: Record<LocalHomeSectionKey, React.ReactNode> = {
+ 
+ const ACTION_ICONS: Record<string, React.ReactNode> = {
+     'import-folder': <FolderOpen size={13} />,
++    'import-files': <FileAudio size={13} />,
+     'refresh-folders': <RefreshCw size={13} />,
+ };
+ 
+@@ -88,6 +90,23 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
+     const local = useLibraryHomeLocal({ localSongs, catalog: localLibraryCatalog, activeRow });
+     const { snapshot: actionState, importBusy } = useLibraryHomeActions(homeActions);
+ 
++    // 檔案匯入：iOS 上沒有資料夾 API，這是唯一能把歌放進曲庫的路。桌面上留著也方便只補幾首。
++    const fileInputRef = useRef<HTMLInputElement>(null);
++    const [importingFiles, setImportingFiles] = useState(false);
++    const handleFileImport = useCallback(async (files: File[]) => {
++        if (!files.length || importingFiles) return;
++        setImportingFiles(true);
++        try {
++            const result = await importAudioFiles(files);
++            if (result.failed.length > 0) {
++                console.warn('[LocalImport] Some files were skipped:', result.failed);
++            }
++        } finally {
++            setImportingFiles(false);
++        }
++    }, [importingFiles]);
++    const openFilePicker = useCallback(() => fileInputRef.current?.click(), []);
++
+     const [localFolderIndex, setLocalFolderIndex] = useDebouncedFocusSync(focusedFolderIndex, setFocusedFolderIndex);
+     const [localAlbumIndex, setLocalAlbumIndex] = useDebouncedFocusSync(focusedAlbumIndex, setFocusedAlbumIndex);
+     const [localArtistIndex, setLocalArtistIndex] = useDebouncedFocusSync(focusedArtistIndex, setFocusedArtistIndex);
+@@ -121,18 +140,29 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
+ 
+     const runAction = (id: string) => {
+         if (id === 'import-folder') void homeActions.importFolder();
++        else if (id === 'import-files') openFilePicker();
+         else if (id === 'refresh-folders') void homeActions.refreshFolders();
+     };
+ 
+     const localActions = resolveLocalHomeActions(actionState);
+-    const actions: DesktopGrid3DAction[] = localActions.map(action => ({
+-        id: action.id,
+-        label: t(action.labelKey),
+-        icon: action.pending ? <Loader2 size={13} className="animate-spin" /> : ACTION_ICONS[action.id],
+-        disabled: action.disabled,
+-        onClick: () => runAction(action.id),
+-        title: t(action.titleKey ?? action.labelKey),
+-    }));
++    const actions: DesktopGrid3DAction[] = [
++        ...localActions.map(action => ({
++            id: action.id,
++            label: t(action.labelKey),
++            icon: action.pending ? <Loader2 size={13} className="animate-spin" /> : ACTION_ICONS[action.id],
++            disabled: action.disabled,
++            onClick: () => runAction(action.id),
++            title: t(action.titleKey ?? action.labelKey),
++        })),
++        {
++            id: 'import-files',
++            label: t('localMusic.importFiles'),
++            icon: importingFiles ? <Loader2 size={13} className="animate-spin" /> : ACTION_ICONS['import-files'],
++            disabled: importingFiles,
++            onClick: openFilePicker,
++            title: t('localMusic.importFilesHint'),
++        },
++    ];
+ 
+     const isEmptyLibrary = directoryTrees.loaded && localSongs.length === 0 && trees.length === 0;
+ 
+@@ -164,25 +194,54 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
+         },
+     });
+ 
++    const fileImportInput = (
++        <input
++            ref={fileInputRef}
++            type="file"
++            multiple
++            hidden
++            onChange={event => {
++                // FileList 是活的：先把檔名抓成陣列再清 value，否則清完就變空的。
++                const files = Array.from(event.target.files ?? []);
++                event.target.value = '';
++                void handleFileImport(files);
++            }}
++        />
++    );
++
+     if (isEmptyLibrary) {
+         const scanning = Boolean(actionState.scan?.active);
+         return (
+             <div className="w-full h-full flex flex-col items-center justify-center gap-4 opacity-60">
++                {fileImportInput}
+                 <Music size={64} />
+                 <p className="text-lg">{t('localMusic.noLocalMusic')}</p>
+-                <button
+-                    onClick={() => void homeActions.importFolder()}
+-                    disabled={importBusy}
+-                    className="px-6 py-3 rounded-full transition-colors text-sm flex items-center gap-2 bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
+-                >
+-                    {importBusy ? <Loader2 size={16} className="animate-spin" /> : <FolderOpen size={16} />}
+-                    {scanning ? t('options.scanning') : actionState.importingFolder ? t('localMusic.importing') : t('localMusic.importFolder')}
+-                </button>
++                <div className="flex flex-wrap items-center justify-center gap-3">
++                    <button
++                        onClick={openFilePicker}
++                        disabled={importingFiles}
++                        className="px-6 py-3 rounded-full transition-colors text-sm flex items-center gap-2 bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
++                    >
++                        {importingFiles ? <Loader2 size={16} className="animate-spin" /> : <FileAudio size={16} />}
++                        {importingFiles ? t('localMusic.importingFiles') : t('localMusic.importFiles')}
++                    </button>
++                    <button
++                        onClick={() => void homeActions.importFolder()}
++                        disabled={importBusy}
++                        className="px-6 py-3 rounded-full transition-colors text-sm flex items-center gap-2 bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
++                    >
++                        {importBusy ? <Loader2 size={16} className="animate-spin" /> : <FolderOpen size={16} />}
++                        {scanning ? t('options.scanning') : actionState.importingFolder ? t('localMusic.importing') : t('localMusic.importFolder')}
++                    </button>
++                </div>
++                <p className="max-w-md text-center text-xs opacity-70">{t('localMusic.importFilesHint')}</p>
+             </div>
+         );
+     }
+ 
+     return (
++        <>
++        {fileImportInput}
+         <DesktopGrid3DSurface
+             focusMemoryScope={JSON.stringify(['local', activeSection.key])}
+             title={String(activeSection.label)}
+@@ -210,6 +269,7 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
+             ponderControls="local-grid-controls"
+             gridMapPonderScope="local-grid-map-page"
+         />
++        </>
+     );
+ };
+ 
 diff --git a/src/services/audioQuality/inspectAudioQuality.ts b/src/services/audioQuality/inspectAudioQuality.ts
 new file mode 100644
 index 0000000..8b1935b
@@ -1380,3 +1636,363 @@ index 0000000..d8a16cb
 +
 +    return { cutoffHz, refDb, transitionHz };
 +};
+diff --git a/src/services/localImportedAudioStore.ts b/src/services/localImportedAudioStore.ts
+new file mode 100644
+index 0000000..0bb37de
+--- /dev/null
++++ b/src/services/localImportedAudioStore.ts
+@@ -0,0 +1,147 @@
++// src/services/localImportedAudioStore.ts
++// 手機／平板匯入的音檔本體放哪裡。
++//
++// 原本的本地曲庫全靠 FileSystemFileHandle 活著（showDirectoryPicker）。iOS 的 Safari 與 WKWebView
++// 沒有這個 API，於是「本地」頁籤在 iPhone 上永遠是空的。這裡補的是另一條來源：使用者用
++// <input type=file> 挑幾個檔，把 File 原樣存進一個獨立的 IndexedDB，之後播放、算時長、抽封面、
++// 體檢都從這裡拿 bytes。
++//
++// 為什麼不塞進 songs 那張表：整庫讀取時會把所有記錄一起拉出來，把檔案本體掛在歌曲記錄上等於
++// 每次開歌單都在解一堆 Blob。獨立 store 按 song id 取，只有真的要聽那一首時才碰它。
++
++const DB_NAME = 'folia-imported-audio';
++const DB_VERSION = 1;
++const STORE_NAME = 'audio';
++
++interface ImportedAudioRecord {
++    id: string;
++    file: File;
++    savedAt: number;
++}
++
++let dbPromise: Promise<IDBDatabase> | null = null;
++
++const openOnce = (version: number): Promise<IDBDatabase> => new Promise<IDBDatabase>((resolve, reject) => {
++    const request = version > 0 ? indexedDB.open(DB_NAME, version) : indexedDB.open(DB_NAME);
++    request.onupgradeneeded = () => {
++        const db = request.result;
++        if (!db.objectStoreNames.contains(STORE_NAME)) {
++            db.createObjectStore(STORE_NAME, { keyPath: 'id' });
++        }
++    };
++    request.onsuccess = () => resolve(request.result);
++    request.onerror = () => reject(request.error ?? new Error('Could not open imported audio store'));
++});
++
++// 這隻資料庫有可能比我們先存在（版本對得上但沒有 store），open 不會再觸發 upgrade。
++// 遇到這種情況就把版本往上推一格重開，讓 onupgradeneeded 有機會把 store 建出來。
++const openDb = (): Promise<IDBDatabase> => {
++    if (dbPromise) return dbPromise;
++    dbPromise = (async () => {
++        if (typeof indexedDB === 'undefined') throw new Error('IndexedDB is unavailable');
++        let db = await openOnce(DB_VERSION);
++        if (!db.objectStoreNames.contains(STORE_NAME)) {
++            const nextVersion = db.version + 1;
++            db.close();
++            db = await openOnce(nextVersion);
++        }
++        return db;
++    })();
++    dbPromise.catch(() => { dbPromise = null; });
++    return dbPromise;
++};
++
++const runRequest = <T>(request: IDBRequest<T>): Promise<T> => new Promise<T>((resolve, reject) => {
++    request.onsuccess = () => resolve(request.result);
++    request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'));
++});
++
++export const isImportedAudioStoreSupported = (): boolean => typeof indexedDB !== 'undefined';
++
++export async function putImportedAudio(id: string, file: File): Promise<void> {
++    const db = await openDb();
++    const tx = db.transaction(STORE_NAME, 'readwrite');
++    tx.objectStore(STORE_NAME).put({ id, file, savedAt: Date.now() } satisfies ImportedAudioRecord);
++    await new Promise<void>((resolve, reject) => {
++        tx.oncomplete = () => resolve();
++        tx.onerror = () => reject(tx.error ?? new Error('Could not save imported audio'));
++        tx.onabort = () => reject(tx.error ?? new Error('Imported audio transaction aborted'));
++    });
++}
++
++export async function readImportedAudio(id: string): Promise<File | null> {
++    try {
++        const db = await openDb();
++        const record = await runRequest<ImportedAudioRecord | undefined>(
++            db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(id),
++        );
++        return record?.file ?? null;
++    } catch (error) {
++        console.warn('[LocalImport] Could not read imported audio', error);
++        return null;
++    }
++}
++
++export async function hasImportedAudio(id: string): Promise<boolean> {
++    try {
++        const db = await openDb();
++        const key = await runRequest<IDBValidKey | undefined>(
++            db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).getKey(id),
++        );
++        return key !== undefined;
++    } catch {
++        return false;
++    }
++}
++
++export async function deleteImportedAudio(id: string): Promise<void> {
++    try {
++        const db = await openDb();
++        const tx = db.transaction(STORE_NAME, 'readwrite');
++        tx.objectStore(STORE_NAME).delete(id);
++        await new Promise<void>((resolve, reject) => {
++            tx.oncomplete = () => resolve();
++            tx.onerror = () => reject(tx.error ?? new Error('Could not delete imported audio'));
++        });
++    } catch (error) {
++        console.warn('[LocalImport] Could not delete imported audio', error);
++    }
++}
++
++export async function deleteImportedAudioMany(ids: string[]): Promise<void> {
++    if (!ids.length) return;
++    try {
++        const db = await openDb();
++        const tx = db.transaction(STORE_NAME, 'readwrite');
++        const store = tx.objectStore(STORE_NAME);
++        ids.forEach(id => store.delete(id));
++        await new Promise<void>((resolve, reject) => {
++            tx.oncomplete = () => resolve();
++            tx.onerror = () => reject(tx.error ?? new Error('Could not delete imported audio'));
++        });
++    } catch (error) {
++        console.warn('[LocalImport] Could not delete imported audio batch', error);
++    }
++}
++
++export async function countImportedAudio(): Promise<number> {
++    try {
++        const db = await openDb();
++        return await runRequest<number>(db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).count());
++    } catch {
++        return 0;
++    }
++}
++
++/** 匯入過的全部 id，用來判斷某首是不是「本機匯入」而不是資料夾掃描進來的。 */
++export async function listImportedAudioIds(): Promise<Set<string>> {
++    try {
++        const db = await openDb();
++        const keys = await runRequest<IDBValidKey[]>(
++            db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).getAllKeys(),
++        );
++        return new Set(keys.map(key => String(key)));
++    } catch {
++        return new Set();
++    }
++}
+diff --git a/src/services/localMusicService.ts b/src/services/localMusicService.ts
+index 26a0181..c3efa48 100644
+--- a/src/services/localMusicService.ts
++++ b/src/services/localMusicService.ts
+@@ -30,6 +30,7 @@ import { hasLocalCoverBinary } from './localCoverBinaryStore';
+ import { hasLocalSongCover } from '../utils/localSongCover';
+ import { createFoliaIgnoreMatcher, isIgnoredByFoliaMatchers, type FoliaIgnoreMatcher } from '../utils/foliaIgnore';
+ import { getLocalLibraryAvailability } from './localLibraryAvailability';
++import { deleteImportedAudio, deleteImportedAudioMany, putImportedAudio, readImportedAudio } from './localImportedAudioStore';
+ import { useLyricSettingsStore } from '../stores/useLyricSettingsStore';
+ import { getLocalLyricFilePriority, isSameLocalLyricFormatOrder, normalizeLocalLyricFormatOrder, type LocalLyricFileFormat } from '../utils/lyrics/localLyricFormatOrder';
+ import { readLyricFile } from '../utils/lyrics/lyricFileDecoding';
+@@ -1204,6 +1205,136 @@ export async function importFolder(expectedRootName?: string): Promise<LocalSong
+     }
+ }
+ 
++/** 手機／平板匯入的那批歌掛在這個虛擬根目錄下，跟資料夾掃描進來的歌分得開。 */
++export const IMPORTED_LOCAL_ROOT_NAME = '本機匯入';
++
++export interface ImportAudioFilesResult {
++    songs: LocalSong[];
++    skipped: number;
++    failed: { fileName: string; reason: string }[];
++}
++
++/**
++ * 直接吃 <input type=file> 挑回來的檔案，把它們當成本地曲庫裡的歌。
++ *
++ * 存在的理由：iOS 沒有 showDirectoryPicker，資料夾匯入在 iPhone 上根本走不通，於是「本地」
++ * 頁籤永遠是空的。這裡把檔案本體存進 imported 音檔庫，歌曲記錄照資料夾匯入的同一套欄位寫
++ * （時長、抽到的標籤、內嵌封面、ReplayGain 都照舊），所以之後的播放、歌單、歌詞匹配、音質
++ * 體檢都不用改，看到的就是一群普通的本機歌曲。
++ */
++export async function importAudioFiles(files: File[]): Promise<ImportAudioFilesResult> {
++    const result: ImportAudioFilesResult = { songs: [], skipped: 0, failed: [] };
++    const candidates = files.filter(file => KNOWN_AUDIO_EXTENSIONS.test(file.name));
++    if (candidates.length === 0) return result;
++
++    const allSongs = await getLocalSongs();
++    const existingSignatures = new Set(
++        allSongs
++            .filter(song => song.folderName === IMPORTED_LOCAL_ROOT_NAME)
++            .map(song => `${song.fileName}:${song.fileSize}:${song.fileLastModified ?? 0}`),
++    );
++
++    for (let index = 0; index < candidates.length; index += 1) {
++        const file = candidates[index];
++        const signature = `${file.name}:${file.size}:${file.lastModified}`;
++        if (existingSignatures.has(signature)) {
++            result.skipped += 1;
++            continue;
++        }
++
++        try {
++            await putImportedAudio(songIdForFile(file), file);
++
++            let embeddedMetadata: EmbeddedMetadata = {};
++            try {
++                embeddedMetadata = await extractEmbeddedMetadata(file, true);
++            } catch (error) {
++                console.warn(`[LocalMusic][Import] Failed to parse metadata for ${file.name}:`, error);
++            }
++
++            let duration = embeddedMetadata.duration || 0;
++            if (!duration) {
++                try {
++                    duration = await getAudioDuration(file);
++                } catch (error) {
++                    console.warn(`[LocalMusic][Import] Failed to read duration for ${file.name}:`, error);
++                }
++            }
++
++            const metadata = extractMetadataFromFilename(file.name);
++            const songId = songIdForFile(file);
++            const importedMetadata = buildImportedMetadataSnapshot({
++                fileName: file.name,
++                embeddedTitle: embeddedMetadata.title,
++                fallbackTitle: metadata.title,
++                embeddedArtist: embeddedMetadata.artist,
++                embeddedArtists: embeddedMetadata.artists,
++                fallbackArtist: metadata.artist,
++                embeddedAlbum: embeddedMetadata.album,
++            });
++
++            let localCoverAssetId: string | undefined;
++            if (embeddedMetadata.cover && embeddedMetadata.coverAssetId) {
++                if (stageLocalCoverAsset(embeddedMetadata.coverAssetId, embeddedMetadata.cover)) {
++                    localCoverAssetId = embeddedMetadata.coverAssetId;
++                }
++            }
++
++            const localSong: LocalSong = {
++                id: songId,
++                fileName: file.name,
++                filePath: `${IMPORTED_LOCAL_ROOT_NAME}/${file.name}`,
++                duration,
++                fileSize: file.size,
++                fileLastModified: file.lastModified,
++                fileSignature: `${file.name}:${file.size}:${file.lastModified}`,
++                mimeType: file.type || 'audio/mpeg',
++                bitrate: embeddedMetadata.bitrate || 0,
++                addedAt: Date.now(),
++                title: importedMetadata.title,
++                titleOrigin: 'import',
++                importedMetadata,
++                trackNumber: embeddedMetadata.trackNumber,
++                discNumber: embeddedMetadata.discNumber,
++                localCoverAssetId,
++                localCoverSource: localCoverAssetId ? 'embedded' : undefined,
++                hasManualLyricSelection: false,
++                folderName: IMPORTED_LOCAL_ROOT_NAME,
++                hasEmbeddedLyrics: !!embeddedMetadata.lyrics,
++                embeddedLyricsContent: embeddedMetadata.lyrics,
++                hasEmbeddedTranslationLyrics: !!embeddedMetadata.translationLyrics,
++                embeddedTranslationLyricsContent: embeddedMetadata.translationLyrics,
++                replayGain: embeddedMetadata.replayGain,
++                replayGainTrackGain: embeddedMetadata.replayGainTrackGain,
++                replayGainTrackPeak: embeddedMetadata.replayGainTrackPeak,
++                replayGainAlbumGain: embeddedMetadata.replayGainAlbumGain,
++                replayGainAlbumPeak: embeddedMetadata.replayGainAlbumPeak,
++            };
++
++            await saveLocalSong(localSong);
++            existingSignatures.add(signature);
++            result.songs.push(localSong);
++        } catch (error) {
++            console.error(`[LocalMusic][Import] Failed to import ${file.name}:`, error);
++            result.failed.push({ fileName: file.name, reason: (error as Error)?.message || 'unknown' });
++        }
++    }
++
++    if (result.songs.length > 0) notifyLocalMusicUpdated();
++    console.log(`[LocalMusic][Import] Imported ${result.songs.length} file(s), skipped ${result.skipped}, failed ${result.failed.length}`);
++    return result;
++}
++
++/** 同一首匯入兩次要落回同一筆記錄（id 由檔名尺寸時間決定），否則重覆匯入會多出一堆影子歌。 */
++function songIdForFile(file: File): string {
++    const signature = `${file.name}:${file.size}:${file.lastModified}`;
++    let hash = 0;
++    for (let index = 0; index < signature.length; index += 1) {
++        hash = (hash * 31 + signature.charCodeAt(index)) | 0;
++    }
++    return `local_imported_${Math.abs(hash).toString(36)}_${signature.length}`;
++}
++
+ /** Imports a folder the caller already holds instead of asking the picker (the dev mock song's OPFS folder). */
+ export async function importDirectoryHandle(dirHandle: FileSystemDirectoryHandle): Promise<LocalSong[]> {
+     return await runLocalFolderMutation(() => importFolderContents(dirHandle));
+@@ -1614,6 +1745,7 @@ export async function deleteLocalSong(id: string): Promise<void> {
+     await Promise.all([
+         dbDeleteLocalSong(id),
+         removeCachedCover(`cover_local_${id}`),
++        deleteImportedAudio(id),
+     ]);
+ }
+ 
+@@ -1738,6 +1870,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
+         }
+     }
+ 
++    // 手機匯入的歌沒有 handle，bytes 就在 imported 音檔庫裡，直接從那裡取。
++    const importedFile = await readImportedAudio(song.id);
++    if (importedFile) {
++        try {
++            return await getAudioFromFile(importedFile);
++        } catch (error) {
++            console.error('[LocalMusic] Failed to read imported audio:', error);
++        }
++    }
++
+     // No accessible handle available - permission may need to be restored or the file moved.
+     console.warn(`[LocalMusic] No accessible handle for song ${song.id}. Permission restore or re-import is required.`);
+     return null;
+@@ -1755,6 +1897,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+         }
+     }
+ 
++    const importedFile = await readImportedAudio(song.id);
++    if (importedFile) return importedFile;
++
+     const recoveredHandle = await recoverFileHandleFromPersistedDirectory(song);
+     if (!recoveredHandle) return null;
+     try {
+@@ -1777,6 +1922,14 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuffer | null> {
+     const fileHandle = await getAccessibleFileHandle(song);
+     if (!fileHandle) {
++        const importedFile = await readImportedAudio(song.id);
++        if (importedFile) {
++            try {
++                return await importedFile.arrayBuffer();
++            } catch (error) {
++                console.error('[LocalMusic] Failed to read imported bytes:', error);
++            }
++        }
+         console.warn(`[LocalMusic] No accessible handle for song ${song.id} (automix bytes)`);
+         return null;
+     }
+@@ -1880,6 +2033,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
+     await Promise.all([
+         dbDeleteLocalSongs(uniqueSongIds),
+         ...uniqueSongIds.map(id => removeCachedCover(`cover_local_${id}`)),
++        deleteImportedAudioMany(uniqueSongIds),
+     ]);
+     await dropDeletedSongsFromPlaylists(uniqueSongIds);
+     await Promise.all(Array.from(affectedRoots).map(cleanupDirHandleIfUnused));
