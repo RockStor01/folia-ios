@@ -1,9 +1,9 @@
 diff --git a/src/components/audioQuality/QualityCheckSection.tsx b/src/components/audioQuality/QualityCheckSection.tsx
 new file mode 100644
-index 0000000..d2b59f5
+index 0000000..b835dfa
 --- /dev/null
 +++ b/src/components/audioQuality/QualityCheckSection.tsx
-@@ -0,0 +1,213 @@
+@@ -0,0 +1,226 @@
 +// src/components/audioQuality/QualityCheckSection.tsx
 +// 設定頁裡那張「音質體檢」的卡片：選檔案，或掃整個曲庫，然後把每一份的結論列出來。
 +//
@@ -17,6 +17,7 @@ index 0000000..d2b59f5
 +import { inspectAudioFile, type QualityInspectResult } from '../../services/audioQuality/inspectAudioQuality';
 +import { countInspectableLocalSongs, scanLocalLibraryQuality } from '../../services/audioQuality/inspectLocalLibrary';
 +import { getLocalLibraryAvailability } from '../../services/localLibraryAvailability';
++import SpectrumChart from './SpectrumChart';
 +
 +const LEVEL_STYLES: Record<string, string> = {
 +    bad: 'bg-[color-mix(in_srgb,var(--st-danger,#ef4444)_16%,transparent)] text-[var(--st-danger,#ef4444)]',
@@ -64,6 +65,18 @@ index 0000000..d2b59f5
 +                            cutoff: measured.cutoffHz ? (measured.cutoffHz / 1000).toFixed(2) : '—',
 +                            transition: measured.transitionHz,
 +                        })}
++                </div>
++            )}
++            {result.ok && measured?.curve && (
++                <div className="mt-1 pl-6">
++                    <div className="overflow-hidden rounded-md bg-[var(--st-fill)] px-1 pt-1">
++                        <SpectrumChart
++                            curve={measured.curve}
++                            cutoffHz={measured.cutoffHz}
++                            nyquistHz={measured.nyquistHz}
++                            cutoffLabel={measured.cutoffHz ? `${(measured.cutoffHz / 1000).toFixed(2)} kHz` : null}
++                        />
++                    </div>
 +                </div>
 +            )}
 +            <div className="flex flex-col gap-1 pl-6">
@@ -217,6 +230,116 @@ index 0000000..d2b59f5
 +};
 +
 +export default QualityCheckSection;
+diff --git a/src/components/audioQuality/SpectrumChart.tsx b/src/components/audioQuality/SpectrumChart.tsx
+new file mode 100644
+index 0000000..8b22e15
+--- /dev/null
++++ b/src/components/audioQuality/SpectrumChart.tsx
+@@ -0,0 +1,104 @@
++// src/components/audioQuality/SpectrumChart.tsx
++// 體檢結果的頻譜圖：橫軸是對數頻率，縱軸是相對電平，截止點畫一條虛線，右邊整片標紅。
++//
++// 畫的是 Aurora 那張圖的意思：曲線一路平到某個頻率就掉下去，掉下去的位置就是「內容真的到哪」。
++// 資料在 services/audioQuality/inspectAudioQuality.ts 就算好了（對數軸等距 240 點），這裡只負責畫。
++//
++// 曲線用 SVG（viewBox 固定 320×96、preserveAspectRatio="none"，讓它撐滿寬度）；
++// 文字不用 SVG 畫 —— 非等比拉伸會把字壓扁，所以標籤一律用 HTML 疊在上面。
++
++import React from 'react';
++import type { QualityCurve } from '../../services/audioQuality/inspectAudioQuality';
++
++/** 縱軸範圍：+5 dB 到 −90 dB，跟曲線資料夾的範圍一致。 */
++const TOP_DB = 5;
++const BOTTOM_DB = -90;
++
++const WIDTH = 320;
++/** 曲線本身的高度；底下的頻率標籤是 HTML，不佔 SVG。 */
++const PLOT_HEIGHT = 88;
++
++type SpectrumChartProps = {
++    curve: QualityCurve;
++    cutoffHz: number | null;
++    nyquistHz: number;
++    /** 已經格式化的截止點標籤，例如 "20.23 kHz"；null 時不畫虛線。 */
++    cutoffLabel: string | null;
++};
++
++const SpectrumChart: React.FC<SpectrumChartProps> = ({ curve, cutoffHz, nyquistHz, cutoffLabel }) => {
++    const logRange = Math.log(curve.maxHz / curve.minHz);
++
++    /** 頻率 → 圖上的相對位置（0–1）。 */
++    const xOf = (hz: number): number => (logRange ? Math.min(1, Math.max(0, Math.log(hz / curve.minHz) / logRange)) : 0);
++    /** 相對電平 → 圖上的相對高度（0 是最上面）。 */
++    const yOf = (db: number): number => (TOP_DB - Math.max(BOTTOM_DB, Math.min(TOP_DB, db))) / (TOP_DB - BOTTOM_DB);
++
++    const linePath = curve.points
++        .map((db, index) => {
++            const hz = curve.minHz * (curve.maxHz / curve.minHz) ** (index / (curve.points.length - 1));
++            return `${index === 0 ? 'M' : 'L'}${(xOf(hz) * WIDTH).toFixed(2)},${(yOf(db) * PLOT_HEIGHT).toFixed(2)}`;
++        })
++        .join(' ');
++    const areaPath = `${linePath} L${WIDTH},${PLOT_HEIGHT} L0,${PLOT_HEIGHT} Z`;
++
++    const cutoffRatio = cutoffHz ? xOf(cutoffHz) : null;
++    const cutoffPercent = cutoffRatio === null ? null : cutoffRatio * 100;
++    const labelFlip = cutoffPercent !== null && cutoffPercent > 62;
++
++    return (
++        <div className="relative select-none" style={{ height: PLOT_HEIGHT + 14 }}>
++            <svg
++                viewBox={`0 0 ${WIDTH} ${PLOT_HEIGHT}`}
++                preserveAspectRatio="none"
++                className="block w-full"
++                style={{ height: PLOT_HEIGHT }}
++                role="img"
++                aria-label={cutoffLabel ?? 'spectrum'}
++            >
++                {/* 截止點右邊：內容已經是數位零，整片標紅 */}
++                {cutoffPercent !== null && cutoffPercent < 100 && (
++                    <rect x={(cutoffRatio! * WIDTH).toFixed(2)} y={0} width={(WIDTH - cutoffRatio! * WIDTH).toFixed(2)}
++                        height={PLOT_HEIGHT} fill="#ef4444" opacity="0.16" />
++                )}
++
++                <path d={areaPath} fill="#7dd3fc" fillOpacity="0.18" />
++                <path d={linePath} fill="none" stroke="#7dd3fc" strokeWidth="1.1" vectorEffect="non-scaling-stroke" />
++
++                {/* 判定線：−45 dB 以下就算「這裡沒內容了」，截止點就是最後一次跨過它的地方 */}
++                <line x1="0" y1={(yOf(-45) * PLOT_HEIGHT).toFixed(2)} x2={WIDTH} y2={(yOf(-45) * PLOT_HEIGHT).toFixed(2)}
++                    stroke="#ffffff" strokeOpacity="0.16" strokeWidth="1" strokeDasharray="2 4" vectorEffect="non-scaling-stroke" />
++
++                {/* 參考電平 0 dB */}
++                <line x1="0" y1={(yOf(0) * PLOT_HEIGHT).toFixed(2)} x2={WIDTH} y2={(yOf(0) * PLOT_HEIGHT).toFixed(2)}
++                    stroke="#ffffff" strokeOpacity="0.08" strokeWidth="1" vectorEffect="non-scaling-stroke" />
++
++                {/* 截止點虛線 */}
++                {cutoffPercent !== null && (
++                    <line x1={(cutoffRatio! * WIDTH).toFixed(2)} y1={0} x2={(cutoffRatio! * WIDTH).toFixed(2)} y2={PLOT_HEIGHT}
++                        stroke="#ef4444" strokeWidth="1" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
++                )}
++            </svg>
++
++            {/* 截止點標籤（在線的左邊或右邊，靠邊時翻向內側） */}
++            {cutoffPercent !== null && cutoffLabel && (
++                <div
++                    className="pointer-events-none absolute top-1 rounded bg-black/55 px-1 py-0.5 text-[10px] leading-none text-[#f87171]"
++                    style={labelFlip
++                        ? { right: `${(100 - cutoffPercent).toFixed(1)}%`, marginRight: 4 }
++                        : { left: `${cutoffPercent.toFixed(1)}%`, marginLeft: 4 }}
++                >
++                    {cutoffLabel}
++                </div>
++            )}
++
++            {/* 頻率軸端點 */}
++            <div className="absolute inset-x-0 bottom-0 flex justify-between pr-1 text-[10px] leading-none text-[color:var(--st-t3)]">
++                <span>20 Hz</span>
++                <span>{(nyquistHz / 1000).toFixed(nyquistHz % 1000 === 0 ? 0 : 1)} kHz</span>
++            </div>
++        </div>
++    );
++};
++
++export default SpectrumChart;
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
 --- a/src/components/modal/settings/navigation/settingsNavModel.ts
@@ -478,10 +601,10 @@ index 0067e9a..330469f 100644
      "settingsPageIntegration": "连接与集成",
 diff --git a/src/services/audioQuality/inspectAudioQuality.ts b/src/services/audioQuality/inspectAudioQuality.ts
 new file mode 100644
-index 0000000..ed0d882
+index 0000000..8b1935b
 --- /dev/null
 +++ b/src/services/audioQuality/inspectAudioQuality.ts
-@@ -0,0 +1,185 @@
+@@ -0,0 +1,212 @@
 +// src/services/audioQuality/inspectAudioQuality.ts
 +// 一次體檢：檔頭讀容器的自稱規格 → 用 Web Audio 解碼 → 量頻譜 → 出結論。
 +//
@@ -516,6 +639,16 @@ index 0000000..ed0d882
 +    transitionHz: number | null;
 +    refDb: number;
 +    frames: number;
++    /** 畫圖用的頻譜曲線：對數頻率軸上等距取樣，值是相對參考電平的 dB（已夾在 −90…+5）。 */
++    curve: QualityCurve | null;
++}
++
++export interface QualityCurve {
++    /** 取樣點數。第 i 點的頻率是 20 * (nyquist / 20) ** (i / (points - 1))。 */
++    points: number[];
++    /** 對數軸的起點與終點（Hz），畫圖時用它把第 i 點換回頻率。 */
++    minHz: number;
++    maxHz: number;
 +}
 +
 +export interface QualityInspectResult {
@@ -563,6 +696,22 @@ index 0000000..ed0d882
 +        for (let i = 0; i < wantFrames; i += 1) samples[i] = left[start + i];
 +    }
 +    return samples;
++};
++
++/** 曲線點數：夠密看不出折線，又不至於讓每筆結果變成一大塊資料。 */
++const CURVE_POINTS = 240;
++const CURVE_MIN_HZ = 20;
++
++/** 把 dB 譜換成對數頻率軸上的等距取樣，供頻譜圖直接畫。 */
++const buildCurve = (db: Float64Array, freqPerBin: number, refDb: number, nyquist: number): QualityCurve => {
++    const points: number[] = [];
++    for (let i = 0; i < CURVE_POINTS; i += 1) {
++        const hz = CURVE_MIN_HZ * (nyquist / CURVE_MIN_HZ) ** (i / (CURVE_POINTS - 1));
++        const bin = Math.min(db.length - 1, Math.max(0, Math.round(hz / freqPerBin)));
++        const relative = db[bin] - refDb;
++        points.push(Math.max(-90, Math.min(5, Math.round(relative * 10) / 10)));
++    }
++    return { points, minHz: CURVE_MIN_HZ, maxHz: nyquist };
 +};
 +
 +const judge = (container: ContainerProbe | null, cutoffHz: number | null, transitionHz: number | null): { verdicts: QualityVerdict[]; level: QualityLevel } => {
@@ -652,6 +801,7 @@ index 0000000..ed0d882
 +            transitionHz: band.transitionHz,
 +            refDb: Math.round(band.refDb * 10) / 10,
 +            frames: spectrum.frames,
++            curve: buildCurve(spectrum.db, spectrum.freqPerBin, band.refDb, decoded.sampleRate / 2),
 +        },
 +        verdicts,
 +        level,
