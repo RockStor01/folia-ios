@@ -1847,6 +1847,44 @@ index 2882444..96ed0e0 100644
  const LibraryTuiView = ENABLE_TUI ? React.lazy(() => import('./LibraryTuiView')) : null;
  const LibraryTuiHome = ENABLE_TUI ? React.lazy(() => import('./LibraryTuiHome')) : null;
  const LibraryTuiArtist = ENABLE_TUI ? React.lazy(() => import('./LibraryTuiArtist')) : null;
+diff --git a/src/library/suites/tui/libraryTuiQuality.ts b/src/library/suites/tui/libraryTuiQuality.ts
+new file mode 100644
+index 0000000..aa3000b
+--- /dev/null
++++ b/src/library/suites/tui/libraryTuiQuality.ts
+@@ -0,0 +1,32 @@
++// src/library/suites/tui/libraryTuiQuality.ts
++// 曲庫列表「音質」欄的文字：容器自稱的採樣率／位深 + 真假無損的結論。
++// 純格式化，i18n 由呼叫端傳 t 進來（與其他 TUI 行一致，不在這裡抓全域）。
++
++import type { TrackQualityRow } from '../../../hooks/useTrackQualityLabels';
++
++type Translate = (key: string) => string;
++
++const rateText = (hz: number): string => {
++    if (!hz) return '';
++    const k = hz / 1000;
++    return `${Number.isInteger(k) ? k.toFixed(0) : k.toFixed(1)}k`;
++};
++
++/**
++ * 有損編碼只寫「有損」（採樣率照樣帶上，44.1k 有損一眼就懂）；
++ * 無損容器量到之前是「量測中」，量完才是真無損／假無損／無法判斷。
++ */
++export const formatTrackQuality = (row: TrackQualityRow | undefined, t: Translate): string => {
++    if (!row) return '';
++    const spec = [rateText(row.sampleRate), row.bitDepth ? `${row.bitDepth}bit` : ''].filter(Boolean).join('/');
++    const verdict = row.verdict === 'trueLossless'
++        ? t('libraryTui.qualityTrueLossless')
++        : row.verdict === 'fakeLossless'
++            ? t('libraryTui.qualityFakeLossless')
++            : row.verdict === 'lossy'
++                ? t('libraryTui.qualityLossy')
++                : row.verdict === 'unknown'
++                    ? t('libraryTui.qualityUnknown')
++                    : t('libraryTui.qualityPending');
++    return spec ? `${spec} ${verdict}` : verdict;
++};
 diff --git a/src/services/audioQuality/inspectAudioQuality.ts b/src/services/audioQuality/inspectAudioQuality.ts
 new file mode 100644
 index 0000000..8b1935b
@@ -2124,6 +2162,145 @@ index 0000000..5eb0584
 +    const songs = await getLocalSongs() as LocalSong[];
 +    return songs.filter(song => AUDIO_FILE.test(song.fileName)).length;
 +};
+diff --git a/src/services/audioQuality/localQualityIndex.ts b/src/services/audioQuality/localQualityIndex.ts
+new file mode 100644
+index 0000000..3e4b56a
+--- /dev/null
++++ b/src/services/audioQuality/localQualityIndex.ts
+@@ -0,0 +1,133 @@
++// src/services/audioQuality/localQualityIndex.ts
++// 曲庫列表上的「音質」欄：採樣率／位深幾乎不用算（讀前 64 KB 的檔頭就有），真假無損才要解碼量頻譜。
++// 所以這裡分兩段：
++//   1. 檔頭段：`probeContainer` 讀容器自稱的規格。有損編碼直接標「有損」，到此為止。
++//   2. 量測段：只有無損容器才值得驗——真的解 20 秒中段、量截止點，判斷有沒有被撐大。
++// 結果寫進 metadata_cache（key 帶版本號），同一個檔案第二次開清單就不再解碼。
++
++import type { LocalSong } from '../../types';
++import { getLocalSongHeaderBytes, getLocalSongArrayBuffer } from '../localMusicService';
++import { getLocalSong } from '../db';
++import { putCacheEntry, readCacheEntry } from '../repositories/cacheRepository';
++import { probeContainer } from './qualityProbe';
++import { inspectAudioBytes } from './inspectAudioQuality';
++
++/** 量測結論。`unknown` 是解不開／取樣率超出 WebKit 上限，介面上顯示成「待檢」而不是判它假。 */
++export type QualityVerdictLabel = 'trueLossless' | 'fakeLossless' | 'unknown' | 'lossy';
++
++export interface LocalQualityEntry {
++    songId: string;
++    codec: string;
++    sampleRate: number;
++    bitDepth: number;
++    /** 容器本身是否無損（flac / wav / aiff）。 */
++    lossless: boolean;
++    /** 量測結論；null = 還沒量（無損容器要解碼才算），有損編碼一律 `lossy`。 */
++    verdict: QualityVerdictLabel | null;
++}
++
++const CACHE_PREFIX = 'local_quality_v1:';
++/** 記憶體快取：清單滾動時同一首會被反覆問，別每次都打 IndexedDB。 */
++const memory = new Map<string, LocalQualityEntry>();
++const pending = new Map<string, Promise<LocalQualityEntry | null>>();
++
++export const getCachedQuality = (songId: string): LocalQualityEntry | undefined => memory.get(songId);
++
++const store = async (entry: LocalQualityEntry): Promise<LocalQualityEntry> => {
++    memory.set(entry.songId, entry);
++    try {
++        await putCacheEntry(`${CACHE_PREFIX}${entry.songId}`, entry);
++    } catch (error) {
++        console.warn('[LocalQuality] Failed to cache quality entry:', error);
++    }
++    return entry;
++};
++
++const fromHeader = (songId: string, bytes: ArrayBuffer): LocalQualityEntry | null => {
++    const probe = probeContainer(bytes);
++    if (!probe) return null;
++    return {
++        songId,
++        codec: probe.codec,
++        sampleRate: probe.sampleRate,
++        bitDepth: probe.bitDepth,
++        lossless: probe.lossless,
++        // 有損容器沒什麼好驗的；無損才需要後面的量測。
++        verdict: probe.lossless ? null : 'lossy',
++    };
++};
++
++/** 讀檔頭（便宜）；已量過就直接回快取。回 null 代表檔案讀不到或容器不認得。 */
++export const readLocalQuality = async (song: LocalSong): Promise<LocalQualityEntry | null> => {
++    const cached = memory.get(song.id);
++    if (cached) return cached;
++    const inFlight = pending.get(song.id);
++    if (inFlight) return inFlight;
++
++    const task = (async () => {
++        try {
++            const persisted = await readCacheEntry<LocalQualityEntry>(`${CACHE_PREFIX}${song.id}`);
++            if (persisted) {
++                memory.set(song.id, persisted);
++                return persisted;
++            }
++            const header = await getLocalSongHeaderBytes(song);
++            if (!header) return null;
++            const entry = fromHeader(song.id, header);
++            if (!entry) return null;
++            return await store(entry);
++        } catch (error) {
++            console.warn('[LocalQuality] Failed to read header quality:', error);
++            return null;
++        } finally {
++            pending.delete(song.id);
++        }
++    })();
++
++    pending.set(song.id, task);
++    return task;
++};
++
++/**
++ * 量真假無損：整首讀進來解 20 秒中段。只有無損容器會被呼叫（有損已經在檔頭段就定案），
++ * 一次只跑一首，同時解好幾首會把手機記憶體打爆。
++ */
++export const measureLocalQuality = async (song: LocalSong): Promise<LocalQualityEntry | null> => {
++    const base = await readLocalQuality(song);
++    if (!base || !base.lossless) return base;
++    if (base.verdict) return base;
++
++    const bytes = await getLocalSongArrayBuffer(song);
++    if (!bytes) return base;
++    try {
++        const result = await inspectAudioBytes(bytes, song.fileName);
++        const fake = result.verdicts.some(verdict => verdict.kind === 'fakeLossless' || verdict.kind === 'upsampled');
++        const narrowed = result.verdicts.some(verdict => verdict.kind === 'narrowBand');
++        // 光譜量到的上限明顯低於容器自稱的頻寬，就是「這份無損被有損轉過」的鐵證：
++        // 128 kbps 的 MP3 上限大約 16.5 kHz，裝進 48 kHz 的 FLAC 就是 24 kHz 裡只到 16.5 kHz。
++        // 判準取 0.8 × Nyquist 且差 3000 Hz 以上：真的 48 kHz 母帶內容通常到 20 kHz 以上，不會誤傷。
++        const measured = result.measured;
++        const narrowByBand = Boolean(
++            measured?.cutoffHz && measured.nyquistHz
++            && measured.cutoffHz <= measured.nyquistHz * 0.8
++            && measured.nyquistHz - measured.cutoffHz >= 3000
++        );
++        const verdict: QualityVerdictLabel = result.ok
++            ? (fake || narrowed || narrowByBand ? 'fakeLossless' : 'trueLossless')
++            : 'unknown';
++        return await store({ ...base, verdict });
++    } catch (error) {
++        console.warn('[LocalQuality] Failed to measure quality:', error);
++        return base;
++    }
++};
++
++/** 把 Hz 縮成列表上看得懂的短字：44100 → 44.1k，48000 → 48k。 */
++export const formatQualityRate = (hz: number): string => {
++    if (!hz) return '';
++    const k = hz / 1000;
++    return `${Number.isInteger(k) ? k.toFixed(0) : k.toFixed(1)}k`;
++};
++
++/** songId → LocalSong（列表只有 id，量測要整首 LocalSong）。 */
++export const resolveLocalSong = async (songId: string): Promise<LocalSong | undefined> => getLocalSong(songId);
 diff --git a/src/services/audioQuality/qualityProbe.ts b/src/services/audioQuality/qualityProbe.ts
 new file mode 100644
 index 0000000..d4475a1
