@@ -661,8 +661,69 @@ index 92620c2..04852d7 100644
      sources,
      general,
      interaction,
+diff --git a/src/hooks/useLocalAudioImport.ts b/src/hooks/useLocalAudioImport.ts
+new file mode 100644
+index 0000000..795650c
+--- /dev/null
++++ b/src/hooks/useLocalAudioImport.ts
+@@ -0,0 +1,55 @@
++// src/hooks/useLocalAudioImport.ts
++// 「從檔案匯入」在每個首頁 suite 裡都一樣：一顆隱藏的 input、一個 busy 旗標、一個 handler。
++// 抽出來是因為 Bravais 空牆、Grid3D 空狀態、TUI 清單都要同一件事，分散寫三份遲早對不上。
++
++import { useCallback, useRef, useState } from 'react';
++import { importAudioFiles } from '../services/localMusicService';
++
++export interface LocalAudioImportController {
++    /** 要掛在 input 上的 ref（input 必須真的在 DOM 裡）。 */
++    inputRef: React.RefObject<HTMLInputElement | null>;
++    importing: boolean;
++    /** 開系統選檔器（iOS 走「檔案」App，安卓走 SAF 文件選擇器）。 */
++    openPicker: () => void;
++    /** 給 <input type="file" multiple onChange> 用的處理函式。 */
++    handleFiles: (files: FileList | null) => void;
++    lastResult: { count: number; failed: number; skipped: number } | null;
++}
++
++export const useLocalAudioImport = (): LocalAudioImportController => {
++    const inputRef = useRef<HTMLInputElement | null>(null);
++    const [importing, setImporting] = useState(false);
++    const [lastResult, setLastResult] = useState<LocalAudioImportController['lastResult']>(null);
++    const busyRef = useRef(false);
++
++    const openPicker = useCallback(() => {
++        inputRef.current?.click();
++    }, []);
++
++    const handleFiles = useCallback((files: FileList | null) => {
++        // FileList 是活的：清 value 之前先抓成陣列，否則清完就空了。
++        const picked = Array.from(files ?? []);
++        if (inputRef.current) inputRef.current.value = '';
++        if (!picked.length || busyRef.current) return;
++
++        busyRef.current = true;
++        setImporting(true);
++        void (async () => {
++            try {
++                const result = await importAudioFiles(picked);
++                setLastResult({ count: result.songs.length, failed: result.failed.length, skipped: result.skipped });
++                if (result.failed.length > 0) {
++                    console.warn('[LocalImport] Some files could not be imported:', result.failed);
++                }
++            } catch (error) {
++                console.error('[LocalImport] Import failed', error);
++                setLastResult({ count: 0, failed: picked.length, skipped: 0 });
++            } finally {
++                busyRef.current = false;
++                setImporting(false);
++            }
++        })();
++    }, []);
++
++    return { inputRef, importing, openPicker, handleFiles, lastResult };
++};
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..5fccebd 100644
+index 86f3b6d..45a4171 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -782,7 +843,17 @@ index 86f3b6d..5fccebd 100644
      "title": "Performance check",
      "songTitle": "Performance check",
      "running": "Checking performance",
-@@ -2796,6 +2766,7 @@ export default {
+@@ -587,7 +557,8 @@ export default {
+       "reloginTitle": "Your {{provider}} sign-in has expired",
+       "reloginBody": "Choose “{{connect}}” in the info strip to sign in again, and your playlists will fill this wall again.",
+       "localTitle": "No local music imported yet",
+-      "localBody": "Choose “{{action}}” under “⋯” in the info strip, and your folders, albums and artists will fill this wall."
++      "localBody": "Choose “{{action}}” under “⋯” in the info strip, and your folders, albums and artists will fill this wall.",
++      "localBodyFilesOnly": "This device cannot open folders. Use “Import files” below and your covers, albums and artists will fill this wall."
+     },
+     "special": {"liked": "Liked Songs", "cloud": "Cloud Drive", "personal-fm": "Personal FM", "fm-station": "Radio", "daily": "Daily Picks", "all-songs": "All Songs", "local-favorites": "Favorites", "navidrome-random": "Random", "navidrome-favorites": "Starred"}
+   },
+@@ -2796,6 +2767,7 @@ export default {
      "settingsPageHome": "Home & playlists",
      "settingsPagePlayback": "Playback",
      "settingsPageLyrics": "Lyrics",
@@ -790,7 +861,7 @@ index 86f3b6d..5fccebd 100644
      "settingsPageGeneral": "General",
      "settingsPageInteraction": "Shortcuts",
      "settingsPageIntegration": "Connections",
-@@ -5242,6 +5213,9 @@ export default {
+@@ -5242,6 +5214,9 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -801,7 +872,7 @@ index 86f3b6d..5fccebd 100644
      "importFolder": "Import Folder",
      "importing": "Importing...",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..0e76d7c 100644
+index 0067e9a..0b95ac7 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -851,7 +922,17 @@ index 0067e9a..0e76d7c 100644
    "sourcesSettings": {
      "groupList": "音源",
      "groupNotices": "接管与覆盖",
-@@ -2796,6 +2836,7 @@ export default {
+@@ -587,7 +627,8 @@ export default {
+       "reloginTitle": "{{provider}} 的登录已过期",
+       "reloginBody": "点信息条里的「{{connect}}」重新登录，你的歌单会重新铺满这面墙。",
+       "localTitle": "还没有导入本地音乐",
+-      "localBody": "在信息条的「⋯」里选「{{action}}」，文件夹、专辑和歌手会铺满这面墙。"
++      "localBody": "在信息条的「⋯」里选「{{action}}」，文件夹、专辑和歌手会铺满这面墙。",
++      "localBodyFilesOnly": "这台设备没有文件夹权限，用下面的「导入文件」选几首，封面、专辑和歌手就会铺满这面墙。"
+     },
+     "special": {"liked": "我喜欢的音乐", "cloud": "云盘", "personal-fm": "私人FM", "fm-station": "电台", "daily": "每日推荐", "all-songs": "全部歌曲", "local-favorites": "我喜欢", "navidrome-random": "随机音乐", "navidrome-favorites": "收藏"}
+   },
+@@ -2796,6 +2837,7 @@ export default {
      "settingsPageHome": "主页与歌单",
      "settingsPagePlayback": "播放控制",
      "settingsPageLyrics": "歌词",
@@ -859,7 +940,7 @@ index 0067e9a..0e76d7c 100644
      "settingsPageGeneral": "通用",
      "settingsPageInteraction": "快捷操作",
      "settingsPageIntegration": "连接与集成",
-@@ -5242,6 +5283,9 @@ export default {
+@@ -5242,6 +5284,9 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -900,6 +981,228 @@ index 45c14da..a9fce0d 100644
 +  .group .group-hover\:max-w-28 { max-width: 7rem; }
 +  .group .group-hover\:ml-1\.5 { margin-left: 0.375rem; }
 +}
+diff --git a/src/library/suites/bravais/BravaisHomeSources.tsx b/src/library/suites/bravais/BravaisHomeSources.tsx
+index 7ca8d91..f442b95 100644
+--- a/src/library/suites/bravais/BravaisHomeSources.tsx
++++ b/src/library/suites/bravais/BravaisHomeSources.tsx
+@@ -29,6 +29,8 @@ import type { BravaisSeamMenuItem } from './bravaisSeamModels';
+ import type { BravaisHomeChrome } from './useBravaisHomeChrome';
+ import BravaisHomeDirectory from './BravaisHomeDirectory';
+ import { availableLocalTabLabel, localWallHint, onlineWallHint } from './bravaisEmptyWallHint';
++import { useLocalAudioImport } from '../../../hooks/useLocalAudioImport';
++import { getLocalLibraryAvailability } from '../../../services/localLibraryAvailability';
+ import { useBravaisHomeAccount } from './useBravaisHomeAccount';
+ import { quickPriority } from './bravaisSeamQuickCells';
+ 
+@@ -161,7 +163,18 @@ export const BravaisHomeLocal: React.FC<BravaisHomeSourceCommonProps & {
+     const isEmptyLibrary = directoryTrees.loaded && localSongs.length === 0 && directoryTrees.trees.length === 0;
+     // 空曲库时墙面上写一段背景说明（从缝的「⋯」导入文件夹）。
+     const canImportFolder = localActions.some(action => action.id === 'import-folder');
+-    const wallHint = useMemo(() => (isEmptyLibrary ? localWallHint(canImportFolder, t) : undefined), [canImportFolder, isEmptyLibrary, t]);
++    // 檔案匯入是 iOS／車機上唯一能把歌放進曲庫的路，空牆上直接給入口。
++    const fileImport = useLocalAudioImport();
++    const localLibrarySupportsFolders = getLocalLibraryAvailability().supported;
++    const wallHint = useMemo(() => (isEmptyLibrary
++        ? localWallHint({
++            canImportFolder: canImportFolder && localLibrarySupportsFolders,
++            canPickFiles: true,
++            onImportFolder: () => void homeActions.importFolder(),
++            onPickFiles: fileImport.openPicker,
++            importing: fileImport.importing,
++        }, t)
++        : undefined), [canImportFolder, isEmptyLibrary, localLibrarySupportsFolders, t, fileImport.importing, fileImport.openPicker, homeActions]);
+ 
+     useLibraryHomeListRegistration({
+         enabled: !isEmptyLibrary,
+@@ -227,6 +240,14 @@ export const BravaisHomeLocal: React.FC<BravaisHomeSourceCommonProps & {
+     );
+ 
+     return (
++        <>
++        <input
++            ref={fileImport.inputRef}
++            type="file"
++            multiple
++            hidden
++            onChange={event => fileImport.handleFiles(event.target.files)}
++        />
+         <BravaisHomeDirectory
+             {...common}
+             layerKey="home:local"
+@@ -245,6 +266,7 @@ export const BravaisHomeLocal: React.FC<BravaisHomeSourceCommonProps & {
+             onOpen={onOpen}
+             shortcutCards={isEmptyLibrary ? NO_CARDS : shortcutCards}
+         />
++        </>
+     );
+ };
+ 
+diff --git a/src/library/suites/bravais/BravaisWallHint.tsx b/src/library/suites/bravais/BravaisWallHint.tsx
+index 21da69a..c25d6cf 100644
+--- a/src/library/suites/bravais/BravaisWallHint.tsx
++++ b/src/library/suites/bravais/BravaisWallHint.tsx
+@@ -17,6 +17,26 @@ const BravaisWallHint: React.FC<{
+             <div key={`${hint.title}\u0000${hint.body ?? ''}`} className="bravais-wall-hint-text">
+                 <p className="bravais-wall-hint-title">{hint.title}</p>
+                 {hint.body && <p className="bravais-wall-hint-body">{hint.body}</p>}
++                {hint.actions && hint.actions.length > 0 && (
++                    // 这一层是整面墙的覆盖层，平时不接指针（拖动、点空白处要落到墙上）；
++                    // 只有这几颗按钮自己把 pointer-events 打回来，按下不会带走墙的拖拽手势。
++                    <div className="bravais-wall-hint-actions">
++                        {hint.actions.map(action => (
++                            <button
++                                key={action.label}
++                                type="button"
++                                className="bravais-wall-hint-action"
++                                data-primary={action.primary ? '' : undefined}
++                                onClick={event => {
++                                    event.stopPropagation();
++                                    action.onClick();
++                                }}
++                            >
++                                {action.label}
++                            </button>
++                        ))}
++                    </div>
++                )}
+             </div>
+         )}
+     </div>
+diff --git a/src/library/suites/bravais/bravais.css b/src/library/suites/bravais/bravais.css
+index f8476f7..2a29009 100644
+--- a/src/library/suites/bravais/bravais.css
++++ b/src/library/suites/bravais/bravais.css
+@@ -686,6 +686,51 @@
+     text-wrap: pretty;
+ }
+ 
++/* 空墙上的入口按钮：跟背景字同一套淡色，不是实心按钮，免得把墙面压成一张卡片。 */
++.bravais-wall-hint-actions {
++    display: flex;
++    flex-wrap: wrap;
++    gap: 10px;
++    justify-content: center;
++    margin-top: 1.6em;
++}
++
++.bravais-wall-hint-action {
++    pointer-events: auto;
++    display: inline-flex;
++    align-items: center;
++    justify-content: center;
++    /* 车机上按得准：最小 44 高、左右留够 */
++    min-height: 44px;
++    padding: 0 22px;
++    border-radius: 999px;
++    border: 1px solid color-mix(in srgb, var(--text-primary, #fff) 22%, transparent);
++    background: color-mix(in srgb, var(--text-primary, #fff) 6%, transparent);
++    color: color-mix(in srgb, var(--text-primary, #fff) 72%, transparent);
++    font-size: 15px;
++    font-weight: 500;
++    cursor: pointer;
++    transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.12s ease;
++    -webkit-tap-highlight-color: transparent;
++}
++
++.bravais-wall-hint-action[data-primary] {
++    border-color: color-mix(in srgb, var(--text-primary, #fff) 42%, transparent);
++    background: color-mix(in srgb, var(--text-primary, #fff) 12%, transparent);
++    color: color-mix(in srgb, var(--text-primary, #fff) 92%, transparent);
++}
++
++.bravais-wall-hint-action:hover {
++    border-color: color-mix(in srgb, var(--text-primary, #fff) 40%, transparent);
++    background: color-mix(in srgb, var(--text-primary, #fff) 14%, transparent);
++    color: var(--text-primary, #fff);
++}
++
++.bravais-wall-hint-action:active {
++    transform: scale(0.97);
++}
++
++
+ @keyframes bravais-wall-hint-in {
+     from { opacity: 0; transform: translateY(6px); }
+     to { opacity: 1; transform: none; }
+diff --git a/src/library/suites/bravais/bravaisEmptyWallHint.ts b/src/library/suites/bravais/bravaisEmptyWallHint.ts
+index 4c47f22..6af0afc 100644
+--- a/src/library/suites/bravais/bravaisEmptyWallHint.ts
++++ b/src/library/suites/bravais/bravaisEmptyWallHint.ts
+@@ -30,11 +30,46 @@ export const onlineWallHint = (
+     };
+ };
+ 
+-/** 本地曲库空着（没有歌、也没导入过文件夹）时的说明；canImport 是缝的「⋯」里有没有「导入文件夹」。 */
+-export const localWallHint = (canImport: boolean, t: TFunction): BravaisWallHint => ({
+-    title: t('libraryBravaisHome.wallHint.localTitle'),
+-    body: canImport ? t('libraryBravaisHome.wallHint.localBody', { action: t('localMusic.importFolder') }) : undefined,
+-});
++/**
++ * 本地曲库空着（没有歌、也没导入过文件夹）时的说明。
++ *
++ * 除了文案，还把两个入口直接挂在墙上——原来「导入文件 / 导入文件夹」只在缝的「⋯」里，
++ * 第一次打开的人找不到（车机、iPhone 尤其明显）。没有目录 API 的装置（iOS / 安卓 WebView 的
++ * showDirectoryPicker 缺失）就不给「导入文件夹」，因为没有它反而会点出一声报错。
++ */
++export const localWallHint = (
++    options: {
++        canImportFolder: boolean;
++        canPickFiles: boolean;
++        onImportFolder?: () => void;
++        onPickFiles?: () => void;
++        importing?: boolean;
++    },
++    t: TFunction,
++): BravaisWallHint => {
++    const { canImportFolder, canPickFiles, onImportFolder, onPickFiles, importing = false } = options;
++    const actions: { label: string; onClick: () => void; primary?: boolean }[] = [];
++
++    if (canPickFiles && onPickFiles) {
++        actions.push({
++            label: importing ? t('localMusic.importingFiles') : t('localMusic.importFiles'),
++            onClick: onPickFiles,
++            primary: true,
++        });
++    }
++    if (canImportFolder && onImportFolder) {
++        actions.push({ label: t('localMusic.importFolder'), onClick: onImportFolder });
++    }
++
++    return {
++        title: t('libraryBravaisHome.wallHint.localTitle'),
++        // 只有导入文件夹时照旧指向缝里那个动作；只能导入文件时说明改指向这台装置实际能做的那件事。
++        body: canImportFolder
++            ? t('libraryBravaisHome.wallHint.localBody', { action: t('localMusic.importFolder') })
++            : t('libraryBravaisHome.wallHint.localBodyFilesOnly'),
++        actions: actions.length > 0 ? actions : undefined,
++    };
++};
+ 
+ /** 页签条里能去的本地页签名（有、且没被禁用）。 */
+ export const availableLocalTabLabel = (tabs: readonly BravaisSeamTab[] | undefined): string | null => (
+diff --git a/src/library/suites/bravais/bravaisSeamModels.ts b/src/library/suites/bravais/bravaisSeamModels.ts
+index c35036c..9c17aad 100644
+--- a/src/library/suites/bravais/bravaisSeamModels.ts
++++ b/src/library/suites/bravais/bravaisSeamModels.ts
+@@ -175,10 +175,17 @@ export type BravaisLayerWall = {
+     hint?: BravaisWallHint;
+ };
+ 
+-/** 空墙上的说明：一行大字标题，下面一段怎么开始的说明（可以没有）。文案都是已翻译的。 */
++/** 空墙上的说明：一行大字标题，下面一段怎么开始的说明（可以没有），再下面可选的几个入口按钮。 */
+ export type BravaisWallHint = {
+     title: string;
+     body?: string;
++    /**
++     * 空墙上的直接入口（导入文件 / 导入文件夹）。
++     *
++     * 为什么要有：原来这两件事只藏在缝里那个「⋯」，第一次打开的人（尤其车机、iPhone 上）根本找不到，
++     * 墙上一段说明字又没有落点。按钮只在这些口袋里出现，墙本身的手感不变。
++     */
++    actions?: { label: string; onClick: () => void; primary?: boolean }[];
+ };
+ 
+ /** 列表面板工具行的排序（本地文件夹才有）。 */
 diff --git a/src/library/suites/grid/home/LocalGrid3DView.tsx b/src/library/suites/grid/home/LocalGrid3DView.tsx
 index 70f5244..37df252 100644
 --- a/src/library/suites/grid/home/LocalGrid3DView.tsx
@@ -1638,10 +1941,10 @@ index 0000000..d8a16cb
 +};
 diff --git a/src/services/localImportedAudioStore.ts b/src/services/localImportedAudioStore.ts
 new file mode 100644
-index 0000000..0bb37de
+index 0000000..df20d8f
 --- /dev/null
 +++ b/src/services/localImportedAudioStore.ts
-@@ -0,0 +1,147 @@
+@@ -0,0 +1,149 @@
 +// src/services/localImportedAudioStore.ts
 +// 手機／平板匯入的音檔本體放哪裡。
 +//
@@ -1654,7 +1957,6 @@ index 0000000..0bb37de
 +// 每次開歌單都在解一堆 Blob。獨立 store 按 song id 取，只有真的要聽那一首時才碰它。
 +
 +const DB_NAME = 'folia-imported-audio';
-+const DB_VERSION = 1;
 +const STORE_NAME = 'audio';
 +
 +interface ImportedAudioRecord {
@@ -1683,7 +1985,10 @@ index 0000000..0bb37de
 +    if (dbPromise) return dbPromise;
 +    dbPromise = (async () => {
 +        if (typeof indexedDB === 'undefined') throw new Error('IndexedDB is unavailable');
-+        let db = await openOnce(DB_VERSION);
++        // 不帶版本開：這隻庫可能已經被舊版程式的自我修復推高過版本（例如 2），
++        // 硬寫 1 只會換來 VersionError，之後每次讀檔都失敗（「匯入的歌找不到」就是這樣來的）。
++        // 新庫不存在時 open 會自動建在版本 1，onupgradeneeded 照樣會把 store 建出來。
++        let db = await openOnce(0);
 +        if (!db.objectStoreNames.contains(STORE_NAME)) {
 +            const nextVersion = db.version + 1;
 +            db.close();
@@ -1996,3 +2301,41 @@ index 26a0181..c3efa48 100644
      ]);
      await dropDeletedSongsFromPlaylists(uniqueSongIds);
      await Promise.all(Array.from(affectedRoots).map(cleanupDirHandleIfUnused));
+diff --git a/test/unit/library/bravais/bravaisEmptyWallHint.test.ts b/test/unit/library/bravais/bravaisEmptyWallHint.test.ts
+index 967c627..aa27953 100644
+--- a/test/unit/library/bravais/bravaisEmptyWallHint.test.ts
++++ b/test/unit/library/bravais/bravaisEmptyWallHint.test.ts
+@@ -1,4 +1,4 @@
+-import { describe, expect, it } from 'vitest';
++import { describe, expect, it, vi } from 'vitest';
+ import type { TFunction } from 'i18next';
+ import { computeBravaisFrame, wallHintSpan } from '@/library/suites/bravais/bravaisFrame';
+ import { availableLocalTabLabel, localWallHint, onlineWallHint } from '@/library/suites/bravais/bravaisEmptyWallHint';
+@@ -37,11 +37,25 @@ describe('onlineWallHint', () => {
+ 
+ describe('localWallHint', () => {
+     it('points at the folder import only when the seam menu has it', () => {
+-        expect(localWallHint(true, t)).toEqual({
++        expect(localWallHint({ canImportFolder: true, canPickFiles: false }, t)).toEqual({
+             title: 'libraryBravaisHome.wallHint.localTitle',
+             body: 'libraryBravaisHome.wallHint.localBody {"action":"localMusic.importFolder"}',
++            actions: undefined,
++        });
++        expect(localWallHint({ canImportFolder: false, canPickFiles: false }, t)).toEqual({
++            title: 'libraryBravaisHome.wallHint.localTitle',
++            body: 'libraryBravaisHome.wallHint.localBodyFilesOnly',
++            actions: undefined,
++        });
++    });
++
++    it('puts the file import straight on the empty wall', () => {
++        const onPickFiles = vi.fn();
++        expect(localWallHint({ canImportFolder: false, canPickFiles: true, onPickFiles }, t)).toEqual({
++            title: 'libraryBravaisHome.wallHint.localTitle',
++            body: 'libraryBravaisHome.wallHint.localBodyFilesOnly',
++            actions: [{ label: 'localMusic.importFiles', onClick: onPickFiles, primary: true }],
+         });
+-        expect(localWallHint(false, t)).toEqual({ title: 'libraryBravaisHome.wallHint.localTitle', body: undefined });
+     });
+ 
+     it('only names a local tab that can be opened', () => {
