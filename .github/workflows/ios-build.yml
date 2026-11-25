@@ -59,6 +59,15 @@ jobs:
           npx cap add ios
           npx cap sync ios
 
+      - name: Set app version
+        working-directory: folia
+        run: |
+          PLIST=ios/App/App/Info.plist
+          VERSION=$(node -p "require('./package.json').version")
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 1" "$PLIST"
+          echo "version=$VERSION"
+
       - name: Apply app icon
         working-directory: folia
         run: |
