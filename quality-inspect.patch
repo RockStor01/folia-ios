@@ -1,9 +1,9 @@
 diff --git a/src/components/audioQuality/QualityCheckSection.tsx b/src/components/audioQuality/QualityCheckSection.tsx
 new file mode 100644
-index 0000000..26c654e
+index 0000000..d2b59f5
 --- /dev/null
 +++ b/src/components/audioQuality/QualityCheckSection.tsx
-@@ -0,0 +1,206 @@
+@@ -0,0 +1,213 @@
 +// src/components/audioQuality/QualityCheckSection.tsx
 +// 設定頁裡那張「音質體檢」的卡片：選檔案，或掃整個曲庫，然後把每一份的結論列出來。
 +//
@@ -16,6 +16,7 @@ index 0000000..26c654e
 +import { Button, Row, type SettingsOptionDef } from '../modal/settings/kit';
 +import { inspectAudioFile, type QualityInspectResult } from '../../services/audioQuality/inspectAudioQuality';
 +import { countInspectableLocalSongs, scanLocalLibraryQuality } from '../../services/audioQuality/inspectLocalLibrary';
++import { getLocalLibraryAvailability } from '../../services/localLibraryAvailability';
 +
 +const LEVEL_STYLES: Record<string, string> = {
 +    bad: 'bg-[color-mix(in_srgb,var(--st-danger,#ef4444)_16%,transparent)] text-[var(--st-danger,#ef4444)]',
@@ -95,9 +96,14 @@ index 0000000..26c654e
 +    const [busy, setBusy] = useState(false);
 +    const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 +    const [libraryCount, setLibraryCount] = useState<number | null>(null);
++    const libraryAvailability = getLocalLibraryAvailability();
 +
 +    useEffect(() => {
 +        let active = true;
++        if (!libraryAvailability.supported) {
++            setLibraryCount(0);
++            return () => { active = false; };
++        }
 +        void countInspectableLocalSongs()
 +            .then(count => { if (active) setLibraryCount(count); })
 +            .catch(() => { if (active) setLibraryCount(0); });
@@ -105,7 +111,7 @@ index 0000000..26c654e
 +            active = false;
 +            abortRef.current?.abort();
 +        };
-+    }, []);
++    }, [libraryAvailability.supported]);
 +
 +    const inspectFiles = useCallback(async (files: File[]) => {
 +        if (!files.length || busy) return;
@@ -151,7 +157,6 @@ index 0000000..26c654e
 +            <input
 +                ref={inputRef}
 +                type="file"
-+                accept="audio/*,.flac,.wav,.aiff,.aif,.mp3,.m4a,.aac,.ogg,.opus,.ape,.wv"
 +                multiple
 +                className="hidden"
 +                onChange={event => {
@@ -173,9 +178,11 @@ index 0000000..26c654e
 +
 +            <Row
 +                option={scanOption}
-+                hint={libraryCount === null
-+                    ? t('qualityCheck.scanLibraryHintCounting')
-+                    : t('qualityCheck.scanLibraryHint', { count: libraryCount })}
++                hint={!libraryAvailability.supported
++                    ? t('qualityCheck.scanUnsupported')
++                    : libraryCount === null
++                        ? t('qualityCheck.scanLibraryHintCounting')
++                        : t('qualityCheck.scanLibraryHint', { count: libraryCount })}
 +            >
 +                {busy && progress
 +                    ? (
@@ -187,7 +194,7 @@ index 0000000..26c654e
 +                    : null}
 +                <Button
 +                    icon={FolderSearch}
-+                    disabled={busy || libraryCount === 0}
++                    disabled={busy || !libraryAvailability.supported || libraryCount === 0}
 +                    onClick={() => void scanLibrary()}
 +                >
 +                    {t('qualityCheck.scanLibrary')}
@@ -294,10 +301,10 @@ index 92620c2..04852d7 100644
      general,
      interaction,
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..3166990 100644
+index 86f3b6d..b765d2a 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
-@@ -1,77 +1,40 @@
+@@ -1,77 +1,41 @@
  
  
  export default {
@@ -377,6 +384,7 @@ index 86f3b6d..3166990 100644
 +    "scanLibrary": "Scan local library",
 +    "scanLibraryHint": "{{count}} inspectable local files in the library",
 +    "scanLibraryHintCounting": "Counting the library…",
++    "scanUnsupported": "This device has no folder-access API (iOS Safari does not support it), so the library cannot be imported — use Choose files above",
 +    "scanning": "Analysing {{done}}/{{total}}",
 +    "resultsTitle": "Results: {{count}} files, {{bad}} with problems",
 +    "tagOk": "Clean",
@@ -407,7 +415,7 @@ index 86f3b6d..3166990 100644
      "title": "Performance check",
      "songTitle": "Performance check",
      "running": "Checking performance",
-@@ -2796,6 +2759,7 @@ export default {
+@@ -2796,6 +2760,7 @@ export default {
      "settingsPageHome": "Home & playlists",
      "settingsPagePlayback": "Playback",
      "settingsPageLyrics": "Lyrics",
@@ -416,10 +424,10 @@ index 86f3b6d..3166990 100644
      "settingsPageInteraction": "Shortcuts",
      "settingsPageIntegration": "Connections",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..1d4540c 100644
+index 0067e9a..330469f 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
-@@ -1,6 +1,39 @@
+@@ -1,6 +1,40 @@
  
  
  export default {
@@ -431,6 +439,7 @@ index 0067e9a..1d4540c 100644
 +    "scanLibrary": "扫描本地曲库",
 +    "scanLibraryHint": "曲库里有 {{count}} 首可检查的本地文件",
 +    "scanLibraryHintCounting": "正在数曲库…",
++    "scanUnsupported": "这台设备没有文件夹权限 API（iOS Safari 不支持），曲库无法导入，请用上面的「选择文件」",
 +    "scanning": "正在分析 {{done}}/{{total}}",
 +    "resultsTitle": "结果：{{count}} 份，其中 {{bad}} 份有问题",
 +    "tagOk": "正常",
@@ -459,7 +468,7 @@ index 0067e9a..1d4540c 100644
    "sourcesSettings": {
      "groupList": "音源",
      "groupNotices": "接管与覆盖",
-@@ -2796,6 +2829,7 @@ export default {
+@@ -2796,6 +2830,7 @@ export default {
      "settingsPageHome": "主页与歌单",
      "settingsPagePlayback": "播放控制",
      "settingsPageLyrics": "歌词",
