@@ -735,7 +735,7 @@ index 0000000..b50d19d
 +    return { inputRef, importing, progress, openPicker, handleFiles, lastResult };
 +};
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..a296d48 100644
+index 86f3b6d..067484a 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -865,6 +865,15 @@ index 86f3b6d..a296d48 100644
      },
      "special": {"liked": "Liked Songs", "cloud": "Cloud Drive", "personal-fm": "Personal FM", "fm-station": "Radio", "daily": "Daily Picks", "all-songs": "All Songs", "local-favorites": "Favorites", "navidrome-random": "Random", "navidrome-favorites": "Starred"}
    },
+@@ -619,7 +590,7 @@ export default {
+     "confirmDelete": "Delete “{{name}}”?",
+     "rendererSwitch": "Collection view",
+     "rendererGrid": "Grid",
+-    "rendererTui": "TUI",
++    "rendererTui": "List",
+     "homeTitle": "library",
+     "homeSources": "sources",
+     "columnName": "Name",
 @@ -2796,6 +2767,7 @@ export default {
      "settingsPageHome": "Home & playlists",
      "settingsPagePlayback": "Playback",
@@ -887,8 +896,23 @@ index 86f3b6d..a296d48 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
+@@ -6053,8 +6030,13 @@ export default {
+   },
+   "librarySuiteOnboarding": {
+     "title": "How should your library look?",
+-    "description": "The home screen, playlists, albums and artist pages are all browsed in the interface you pick here. Both do the same things; they just browse differently.",
++    "description": "The home screen, playlists, albums and artist pages are all browsed in the interface you pick here. They all do the same things; they just browse differently.",
+     "settingsHint": "You can change this any time under Options \u2192 Interface \u2192 Library interface.",
++    "tui": {
++      "title": "List",
++      "tag": "Rows",
++      "description": "One row per song, top to bottom. Large text, easy to read on a car screen or by touch, and arrow keys work too."
++    },
+     "grid": {
+       "title": "Grid",
+       "tag": "Classic",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..03f0b4b 100644
+index 0067e9a..016c9e1 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -948,6 +972,15 @@ index 0067e9a..03f0b4b 100644
      },
      "special": {"liked": "我喜欢的音乐", "cloud": "云盘", "personal-fm": "私人FM", "fm-station": "电台", "daily": "每日推荐", "all-songs": "全部歌曲", "local-favorites": "我喜欢", "navidrome-random": "随机音乐", "navidrome-favorites": "收藏"}
    },
+@@ -619,7 +660,7 @@ export default {
+     "confirmDelete": "删除「{{name}}」？",
+     "rendererSwitch": "集合视图",
+     "rendererGrid": "网格",
+-    "rendererTui": "TUI",
++    "rendererTui": "清單",
+     "homeTitle": "曲库",
+     "homeSources": "来源",
+     "columnName": "名称",
 @@ -2796,6 +2837,7 @@ export default {
      "settingsPageHome": "主页与歌单",
      "settingsPagePlayback": "播放控制",
@@ -970,6 +1003,21 @@ index 0067e9a..03f0b4b 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
+@@ -6051,8 +6098,13 @@ export default {
+   },
+   "librarySuiteOnboarding": {
+     "title": "资料库用哪种界面？",
+-    "description": "首页、歌单、专辑与歌手页都用这里选的界面浏览。两种能做的事一样，只是浏览的方式不同。",
++    "description": "首页、歌单、专辑与歌手页都用这里选的界面浏览。能做的事一样，只是浏览的方式不同。",
+     "settingsHint": "之后可以在「设置 → 界面设置 → 资料库界面」里随时更改。",
++    "tui": {
++      "title": "清單",
++      "tag": "列表",
++      "description": "一行一首、从上往下排的列表，字大、一屏看得清。车机与触屏上最省事，键盘上下键也能用。"
++    },
+     "grid": {
+       "title": "Grid",
+       "tag": "经典",
 diff --git a/src/index.css b/src/index.css
 index 45c14da..a9fce0d 100644
 --- a/src/index.css
@@ -1001,6 +1049,25 @@ index 45c14da..a9fce0d 100644
 +  .group .group-hover\:max-w-28 { max-width: 7rem; }
 +  .group .group-hover\:ml-1\.5 { margin-left: 0.375rem; }
 +}
+diff --git a/src/library/app/librarySuiteChoice.ts b/src/library/app/librarySuiteChoice.ts
+index 874291a..b22a9ae 100644
+--- a/src/library/app/librarySuiteChoice.ts
++++ b/src/library/app/librarySuiteChoice.ts
+@@ -37,10 +37,11 @@ const SUITE_OPTIONS: readonly LibrarySuiteOption[] = Object.freeze(
+ export const listLibrarySuiteOptions = (): readonly LibrarySuiteOption[] => SUITE_OPTIONS;
+ 
+ /**
+- * 首启引导第一页只问这两套：网格（经典）与 bravais（无限），顺序固定。TUI 这类开发用 suite 即使在这个构建里
+- * 可用也不出现——引导是给第一次打开的人看的，设置页与命令面板照旧列出全部可用的 suite。
++ * 首启引导第一页问三套：清單（列表，车机上最好认）、网格（经典）与 bravais（无限），顺序固定。
++ * 车机版用 VITE_LIBRARY_TUI=true 把「清單」放进正式构建，所以它也要出现在引导里，否则第一次打开的人只会被问
++ * 网格／Bravais，选完就看不到列表了。
+  */
+-export const ONBOARDING_LIBRARY_SUITE_IDS: readonly LibrarySuiteId[] = Object.freeze(['grid', 'bravais']);
++export const ONBOARDING_LIBRARY_SUITE_IDS: readonly LibrarySuiteId[] = Object.freeze(['tui', 'grid', 'bravais']);
+ 
+ /** 从可用的 suite 里挑出引导要问的那几套（按 ONBOARDING_LIBRARY_SUITE_IDS 的顺序）。 */
+ export const pickOnboardingLibrarySuiteIds = (available: readonly LibrarySuiteId[]): readonly LibrarySuiteId[] => (
 diff --git a/src/library/core/home/homeModel.contract.ts b/src/library/core/home/homeModel.contract.ts
 index 53d20bb..aea1238 100644
 --- a/src/library/core/home/homeModel.contract.ts
@@ -1459,6 +1526,114 @@ index 70f5244..f1deb53 100644
      );
  };
  
+diff --git a/src/library/suites/tui/LibraryTuiHomeLists.tsx b/src/library/suites/tui/LibraryTuiHomeLists.tsx
+index 347bbc3..6d2f379 100644
+--- a/src/library/suites/tui/LibraryTuiHomeLists.tsx
++++ b/src/library/suites/tui/LibraryTuiHomeLists.tsx
+@@ -22,6 +22,7 @@ import { useLibraryHomeLocal, useLocalDirectoryTrees, useLocalHomeBatchConfig }
+ import { useLibraryHomeNavidrome } from '../../core/home/navidrome/useLibraryHomeNavidrome';
+ import { useLibraryHomeActions } from '../../core/home/useLibraryHomeActions';
+ import { useLibraryHomeListRegistration } from '../../core/home/useLibraryHomeSurfaceRegistration';
++import { useLocalAudioImport } from '../../../hooks/useLocalAudioImport';
+ import LibraryTuiDirectory from './LibraryTuiDirectory';
+ import LibraryTuiAccountList from './LibraryTuiAccountList';
+ import type { LibraryTuiPromptRequest } from './LibraryTuiPrompt';
+@@ -199,6 +200,8 @@ export const LibraryTuiLocalList: React.FC<LibraryTuiListCommonProps & {
+         else if (id === 'import-playlist') playlistFileInputRef.current?.click();
+     };
+     const isEmptyLibrary = directoryTrees.loaded && localSongs.length === 0 && directoryTrees.trees.length === 0;
++    // 檔案匯入：車機／iOS 的 WebView 沒有資料夾 API，只能靠選檔把歌放進曲庫。與 Grid、Bravais 同一支 hook。
++    const audioImport = useLocalAudioImport();
+ 
+     useLibraryHomeListRegistration({
+         enabled: !isEmptyLibrary,
+@@ -231,6 +234,14 @@ export const LibraryTuiLocalList: React.FC<LibraryTuiListCommonProps & {
+     });
+ 
+     const fileInput = (
++        <>
++        <input
++            ref={audioImport.inputRef}
++            type="file"
++            multiple
++            hidden
++            onChange={event => audioImport.handleFiles(event.target.files)}
++        />
+         <input
+             ref={playlistFileInputRef}
+             type="file"
+@@ -243,6 +254,7 @@ export const LibraryTuiLocalList: React.FC<LibraryTuiListCommonProps & {
+                 if (file) void homeActions.importPlaylistFile(file);
+             }}
+         />
++        </>
+     );
+ 
+     if (isEmptyLibrary) {
+@@ -250,7 +262,14 @@ export const LibraryTuiLocalList: React.FC<LibraryTuiListCommonProps & {
+             <StatusText status="empty-library">
+                 {fileInput}
+                 <span>{t('localMusic.noLocalMusic')}</span>
+-                {common.declaredActions.actions.includes('home-import-folder') ? (
++                <button type="button" onClick={audioImport.openPicker} disabled={audioImport.importing} className="self-start opacity-70 hover:opacity-100 disabled:opacity-30">
++                    {`[${audioImport.importing
++                        ? (audioImport.progress
++                            ? t('localMusic.importingProgress', { done: audioImport.progress.done, total: audioImport.progress.total })
++                            : t('localMusic.importingFiles'))
++                        : t('localMusic.importFiles')}]`}
++                </button>
++                {localActions.some(action => action.id === 'import-folder') ? (
+                     <button type="button" disabled={importBusy} onClick={() => void homeActions.importFolder()} className="self-start opacity-70 hover:opacity-100 disabled:opacity-30">
+                         {`[${actionState.scan?.active ? t('options.scanning') : actionState.importingFolder ? t('localMusic.importing') : t('localMusic.importFolder')}]`}
+                     </button>
+@@ -263,13 +282,18 @@ export const LibraryTuiLocalList: React.FC<LibraryTuiListCommonProps & {
+         <>
+             {fileInput}
+             <ActionBar
+-                actions={localActions.map((action: LibraryHomeListAction) => ({
+-                    id: action.id,
+-                    label: t(action.labelKey),
+-                    disabled: action.disabled,
+-                    pending: action.pending,
+-                }))}
+-                onRun={runAction}
++                actions={[
++                    ...localActions.map((action: LibraryHomeListAction) => ({
++                        id: action.id,
++                        label: t(action.labelKey),
++                        disabled: action.disabled,
++                        pending: action.pending,
++                    })),
++                    // 「導入文件」在車機上是唯一進得去曲庫的路（WebView 沒有資料夾選擇器），所以不放進 core 的動作清單，
++                    // 直接以按鈕掛在這裡；邏輯與 Grid、Bravais 共用 useLocalAudioImport。
++                    { id: 'import-files', label: t('localMusic.importFiles'), disabled: audioImport.importing, pending: false },
++                ]}
++                onRun={(id) => { if (id === 'import-files') audioImport.openPicker(); else runAction(id); }}
+             />
+             <LibraryTuiDirectory
+                 {...common}
+diff --git a/src/library/suites/tui/entry.ts b/src/library/suites/tui/entry.ts
+index 2882444..96ed0e0 100644
+--- a/src/library/suites/tui/entry.ts
++++ b/src/library/suites/tui/entry.ts
+@@ -3,13 +3,13 @@ import type { LibraryAccountActionId } from '../../core/account/account.contract
+ import type { LibrarySuiteManifest } from '../../core/suite/suite.contract';
+ 
+ // src/library/suites/tui/entry.ts
+-// 终端风格的列表 suite（开发验证专用，默认关闭）。显式设置 VITE_LIBRARY_TUI=true 才在开发版启用；
+-// 实现首页、集合、歌手页与账户四个 surface（P4.3 起歌手页不再回退网格，A6 起账户不再回退网格）。
+-// 生产构建里 import.meta.env.DEV 是常量 false：组件那一行连同动态 import 一起被摇掉，不会产出 TUI 的 chunk，
++// 终端风格的列表 suite（「清單」）。打包时给 VITE_LIBRARY_TUI=true 才在构建里出现，没给的构建照旧整块摇掉，
+ // registry 也因为 available: false 把它当作不存在（浮层不出现、选不到）。
++// 实现首页、集合、歌手页与账户四个 surface（P4.3 起歌手页不再回退网格，A6 起账户不再回退网格）。
+ // A6 起有自己的 account surface（LibraryTuiAccount）：扫码登录框与切换确认不再回退网格的 GridAccountSurface。
+ 
+-const ENABLE_TUI = import.meta.env.DEV && import.meta.env.VITE_LIBRARY_TUI === 'true';
++// 打包时用 VITE_LIBRARY_TUI=true 打开：车机上要的是「清單」这种一眼看得清的列表，不再要求开发版。
++const ENABLE_TUI = import.meta.env.VITE_LIBRARY_TUI === 'true';
+ const LibraryTuiView = ENABLE_TUI ? React.lazy(() => import('./LibraryTuiView')) : null;
+ const LibraryTuiHome = ENABLE_TUI ? React.lazy(() => import('./LibraryTuiHome')) : null;
+ const LibraryTuiArtist = ENABLE_TUI ? React.lazy(() => import('./LibraryTuiArtist')) : null;
 diff --git a/src/services/audioQuality/inspectAudioQuality.ts b/src/services/audioQuality/inspectAudioQuality.ts
 new file mode 100644
 index 0000000..8b1935b
@@ -2561,6 +2736,30 @@ index 682f39b..4a54a01 100644
          workerCallbacks.set(requestId, result => resolve(result as HashedLocalCoverResult | null));
          worker.postMessage({ type: 'hash-cover', cover, requestId });
      });
+diff --git a/test/unit/library/app/librarySuiteChoice.test.ts b/test/unit/library/app/librarySuiteChoice.test.ts
+index 9caa83e..cef9a15 100644
+--- a/test/unit/library/app/librarySuiteChoice.test.ts
++++ b/test/unit/library/app/librarySuiteChoice.test.ts
+@@ -176,15 +176,15 @@ describe('whether there is a choice', () => {
+ 
+ // 2026-10-10：首启引导第一页只问网格（经典）与 bravais（无限）；TUI 在测试构建里可用也不出现。
+ describe('first-run onboarding suite page', () => {
+-    it('lists grid and bravais, in that order, and leaves the dev TUI out', () => {
++    it('lists the list view then grid and bravais, in that order', () => {
+         expect(listLibrarySuiteOptions().map(option => option.id)).toContain('tui');
+-        expect(listOnboardingLibrarySuiteIds()).toEqual(['grid', 'bravais']);
++        expect(listOnboardingLibrarySuiteIds()).toEqual(['tui', 'grid', 'bravais']);
+         expect(hasOnboardingLibrarySuiteChoice()).toBe(true);
+     });
+ 
+     it('keeps the fixed order whatever the registry order is, and drops suites the build lacks', () => {
+-        expect(pickOnboardingLibrarySuiteIds(['tui', 'bravais', 'grid'])).toEqual(['grid', 'bravais']);
+-        expect(pickOnboardingLibrarySuiteIds(['grid', 'tui'])).toEqual(['grid']);
++        expect(pickOnboardingLibrarySuiteIds(['grid', 'bravais', 'tui'])).toEqual(['tui', 'grid', 'bravais']);
++        expect(pickOnboardingLibrarySuiteIds(['grid', 'tui'])).toEqual(['tui', 'grid']);
+         expect(pickOnboardingLibrarySuiteIds(['grid'])).toEqual(['grid']);
+     });
+ 
 diff --git a/test/unit/library/bravais/bravaisEmptyWallHint.test.ts b/test/unit/library/bravais/bravaisEmptyWallHint.test.ts
 index 967c627..aa27953 100644
 --- a/test/unit/library/bravais/bravaisEmptyWallHint.test.ts
@@ -2615,3 +2814,45 @@ index d4588ef..a574d93 100644
      it('a scan shows refresh as scanning', () => {
          const actions = resolveLocalHomeActions({ ...idle, scan: { active: true, folderName: 'A', totalSongs: 2, completedSongs: 1 } });
          expect(actions[1]).toMatchObject({ labelKey: 'options.scanning', pending: true, disabled: true });
+diff --git a/test/unit/library/suiteEntries.test.ts b/test/unit/library/suiteEntries.test.ts
+index e6659ec..11dcb59 100644
+--- a/test/unit/library/suiteEntries.test.ts
++++ b/test/unit/library/suiteEntries.test.ts
+@@ -109,9 +109,11 @@ describe('library suite entries', () => {
+         expect(relativeImports.filter(source => !DEFAULT_SUITE_EAGER_IMPORTS.includes(source))).toEqual([]);
+     });
+ 
+-    it('keeps the TUI out of production builds', () => {
++    it('keeps the TUI behind a build flag, on in production too', () => {
++        // 2026-11-25 起车机版把「清單」当主界面：打包给 VITE_LIBRARY_TUI=true，正式构建里同样生效。
+         const source = read(entryOf('tui'));
+-        expect(source).toContain("const ENABLE_TUI = import.meta.env.DEV && import.meta.env.VITE_LIBRARY_TUI === 'true';");
++        expect(source).toContain("const ENABLE_TUI = import.meta.env.VITE_LIBRARY_TUI === 'true';");
++        expect(source).not.toContain('import.meta.env.DEV &&');
+         for (const component of ['LibraryTuiView', 'LibraryTuiHome', 'LibraryTuiArtist', 'LibraryTuiAccount']) {
+             expect(source).toContain(`const ${component} = ENABLE_TUI ? React.lazy(() => import('./${component}')) : null;`);
+         }
+diff --git a/test/unit/library/tuiAvailability.test.ts b/test/unit/library/tuiAvailability.test.ts
+index ec0678e..d8102b0 100644
+--- a/test/unit/library/tuiAvailability.test.ts
++++ b/test/unit/library/tuiAvailability.test.ts
+@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
+ import '@/library/registry';
+ 
+ // test/unit/library/tuiAvailability.test.ts
+-// 真实 entry 与 eager-glob registry 的开发验证门控；覆写 test.env 后重新装配，不用假 manifest 替代行为。
++// 真实 entry 与 eager-glob registry 的门控；覆写 test.env 后重新装配，不用假 manifest 替代行为。
+ // 与 registry.test 一样先在模块装载阶段转换默认网格的依赖，避免全量并发时首次转换占用单项行为的计时。
+ 
+ afterEach(() => {
+@@ -15,7 +15,9 @@ describe('TUI development validation availability', () => {
+         { name: 'a missing opt-in', dev: true, flag: undefined, enabled: false },
+         { name: 'an explicit false opt-in', dev: true, flag: 'false', enabled: false },
+         { name: 'DEV and an explicit true opt-in', dev: true, flag: 'true', enabled: true },
+-        { name: 'production even with the opt-in true', dev: false, flag: 'true', enabled: false },
++        // 2026-11-25：车机版要靠「清單」当主界面，打包时用 VITE_LIBRARY_TUI=true 打开，正式构建里也生效。
++        { name: 'production with the opt-in true', dev: false, flag: 'true', enabled: true },
++        { name: 'production without the opt-in', dev: false, flag: undefined, enabled: false },
+     ])('resolves $name', async ({ dev, flag, enabled }) => {
+         vi.resetModules();
+         vi.stubEnv('DEV', dev);

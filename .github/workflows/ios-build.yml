@@ -51,6 +51,9 @@ jobs:
           VITE_NETEASE_API_BASE: ${{ vars.VITE_NETEASE_API_BASE }}
           VITE_KUGOU_API_BASE: ${{ vars.VITE_KUGOU_API_BASE }}
           VITE_QQ_API_BASE: ${{ vars.VITE_QQ_API_BASE }}
+          # 主界面「清單」：车机/touch 上先给列表，Bravais 与 Grid 在设置里随时切。
+          VITE_LIBRARY_TUI: 'true'
+          VITE_LIBRARY_INITIAL_SUITE: 'tui'
         run: |
           npm run build
           test -d dist || { echo "dist missing"; exit 1; }
