@@ -1,0 +1,115 @@
+name: Build iOS IPA
+
+# 需要一個 GitHub 倉庫（免費帳號即可）：把本包內容推到倉庫根目錄，Actions 會用 macOS runner 編譯出未簽名 IPA。
+# 也可在 Actions 頁面手動 Run workflow。
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: '上游分支或 tag（預設 main）'
+        required: false
+        default: 'main'
+  push:
+    branches: [ main ]
+
+jobs:
+  build-ipa:
+    runs-on: macos-14
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Fetch upstream Folia source
+        run: |
+          git clone --depth 1 --branch "${{ github.event.inputs.upstream_ref || 'main' }}" \
+            https://github.com/chthollyphile/folia-major.git folia
+          echo "Folia @ $(git -C folia rev-parse --short HEAD)"
+
+      - name: Install dependencies
+        working-directory: folia
+        run: npm ci --allow-remote=all --no-audit --no-fund
+
+      - name: Build web bundle
+        working-directory: folia
+        env:
+          # 留空 = 只建置本地曲庫版本；要線上音源就填自己的 API 實例（必須手機能連到）
+          VITE_NETEASE_API_BASE: ${{ vars.VITE_NETEASE_API_BASE }}
+          VITE_KUGOU_API_BASE: ${{ vars.VITE_KUGOU_API_BASE }}
+          VITE_QQ_API_BASE: ${{ vars.VITE_QQ_API_BASE }}
+        run: |
+          npm run build
+          test -d dist || { echo "dist missing"; exit 1; }
+
+      - name: Install Capacitor
+        working-directory: folia
+        run: |
+          npm install --no-save @capacitor/core@6 @capacitor/cli@6 @capacitor/ios@6
+          cp ../capacitor.config.json capacitor.config.json
+
+      - name: Add iOS platform
+        working-directory: folia
+        run: |
+          npx cap add ios
+          npx cap sync ios
+
+      - name: Apply app icon
+        working-directory: folia
+        run: |
+          ICONSET="ios/App/App/Assets.xcassets/AppIcon.appiconset"
+          mkdir -p "$ICONSET"
+          cp ../assets/icon-1024.png "$ICONSET/icon-1024.png"
+          cat > "$ICONSET/Contents.json" <<'JSON'
+          {
+            "images" : [
+              {
+                "filename" : "icon-1024.png",
+                "idiom" : "universal",
+                "platform" : "ios",
+                "size" : "1024x1024"
+              }
+            ],
+            "info" : { "author" : "xcode", "version" : 1 }
+          }
+          JSON
+
+      - name: Allow cleartext HTTP (only if you use plain-HTTP backends)
+        working-directory: folia
+        run: |
+          PLIST=ios/App/App/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsArbitraryLoads bool true" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :NSAppTransportSecurity:NSAllowsArbitraryLoads bool true" "$PLIST"
+
+      - name: Build unsigned app
+        working-directory: folia/ios/App
+        run: |
+          if [ -d App.xcworkspace ]; then
+            xcodebuild -workspace App.xcworkspace -scheme App \
+              -configuration Release -sdk iphoneos -derivedDataPath build \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+          else
+            xcodebuild -project App.xcodeproj -scheme App \
+              -configuration Release -sdk iphoneos -derivedDataPath build \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+          fi
+
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -R folia/ios/App/build/Build/Products/Release-iphoneos/App.app Payload/
+          zip -r -q Folia.ipa Payload
+          ls -lh Folia.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Folia-ipa
+          path: Folia.ipa
+          if-no-files-found: error
