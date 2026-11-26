@@ -1,0 +1,28 @@
+[Lidarr]
+# Lidarr 的 API Key：Settings -> General -> API Key
+api_key = YOUR_LIDARR_API_KEY
+# 容器內互相訪問用服務名，不要寫 localhost
+host_url = http://lidarr:8686
+# 只處理已監控的藝人/專輯
+search_type = missing
+# 抓取後是否立即從 Lidarr 觸發匯入
+download_dir = /downloads
+
+[Soulseek]
+# soularr 以容器名訪問 slskd
+host = slskd
+port = 5030
+# 若 slskd 開了驗證，填入帳密
+api_key =
+username =
+password =
+
+[Release]
+# 品質門檻：只接受無損容器
+required_extension = flac
+# 最小檔案大小，過濾掉殘檔
+minimum_file_size = 15MB
+# 單次搜尋等待秒數
+search_timeout = 300
+# 跳過含這些字樣的結果
+skip_terms = sample,snippet,preview,320kbps

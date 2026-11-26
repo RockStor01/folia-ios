@@ -1,0 +1,8 @@
+.env
+data/
+music/
+reports/
+quarantine/
+conf/soularr/config.ini
+__pycache__/
+*.pyc
