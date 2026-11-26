@@ -21,7 +21,7 @@ index 39ec48c..114cb4d 100644
      <script src="/runtime-config.js"></script>
    <script type="importmap">
 diff --git a/package.json b/package.json
-index 6976461..2d4496a 100644
+index 6976461..aef762c 100644
 --- a/package.json
 +++ b/package.json
 @@ -8,7 +8,7 @@
@@ -29,7 +29,7 @@ index 6976461..2d4496a 100644
    },
    "private": true,
 -  "version": "0.8.0",
-+  "version": "0.9.4",
++  "version": "0.9.5",
    "license": "AGPL-3.0",
    "type": "module",
    "main": "electron/main.cjs",
@@ -893,12 +893,12 @@ index 5de4bf3..af66827 100644
      );
  };
 diff --git a/src/components/modal/newFeaturesRelease.ts b/src/components/modal/newFeaturesRelease.ts
-index e49a39c..b233720 100644
+index e49a39c..4f3ca63 100644
 --- a/src/components/modal/newFeaturesRelease.ts
 +++ b/src/components/modal/newFeaturesRelease.ts
 @@ -1,4 +1,4 @@
 -import { ListMusic, MessageSquareText, Puzzle, SlidersVertical, Sparkles, Store } from 'lucide-react';
-+import { FolderOpen, Gamepad2, ListMusic, MessageSquareText, Puzzle, Settings, SlidersVertical, Sparkles, Store, Usb } from 'lucide-react';
++import { FolderOpen, Gamepad2, Languages, SlidersVertical } from 'lucide-react';
  import type { LucideIcon } from 'lucide-react';
  
  // src/components/modal/newFeaturesRelease.ts
@@ -911,13 +911,13 @@ index e49a39c..b233720 100644
      /** 重大更新：介绍上方显示「<代号> Update · 重大更新」标签；代号不翻译，文案在 help.majorUpdateLabel。
       *  servicePack：同一重大更新的热修复版，标签改成「<代号> Update SP<n> · 重大更新」，文案在 help.servicePackLabel。 */
      majorUpdate?: { codename: string; servicePack?: number };
-@@ -18,14 +20,14 @@ type NewFeaturesRelease = {
+@@ -18,14 +20,12 @@ type NewFeaturesRelease = {
  
  // Defines the current release's cards; their localized text lives under i18nKey in every locale.
  export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
 -    i18nKey: 'releaseNotes.v0_8_0',
 -    majorUpdate: { codename: 'Severance' },
-+    i18nKey: 'releaseNotes.v0_9_4',
++    i18nKey: 'releaseNotes.v0_9_5',
      features: [
 -        { id: 'sourceMods', icon: Puzzle },
 -        { id: 'modMarket', icon: Store },
@@ -925,14 +925,12 @@ index e49a39c..b233720 100644
 -        { id: 'moments', icon: MessageSquareText },
 -        { id: 'stemMixer', icon: SlidersVertical },
 -        { id: 'moreDetails', icon: Sparkles },
-+        { id: 'linkedMode', icon: FolderOpen },
-+        { id: 'usbDiagnose', icon: Usb },
++        { id: 'mojibakeFix', icon: Languages },
 +        { id: 'carPerf', icon: SlidersVertical },
-+        { id: 'settingsEntry', icon: Settings },
++        { id: 'linkedMode', icon: FolderOpen },
 +        { id: 'mediaKeys', icon: Gamepad2 },
-+        { id: 'releaseNotesEveryUpdate', icon: Sparkles },
      ],
-+    fixes: ['importProgress', 'importLiveLists', 'carGutter', 'linkNotReplied'],
++    fixes: ['mojibakeExisting', 'mojibakeGbk', 'mojibakeUtf8', 'mojibakeBig5'],
  };
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
@@ -1144,7 +1142,7 @@ index 92620c2..04852d7 100644
      general,
      interaction,
 diff --git a/src/components/modal/userGuideContent.ts b/src/components/modal/userGuideContent.ts
-index a8b5aa7..49f7858 100644
+index a8b5aa7..f27d26d 100644
 --- a/src/components/modal/userGuideContent.ts
 +++ b/src/components/modal/userGuideContent.ts
 @@ -13,7 +13,7 @@ export type UserGuideShortcut = {
@@ -1152,7 +1150,7 @@ index a8b5aa7..49f7858 100644
  
  export const USER_GUIDE_PAGE_COUNT = 7;
 -export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.8.0';
-+export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.9.4';
++export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.9.5';
  
  export type HelpTabShortcut = {
      id: string;
@@ -1485,7 +1483,7 @@ index 0000000..8e34f78
 +    return rows;
 +};
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..56ecd3b 100644
+index 86f3b6d..47ac8ef 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -1679,10 +1677,35 @@ index 86f3b6d..56ecd3b 100644
      "minimizeToTray": "Minimize to tray",
      "closeToTray": "Close window to tray",
      "closeToTrayDesc": "The close button hides the window to the tray instead of quitting",
-@@ -4513,6 +4504,39 @@ export default {
+@@ -4513,6 +4504,64 @@ export default {
      "noDescription": "No description available",
    },
    "releaseNotes": {
++    "v0_9_5": {
++      "intro": "0.9.5 does one thing: it fixes song titles, albums and artists that came out garbled. Existing libraries do not need re-importing — broken text already stored is repaired the next time the app opens.",
++      "mojibakeFix": {
++        "title": "Automatic mojibake repair (GBK / UTF-8 / Big5)",
++        "description": "Old rips often put GBK bytes into ID3 frames declared as ISO-8859-1, and Android's native tag API returns them the same way. Imports and reads of existing records now try the correct decoding first: UTF-8 misread, GBK misread and Traditional Chinese Big5 misread are all recovered, while normal Chinese, Japanese, Björk or Café are left untouched.",
++      },
++      "carPerf": {
++        "title": "Head-unit performance preset",
++        "description": "Settings → Animation & Performance → Head-unit performance pushes the home background, player blur, lyric canvas and interface motion to smooth-first in one click; Android head units apply it automatically on first launch and can revert on the same page."
++      },
++      "linkedMode": {
++        "title": "Linked mode: no copying",
++        "description": "Import folder (no copy) only registers paths; the music stays on the USB drive or internal storage and streams through a local server on 127.0.0.1, cutting 2,216 tracks from tens of minutes to a few."
++      },
++      "mediaKeys": {
++        "title": "Steering-wheel keys taken over",
++        "description": "The native layer registers a MediaSession and intercepts KeyEvent, so play, pause, next and previous work from the wheel and the head-unit status bar follows along."
++      },
++      "fixes": {
++        "mojibakeExisting": "Garbled text already in the library is repaired automatically, no re-import needed (renamed titles are left alone).",
++        "mojibakeGbk": "GBK Chinese tags (“¸ÃËÀµÄÎÂÈá”) come back as normal Simplified Chinese.",
++        "mojibakeUtf8": "Strings decoded once as Latin-1 (“è¶…çº¦”) come back as normal Chinese.",
++        "mojibakeBig5": "Traditional Chinese Big5 tags (“周杰倫”, “范特西”) are recovered too."
++      }
++    },
 +    "v0_9_4": {
 +      "intro": "0.9.4 finishes the head-unit path: read an external drive in place without copying, a diagnostics panel when the USB drive is missing, steering-wheel media keys taken over at the native layer, a常駐 Settings entry next to the title, and a one-tap performance preset tuned for Android head units like the Liangshan Dudu S3 (8+128) that applies itself on first launch.",
 +      "linkedMode": {
@@ -1719,7 +1742,7 @@ index 86f3b6d..56ecd3b 100644
      "v0_7_0": {
        "intro": "Here are the new features and improvements in version 0.7.0.",
        "temperaVisualExpansion": {
-@@ -5228,6 +5252,10 @@ export default {
+@@ -5228,6 +5277,10 @@ export default {
      "capsuleOpensPalette": "Click to open the command palette",
    },
    "localMusic": {
@@ -1730,7 +1753,7 @@ index 86f3b6d..56ecd3b 100644
      "foldersAndPlaylists": "Folders",
      "albums": "Albums",
      "artists": "Artists",
-@@ -5242,8 +5270,34 @@ export default {
+@@ -5242,8 +5295,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -1765,7 +1788,7 @@ index 86f3b6d..56ecd3b 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6107,13 @@ export default {
+@@ -6053,8 +6132,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -1781,7 +1804,7 @@ index 86f3b6d..56ecd3b 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..4f72e20 100644
+index 0067e9a..91b51c5 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -1913,10 +1936,35 @@ index 0067e9a..4f72e20 100644
      "minimizeToTray": "最小化到托盘",
      "closeToTray": "关闭窗口时隐藏到托盘",
      "closeToTrayDesc": "点关闭按钮时不退出，隐藏到托盘继续播放",
-@@ -4513,6 +4575,39 @@ export default {
+@@ -4513,6 +4575,64 @@ export default {
      "noDescription": "暂无详细介绍",
    },
    "releaseNotes": {
++    "v0_9_5": {
++      "intro": "0.9.5 只做一件事：把「有些歌名／專輯／歌手變成亂碼」修掉。舊曲庫不必重新匯入，下次開啟時會自動把已經存壞的字改回來。",
++      "mojibakeFix": {
++        "title": "亂碼自動修復（GBK / UTF-8 / Big5）",
++        "description": "老盤壓的 MP3 常把中文 GBK 位元組塞進宣告成 ISO-8859-1 的 ID3 框，Android 的原生標籤 API 也會這樣回。現在匯入時與讀取舊紀錄時都會先試一次正確解碼：UTF-8 誤讀、GBK 誤讀、繁體 Big5 誤讀都能還原；正常中文、日文、Björk、Café 這類文字一律原樣不動。",
++      },
++      "carPerf": {
++        "title": "車機效能檔",
++        "description": "設定 → 動畫與性能 → 「車機性能」一鍵把首頁背景、播放頁模糊、歌詞畫布與界面動效壓到流暢優先；Android 車機第一次開這個版本自動套用，可在同一頁還原。"
++      },
++      "linkedMode": {
++        "title": "連結模式：不複製檔案",
++        "description": "「導入文件夾（不複製）」只登記路徑，音樂留在 USB 或內建儲存，播放時走 127.0.0.1 的本機服務串流，2216 首從幾十分鐘降到幾分鐘。"
++      },
++      "mediaKeys": {
++        "title": "方向盤方控接管",
++        "description": "原生層同時註冊 MediaSession 並攔截 KeyEvent，方向盤的播放／暫停／上下首都能用，車機狀態列也會跟著顯示。"
++      },
++      "fixes": {
++        "mojibakeExisting": "已經存在曲庫裡的亂碼會自動改回來，不用重新匯入（改過歌名的除外）。",
++        "mojibakeGbk": "GBK 中文標籤（「¸ÃËÀµÄÎÂÈá」這種）還原成正常簡體。",
++        "mojibakeUtf8": "UTF-8 被誤讀一次的字串（「è¶…çº¦」這種）還原成正常中文。",
++        "mojibakeBig5": "繁體 Big5 標籤（「周杰倫」「范特西」這種）也一併還原。"
++      }
++    },
 +    "v0_9_4": {
 +      "intro": "0.9.4 把車機這一條路補完：可以直接讀外部硬碟、不複製檔案；找不到 USB 時有診斷面板；方向盤的播放／暫停鍵接管了；左上角常駐一個「設置」；另外針對梁山嘟嘟 S3（8+128）這類 Android 車機做了一鍵效能檔，第一次開就自動套用。",
 +      "linkedMode": {
@@ -1953,7 +2001,7 @@ index 0067e9a..4f72e20 100644
      "v0_7_0": {
        "intro": "以下是 0.7.0 的新功能与改进",
        "temperaVisualExpansion": {
-@@ -5228,6 +5323,10 @@ export default {
+@@ -5228,6 +5348,10 @@ export default {
      "capsuleOpensPalette": "点一下打开命令面板",
    },
    "localMusic": {
@@ -1964,7 +2012,7 @@ index 0067e9a..4f72e20 100644
      "foldersAndPlaylists": "文件夹",
      "albums": "专辑",
      "artists": "艺术家",
-@@ -5242,8 +5341,34 @@ export default {
+@@ -5242,8 +5366,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -1999,7 +2047,7 @@ index 0067e9a..4f72e20 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6176,13 @@ export default {
+@@ -6051,8 +6201,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -4714,6 +4762,45 @@ index 0000000..c85967d
 +        return null;
 +    }
 +};
+diff --git a/src/services/repositories/localSongRepository.ts b/src/services/repositories/localSongRepository.ts
+index 595b81c..bf977f7 100644
+--- a/src/services/repositories/localSongRepository.ts
++++ b/src/services/repositories/localSongRepository.ts
+@@ -3,12 +3,15 @@ import { isBlob } from '../../utils/blobGuards';
+ import { getLocalSongAlbumContextKey } from '../../utils/localLibraryNames';
+ import { migrateLocalSongsRenderHints, migrateMatchedLyricsCarrierRenderHints } from '../../utils/lyrics/storageMigration';
+ import { appDatabase } from '../appDatabase';
++import { repairLocalSongTagText } from '../../utils/textEncodingRepair';
+ 
+ // src/services/repositories/localSongRepository.ts
+ // Stores sanitized local-song records while retaining the existing read-time lyric migrations.
+ 
+ export const sanitizeLocalSongForStorage = (song: LocalSong): LocalSong => {
+-  const normalizedSong = migrateMatchedLyricsCarrierRenderHints(song).value ?? song;
++  // 舊曲庫裡已經存著亂碼的（GBK／UTF-8 被誤解一次）在寫入時順手修正，下次讀到就是好的。
++  const repaired = repairLocalSongTagText(song).song;
++  const normalizedSong = migrateMatchedLyricsCarrierRenderHints(repaired).value ?? repaired;
+   const { fileHandle, embeddedCover: _legacyCover, albumContextKey: _staleKey, ...persistedSong } = normalizedSong as LocalSong & {
+     embeddedCover?: unknown;
+   };
+@@ -43,7 +46,16 @@ export const putLocalSongs = async (songs: LocalSong[]): Promise<void> => {
+ 
+ // Applies the read-time cover sanitization and lyric render-hint migration, writing changed records back in the background.
+ const migrateStoredLocalSongs = (storedSongs: LocalSong[]): LocalSong[] => {
+-  const normalized = storedSongs.map(normalizeLocalSongFromStorage);
++  // 讀的時候先修一次亂碼：使用者不必重新匯入，舊紀錄也會自己變好（改過的會回寫）。
++  const textRepair = storedSongs.map(song => repairLocalSongTagText(normalizeLocalSongFromStorage(song).value));
++  const repairedSongs = textRepair.filter(item => item.changed).map(item => item.song);
++  if (repairedSongs.length > 0) {
++    void putLocalSongs(repairedSongs).catch(error => {
++      console.warn('[DB] Failed to write back repaired tag text', error);
++    });
++  }
++  const storedAfterRepair = textRepair.map(item => item.song);
++  const normalized = storedAfterRepair.map(normalizeLocalSongFromStorage);
+   const sanitizedSongs = normalized.filter(item => item.changed).map(item => item.value);
+   if (sanitizedSongs.length > 0) {
+     void putLocalSongs(sanitizedSongs).catch(error => {
 diff --git a/src/services/uiZoomRuntime.ts b/src/services/uiZoomRuntime.ts
 index dce29d6..284324b 100644
 --- a/src/services/uiZoomRuntime.ts
@@ -4981,6 +5068,223 @@ index 682f39b..202d7a4 100644
 +
 +/** 給介面用：解析是不是真的跑得起來；false 時匯入只能靠檔名，該講給使用者聽。 */
 +export const isMetadataParsingAvailable = (): boolean => pickWorkerIndex() >= 0;
+diff --git a/src/utils/localSongMetadata.ts b/src/utils/localSongMetadata.ts
+index c89a5ba..d9a1b83 100644
+--- a/src/utils/localSongMetadata.ts
++++ b/src/utils/localSongMetadata.ts
+@@ -1,6 +1,7 @@
+ import type { LocalSong } from '../types';
+ import type { LocalSongImportedMetadata, LocalSongOnlineMetadata } from '../types/localLibrary';
+ import { cleanLocalLibraryName, splitLocalLibraryArtistNames } from './localLibraryNames';
++import { repairTagText, repairTagTextList } from './textEncodingRepair';
+ 
+ // src/utils/localSongMetadata.ts
+ // Resolves canonical local-song metadata while keeping imported and online snapshots internal.
+@@ -28,19 +29,24 @@ export const buildImportedMetadataSnapshot = ({
+   embeddedAlbum?: string;
+   fallbackAlbum?: string;
+ }): LocalSongImportedMetadata => {
+-  const normalizedEmbeddedTitle = cleanLocalLibraryName(embeddedTitle);
++  // 亂碼一律在這一層修：檔名、ID3、容器標籤、Android 原生 probe 最後都會匯到這裡。
++  const repairedFileName = repairTagText(fileName);
++  const normalizedEmbeddedTitle = cleanLocalLibraryName(repairTagText(embeddedTitle));
++  const repairedFallbackTitle = cleanLocalLibraryName(repairTagText(fallbackTitle));
+   const title = normalizedEmbeddedTitle
+-    || cleanLocalLibraryName(fallbackTitle)
+-    || stripLocalAudioExtension(fileName)
+-    || fileName;
+-  const embeddedArtistNames = (embeddedArtists || []).flatMap(splitLocalLibraryArtistNames);
++    || repairedFallbackTitle
++    || stripLocalAudioExtension(repairedFileName)
++    || repairedFileName;
++  const embeddedArtistNames = repairTagTextList(embeddedArtists).flatMap(splitLocalLibraryArtistNames);
++  const repairedEmbeddedArtist = repairTagText(embeddedArtist);
++  const repairedFallbackArtist = repairTagText(fallbackArtist);
+   return {
+     title,
+     titleSource: normalizedEmbeddedTitle ? 'embedded' : 'filename',
+     artistNames: embeddedArtistNames.length > 0
+       ? embeddedArtistNames
+-      : splitLocalLibraryArtistNames(embeddedArtist || fallbackArtist),
+-    albumName: cleanLocalLibraryName(embeddedAlbum || fallbackAlbum),
++      : splitLocalLibraryArtistNames(repairedEmbeddedArtist || repairedFallbackArtist),
++    albumName: cleanLocalLibraryName(repairTagText(embeddedAlbum) || repairTagText(fallbackAlbum)),
+   };
+ };
+ 
+diff --git a/src/utils/textEncodingRepair.ts b/src/utils/textEncodingRepair.ts
+new file mode 100644
+index 0000000..0e54a56
+--- /dev/null
++++ b/src/utils/textEncodingRepair.ts
+@@ -0,0 +1,167 @@
++import { repairLatin1DecodedGbkText } from './legacyTagTextRepair';
++
++// src/utils/textEncodingRepair.ts
++// 車機與舊曲庫最常見的兩種亂碼，都是「字串被當成別的編碼解了一次」：
++//   1. UTF-8 的位元組被當成 ISO-8859-1 解（"Ã¦ÂµÂÃ"、"â€™" 這類），中文歌名就變成 ÀÌ…
++//   2. 中文 GBK 位元組被當成 ISO-8859-1 解（"¸ÃËÀµÄÎÂÈá"），既有的 legacyTagTextRepair 只修 ID3，
++//      Android 的 MediaMetadataRetriever 與某些容器不帶「這是 ID3」的線索，所以在這裡放寬。
++// 另外補一個 Big5（繁中標籤）的嘗試。每個候選都要通過嚴格驗證才採用，正常文字一律原樣返回。
++
++const CJK_TEXT_PATTERN = /[\u3000-\u303f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff01-\uff60]/u;
++const SUSPICIOUS_LATIN1_PATTERN = /[\u00c2\u00c3\u00e2\u00f0]/;
++const SUSPICIOUS_LOW_LATIN1 = /[\u00a8\u00a1\u0080-\u009f]/;
++
++const decode = (label: string, bytes: Uint8Array): string | null => {
++    try {
++        return new TextDecoder(label, { fatal: true }).decode(bytes);
++    } catch {
++        return null;
++    }
++};
++
++const latin1Bytes = (text: string): Uint8Array | null => {
++    const bytes = new Uint8Array(text.length);
++    for (let index = 0; index < text.length; index += 1) {
++        const code = text.charCodeAt(index);
++        if (code > 0xff) return null;
++        bytes[index] = code;
++    }
++    return bytes;
++};
++
++/** 「看得出來是壞的」：拉丁補充區的常見開頭字元，或控制區殘留。 */
++const looksBroken = (text: string): boolean => (
++    SUSPICIOUS_LATIN1_PATTERN.test(text) || SUSPICIOUS_LOW_LATIN1.test(text)
++);
++
++/** 已經是正常中文、且沒有壞字元，就不用再嘗試。 */
++const alreadyFine = (text: string): boolean => CJK_TEXT_PATTERN.test(text) && !looksBroken(text);
++
++const tryUtf8Reinterpretation = (text: string): string | null => {
++    const bytes = latin1Bytes(text);
++    if (!bytes) return null;
++    const decoded = decode('utf-8', bytes);
++    if (!decoded || !CJK_TEXT_PATTERN.test(decoded)) return null;
++    // 解出來如果還是壞的（例如 double-encoded），不接受。
++    if (looksBroken(decoded)) return null;
++    return decoded;
++};
++
++// GBK 與 Big5 有時「都能解成中文」，只能挑更像人話的那個：用高頻字出現率當裁判。
++const COMMON_CHARS = new Set(Array.from(
++    '的一是在不了有和人这中大为上个国我以要他时来用们生到作地于出就分对成会可主发年动同工也能下过子说产种面而方后多定行学法所民得经十三之进着等部度家电力里如水化高自二理起小物现实加量都两体制机当使点从业本去把性好应开它合还因由其些然前外天政四日那社义事平形相全表间样与关各重新线内数正心反你明看原又么利比或但质气第向道命此变条只没结解问意建月公无系军很情者最立代想已通并提直题程展五果料象员革位入常文总次品式活设及管特件长求老头基资边流路级少图山统接知较将组见计别她手角期根论运农指几九区强放决西被干做必战先回则任取据处理世车技打歌音乐爱梦风花雪月夜星海雨云窗心情思念故乡春秋冬夏白黑红蓝绿黄金银铁石木水火土日月天地人名字傑倫范特西說聽寫讀課時間覺得裡個們來對開關聲應該樣這麼誰嗎呢吧啊喔嗯',
++));
++
++const CJK_CHAR_PATTERN = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3040-\u30ff]/u;
++
++const commonScore = (text: string): number => {
++    const visible = Array.from(text).filter(char => !/\s/u.test(char));
++    if (visible.length === 0) return 0;
++    const hits = visible.filter(char => COMMON_CHARS.has(char)).length;
++    return hits / visible.length;
++};
++
++const isMostlyCjk = (text: string): boolean => {
++    const visible = Array.from(text).filter(char => !/\s/u.test(char));
++    if (visible.length === 0) return false;
++    const cjk = visible.filter(char => CJK_CHAR_PATTERN.test(char)).length;
++    // 兩字以上的結果，九成以上要是中文；單字結果（「李」這種）全中才算。
++    return cjk / visible.length >= 0.9 && (cjk >= 2 || visible.length <= 2);
++};
++
++const decodeCandidate = (label: 'gbk' | 'big5', bytes: Uint8Array): string | null => {
++    const decoded = decode(label, bytes);
++    if (!decoded || !CJK_TEXT_PATTERN.test(decoded) || looksBroken(decoded)) return null;
++    if (!isMostlyCjk(decoded)) return null;
++    return decoded === null ? null : decoded;
++};
++
++/** GBK 與 Big5 兩個讀法都試，取高頻字命中率高的那個（平手時偏向 GBK，简体曲库远多于繁体）。 */
++const tryChineseReinterpretation = (text: string): string | null => {
++    const bytes = latin1Bytes(text);
++    if (!bytes) return null;
++    const gbk = decodeCandidate('gbk', bytes);
++    const big5 = decodeCandidate('big5', bytes);
++    if (!gbk && !big5) return null;
++    if (!big5) return gbk;
++    if (!gbk) return big5;
++    return commonScore(big5) > commonScore(gbk) ? big5 : gbk;
++};
++
++/**
++ * 修一個標籤字串。順序是 UTF-8 → GBK → 既有 ID3 專用修法；Big5 只在前面都不成立時試。
++ * 任何一步失敗都原樣返回，正常文字（含英數、正常中日韓、重音符號）不會被動到。
++ */
++export const repairTagText = (input: string | null | undefined): string => {
++    if (!input) return input ?? '';
++    const text = input.trim();
++    if (!text) return text;
++    if (alreadyFine(text)) return text;
++    // 沒有高位字元（全 ASCII）就沒得修。
++    if (!/[\u0080-\u00ff]/u.test(text)) return text;
++
++    const utf8 = tryUtf8Reinterpretation(text);
++    if (utf8) return utf8;
++
++    const id3 = repairLatin1DecodedGbkText(text);
++    if (id3 !== text) return id3;
++
++    const chinese = tryChineseReinterpretation(text);
++    if (chinese) return chinese;
++
++    return text;
++};
++
++/** 一次修一組（歌手清單）；空字串與 undefined 原樣保留。 */
++export const repairTagTextList = (input: readonly (string | null | undefined)[] | null | undefined): string[] => (
++    (input ?? []).map(item => repairTagText(item)).filter(item => item.length > 0)
++);
++
++type RepairableSongLike = {
++    title: string;
++    titleOrigin?: string;
++    fileName?: string;
++    importedMetadata?: { title: string; artistNames: string[]; albumName?: string; titleSource?: string };
++};
++
++/** 只修「還是匯入值」的欄位：使用者自己改過的歌名、配對到的線上資料都不動。 */
++export const repairLocalSongTagText = <T extends RepairableSongLike>(song: T): { song: T; changed: boolean } => {
++    let changed = false;
++    const pick = <K extends keyof T>(key: K, value: T[K], next: T[K]) => {
++        if (value === next) return value;
++        changed = true;
++        return next;
++    };
++
++    let nextTitle = song.title;
++    if (song.titleOrigin === 'import' || !song.titleOrigin) {
++        nextTitle = pick('title', song.title, repairTagText(song.title));
++    }
++
++    const originalMetadata = song.importedMetadata;
++    let importedMetadata = originalMetadata;
++    if (originalMetadata) {
++        const repairedTitle = repairTagText(originalMetadata.title);
++        const repairedArtists = repairTagTextList(originalMetadata.artistNames);
++        const repairedAlbum = repairTagText(originalMetadata.albumName);
++        const differs = repairedTitle !== originalMetadata.title
++            || repairedAlbum !== (originalMetadata.albumName ?? '')
++            || repairedArtists.length !== originalMetadata.artistNames.length
++            || repairedArtists.some((name, index) => name !== originalMetadata.artistNames[index]);
++        if (differs) {
++            importedMetadata = {
++                ...originalMetadata,
++                title: repairedTitle,
++                artistNames: repairedArtists,
++                albumName: repairedAlbum,
++            };
++            changed = true;
++        }
++    }
++
++    if (!changed) return { song, changed: false };
++    return {
++        song: { ...song, title: nextTitle, importedMetadata } as T,
++        changed: true,
++    };
++};
 diff --git a/src/utils/uiZoom.ts b/src/utils/uiZoom.ts
 index 64ef098..d4357bc 100644
 --- a/src/utils/uiZoom.ts
