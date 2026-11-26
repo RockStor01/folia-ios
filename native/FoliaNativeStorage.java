@@ -72,7 +72,7 @@ public class FoliaNativeStorage {
     private static final int REQUEST_CODE_PERMISSION = 4211;
     private static final String[] AUDIO_EXTENSIONS = {
             ".mp3", ".flac", ".m4a", ".wav", ".ogg", ".opus", ".aac", ".alac",
-            ".ape", ".wv", ".tta", ".wma", ".aif", ".aiff", ".caf", ".dsf", ".dff"
+            ".ape", ".wv", ".tta", ".tak", ".wma", ".aif", ".aiff", ".caf", ".dsf", ".dff", ".mp4", ".mka"
     };
     private static final int MAX_SCAN_FILES = 20000;
     private static final int MAX_SCAN_DEPTH = 12;
@@ -893,7 +893,7 @@ public class FoliaNativeStorage {
         String lower = name.toLowerCase(Locale.ROOT);
         if (lower.endsWith(".mp3")) return "audio/mpeg";
         if (lower.endsWith(".flac")) return "audio/flac";
-        if (lower.endsWith(".m4a") || lower.endsWith(".alac")) return "audio/mp4";
+        if (lower.endsWith(".m4a") || lower.endsWith(".alac") || lower.endsWith(".mp4")) return "audio/mp4";
         if (lower.endsWith(".wav")) return "audio/wav";
         if (lower.endsWith(".ogg")) return "audio/ogg";
         if (lower.endsWith(".opus")) return "audio/opus";
@@ -905,6 +905,8 @@ public class FoliaNativeStorage {
         if (lower.endsWith(".ape")) return "application/octet-stream";
         if (lower.endsWith(".wv")) return "application/octet-stream";
         if (lower.endsWith(".tta")) return "application/octet-stream";
+        if (lower.endsWith(".tak")) return "application/octet-stream";
+        if (lower.endsWith(".mka")) return "audio/x-matroska";
         // 其餘未知格式不要冒充 audio/mpeg：Chromium 會先當成 MP3 慢慢試，延遲才報錯；
         // 給 octet-stream 它會立刻回「不支援」，v0.9.8 的原生轉碼才來得及接手。
         return "application/octet-stream";

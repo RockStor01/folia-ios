@@ -21,7 +21,7 @@ index 39ec48c..114cb4d 100644
      <script src="/runtime-config.js"></script>
    <script type="importmap">
 diff --git a/package.json b/package.json
-index 6976461..971d268 100644
+index 6976461..e4566af 100644
 --- a/package.json
 +++ b/package.json
 @@ -8,7 +8,7 @@
@@ -29,7 +29,7 @@ index 6976461..971d268 100644
    },
    "private": true,
 -  "version": "0.8.0",
-+  "version": "0.9.14",
++  "version": "0.9.15",
    "license": "AGPL-3.0",
    "type": "module",
    "main": "electron/main.cjs",
@@ -998,7 +998,7 @@ index 5de4bf3..af66827 100644
      );
  };
 diff --git a/src/components/modal/newFeaturesRelease.ts b/src/components/modal/newFeaturesRelease.ts
-index e49a39c..b5472db 100644
+index e49a39c..ec63c7c 100644
 --- a/src/components/modal/newFeaturesRelease.ts
 +++ b/src/components/modal/newFeaturesRelease.ts
 @@ -1,4 +1,4 @@
@@ -1022,7 +1022,7 @@ index e49a39c..b5472db 100644
  export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
 -    i18nKey: 'releaseNotes.v0_8_0',
 -    majorUpdate: { codename: 'Severance' },
-+    i18nKey: 'releaseNotes.v0_9_14',
++    i18nKey: 'releaseNotes.v0_9_15',
      features: [
 -        { id: 'sourceMods', icon: Puzzle },
 -        { id: 'modMarket', icon: Store },
@@ -1030,9 +1030,9 @@ index e49a39c..b5472db 100644
 -        { id: 'moments', icon: MessageSquareText },
 -        { id: 'stemMixer', icon: SlidersVertical },
 -        { id: 'moreDetails', icon: Sparkles },
-+        { id: 'rawTags', icon: FileAudio },
++        { id: 'lossless', icon: FileAudio },
      ],
-+    fixes: ['bytes', 'intro', 'backfill'],
++    fixes: ['ape', 'riff', 'scan'],
  };
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
@@ -2046,7 +2046,7 @@ index 2f367df..361d5da 100644
              enabled
              && window.electron?.requestTranscodeFallback
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..61edd27 100644
+index 86f3b6d..dc20b10 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -2250,10 +2250,22 @@ index 86f3b6d..61edd27 100644
      "transcodeFallbackDesc": "Converts tracks that cannot be decoded with FFmpeg. The file is not changed.",
      "playbackFade": "Fade on pause and resume",
      "playbackFadeDesc": "Fades out before pausing and back in on resume.",
-@@ -4513,6 +4506,207 @@ export default {
+@@ -4513,6 +4506,219 @@ export default {
      "noDescription": "No description available",
    },
    "releaseNotes": {
++    "v0_9_15": {
++      "intro": "0.9.15 extends raw tag parsing to every lossless container: RIFF INFO and ID3 chunks in wav/aiff, APEv2 in ape/wv/tak, ID3v2 inside tta/dsf/dff, plus the existing flac and alac.",
++      "lossless": {
++        "title": "Tag reading for all lossless formats",
++        "description": "Beyond MP3/FLAC/ALAC: WAV reads LIST/INFO INAM/IART/IPRD or an embedded id3 chunk; AIFF/AIFC reads its ID3 chunk; APE/WV/TAK read the APEv2 footer; TTA/DSF/DFF are scanned for embedded ID3v2. APEv2 and DSF tags sit at the end of the file, so when the head has nothing the last 512 KB is read too. Scanning now accepts .tak/.mp4/.mka.",
++      },
++      "fixes": {
++        "ape": "APEv2 Title/Artist/Album from APE, WavPack and TAK files.",
++        "riff": "RIFF INFO and id3 chunks in WAV, ID3 chunk in AIFF.",
++        "scan": "Scanning and MIME now cover .tak/.mp4/.mka.",
++      }
++    },
 +    "v0_9_14": {
 +      "intro": "0.9.14 stops repairing strings after the fact: titles, artists and albums are read from the file's raw tag bytes and decoded with the encoding the tag itself declares, so � garbage never reaches the library.",
 +      "rawTags": {
@@ -2458,7 +2470,7 @@ index 86f3b6d..61edd27 100644
      "v0_7_0": {
        "intro": "Here are the new features and improvements in version 0.7.0.",
        "temperaVisualExpansion": {
-@@ -5228,6 +5422,10 @@ export default {
+@@ -5228,6 +5434,10 @@ export default {
      "capsuleOpensPalette": "Click to open the command palette",
    },
    "localMusic": {
@@ -2469,7 +2481,7 @@ index 86f3b6d..61edd27 100644
      "foldersAndPlaylists": "Folders",
      "albums": "Albums",
      "artists": "Artists",
-@@ -5242,8 +5440,34 @@ export default {
+@@ -5242,8 +5452,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -2504,7 +2516,7 @@ index 86f3b6d..61edd27 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6277,13 @@ export default {
+@@ -6053,8 +6289,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -2520,7 +2532,7 @@ index 86f3b6d..61edd27 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/in.ts b/src/i18n/locales/in.ts
-index fac0d47..9697205 100644
+index fac0d47..73db8f2 100644
 --- a/src/i18n/locales/in.ts
 +++ b/src/i18n/locales/in.ts
 @@ -2796,6 +2796,7 @@ export default {
@@ -2541,10 +2553,22 @@ index fac0d47..9697205 100644
      "transcodeFallbackDesc": "Mengonversi trek yang tidak dapat didekode dengan FFmpeg. Berkas tidak diubah.",
      "playbackFade": "Fade saat jeda dan lanjut",
      "playbackFadeDesc": "Fade keluar sebelum jeda dan masuk kembali saat lanjut.",
-@@ -4513,6 +4516,124 @@ export default {
+@@ -4513,6 +4516,136 @@ export default {
      "noDescription": "Tidak ada deskripsi tersedia"
    },
    "releaseNotes": {
++    "v0_9_15": {
++      "intro": "0.9.15 extends raw tag parsing to every lossless container: RIFF INFO and ID3 chunks in wav/aiff, APEv2 in ape/wv/tak, ID3v2 inside tta/dsf/dff, plus the existing flac and alac.",
++      "lossless": {
++        "title": "Tag reading for all lossless formats",
++        "description": "Beyond MP3/FLAC/ALAC: WAV reads LIST/INFO INAM/IART/IPRD or an embedded id3 chunk; AIFF/AIFC reads its ID3 chunk; APE/WV/TAK read the APEv2 footer; TTA/DSF/DFF are scanned for embedded ID3v2. APEv2 and DSF tags sit at the end of the file, so when the head has nothing the last 512 KB is read too. Scanning now accepts .tak/.mp4/.mka.",
++      },
++      "fixes": {
++        "ape": "APEv2 Title/Artist/Album from APE, WavPack and TAK files.",
++        "riff": "RIFF INFO and id3 chunks in WAV, ID3 chunk in AIFF.",
++        "scan": "Scanning and MIME now cover .tak/.mp4/.mka.",
++      }
++    },
 +    "v0_9_14": {
 +      "intro": "0.9.14 stops repairing strings after the fact: titles, artists and albums are read from the file's raw tag bytes and decoded with the encoding the tag itself declares, so � garbage never reaches the library.",
 +      "rawTags": {
@@ -2689,7 +2713,7 @@ index 23ebf79..336af7d 100644
      "playbackFade": "Làm mờ khi tạm dừng và tiếp tục",
      "playbackFadeDesc": "Giảm âm dần trước khi tạm dừng và tăng dần khi tiếp tục thay vì ngắt âm đột ngột. Bỏ qua nếu âm thanh không đi qua bộ xử lý âm thanh.",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..6a7a4c0 100644
+index 0067e9a..d2fbeba 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -2831,10 +2855,22 @@ index 0067e9a..6a7a4c0 100644
      "transcodeFallbackDesc": "遇到无法解码的歌曲时用 FFmpeg 转换，不修改原文件。",
      "playbackFade": "暂停/播放淡入淡出",
      "playbackFadeDesc": "暂停前淡出，恢复时淡入。",
-@@ -4513,6 +4577,207 @@ export default {
+@@ -4513,6 +4577,219 @@ export default {
      "noDescription": "暂无详细介绍",
    },
    "releaseNotes": {
++    "v0_9_15": {
++      "intro": "0.9.15 把原始标签解析补到全部无损容器：wav／aiff 的 RIFF INFO 与 ID3 chunk、ape／wv／tak 的 APEv2、tta／dsf／dff 里的 ID3v2，加上原本的 flac 与 alac。",
++      "lossless": {
++        "title": "所有无损格式都能读标签",
++        "description": "MP3／FLAC／ALAC 之外的容器也接上了：WAV 读 LIST/INFO 的 INAM／IART／IPRD 或 RIFF 内的 id3 chunk；AIFF／AIFC 读 ID3 chunk；APE／WV／TAK 读档尾的 APEv2 footer；TTA／DSF／DFF 直接扫内嵌的 ID3v2。APEv2 与 DSF 的标签贴在档尾，所以头读不到时会再读最后 512 KB。扫描清单也补上 .tak／.mp4／.mka。",
++      },
++      "fixes": {
++        "ape": "APE／WavPack／TAK 的 APEv2 标签（Title／Artist／Album）读得出来。",
++        "riff": "WAV 的 RIFF INFO 与 id3 chunk、AIFF 的 ID3 chunk 都支持。",
++        "scan": "扫描与 MIME 补上 .tak／.mp4／.mka，这些档不会再被当成未知格式。",
++      }
++    },
 +    "v0_9_14": {
 +      "intro": "0.9.14 换掉「靠事后修字串」的做法：歌名／歌手／专辑改成直接读文件的原始标签位元组，按 ID3／Vorbis／MP4 自己写的编码解一次，� 这类已经丢掉位元组的乱码从源头消失。",
 +      "rawTags": {
@@ -3039,7 +3075,7 @@ index 0067e9a..6a7a4c0 100644
      "v0_7_0": {
        "intro": "以下是 0.7.0 的新功能与改进",
        "temperaVisualExpansion": {
-@@ -5228,6 +5493,10 @@ export default {
+@@ -5228,6 +5505,10 @@ export default {
      "capsuleOpensPalette": "点一下打开命令面板",
    },
    "localMusic": {
@@ -3050,7 +3086,7 @@ index 0067e9a..6a7a4c0 100644
      "foldersAndPlaylists": "文件夹",
      "albums": "专辑",
      "artists": "艺术家",
-@@ -5242,8 +5511,34 @@ export default {
+@@ -5242,8 +5523,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -3085,7 +3121,7 @@ index 0067e9a..6a7a4c0 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6346,13 @@ export default {
+@@ -6051,8 +6358,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -5354,7 +5390,7 @@ index 0000000..df20d8f
 +    }
 +}
 diff --git a/src/services/localMusicService.ts b/src/services/localMusicService.ts
-index 26a0181..5939b52 100644
+index 26a0181..4de0da8 100644
 --- a/src/services/localMusicService.ts
 +++ b/src/services/localMusicService.ts
 @@ -30,6 +30,16 @@ import { hasLocalCoverBinary } from './localCoverBinaryStore';
@@ -5374,6 +5410,15 @@ index 26a0181..5939b52 100644
  import { useLyricSettingsStore } from '../stores/useLyricSettingsStore';
  import { getLocalLyricFilePriority, isSameLocalLyricFormatOrder, normalizeLocalLyricFormatOrder, type LocalLyricFileFormat } from '../utils/lyrics/localLyricFormatOrder';
  import { readLyricFile } from '../utils/lyrics/lyricFileDecoding';
+@@ -152,7 +162,7 @@ const localCoverAssetRequestMap = new Map<string, Promise<LocalSong>>();
+ const songsWithoutEmbeddedCover = new Map<string, string>();
+ const BROWSER_AUDIO_EXTENSIONS = /\.(mp3|flac|m4a|wav|ogg|opus|aac)$/i;
+ const ELECTRON_FALLBACK_AUDIO_EXTENSIONS = /\.(alac|ape|wv|tta|wma|aif|aiff|caf|dsf|dff)$/i;
+-const KNOWN_AUDIO_EXTENSIONS = /\.(mp3|flac|m4a|wav|ogg|opus|aac|alac|ape|wv|tta|wma|aif|aiff|caf|dsf|dff)$/i;
++const KNOWN_AUDIO_EXTENSIONS = /\.(mp3|flac|m4a|mp4|wav|ogg|oga|opus|aac|alac|ape|wv|tta|tak|wma|aif|aiff|caf|dsf|dff|mka)$/i;
+ const LYRIC_EXTENSIONS = /\.(lrc|vtt|ttml|qrc|yrc|krc|fia)$/i;
+ const TRANSLATION_LYRIC_EXTENSIONS = /\.t\.(lrc|vtt)$/i;
+ const IMPORT_CONCURRENCY = 6;
 @@ -296,8 +306,21 @@ export function extractMetadataFromFilename(fileName: string): { title?: string;
      };
  }
@@ -5706,7 +5751,7 @@ index 26a0181..5939b52 100644
 +            let embeddedArtist = probe.artist;
 +            let embeddedAlbum = probe.album;
 +            if (hasLostChars(probe.title) || hasLostChars(probe.artist) || hasLostChars(probe.album)) {
-+                const rawTags = await readLinkedSongRawTags(file.path, file.name);
++                const rawTags = await readLinkedSongRawTags(file.path, file.name, file.size);
 +                if (rawTags) {
 +                    embeddedTitle = rawTags.title ?? embeddedTitle;
 +                    embeddedArtist = rawTags.artist ?? embeddedArtist;
@@ -6274,13 +6319,14 @@ index 0000000..72a4528
 +};
 diff --git a/src/services/localSongRawTags.ts b/src/services/localSongRawTags.ts
 new file mode 100644
-index 0000000..e1c3f03
+index 0000000..368b099
 --- /dev/null
 +++ b/src/services/localSongRawTags.ts
-@@ -0,0 +1,248 @@
+@@ -0,0 +1,361 @@
 +// src/services/localSongRawTags.ts
 +// 車機的 MediaMetadataRetriever 會用錯編碼解標籤，整串變成 �（位元組已經被丟掉，事後再修也救不回來）。
-+// 這裡改成自己讀檔頭的原始位元組：ID3v2（mp3）、VORBIS_COMMENT（flac）、MP4 ilst（m4a），
++// 這裡改成自己讀檔案的原始位元組：ID3v2（mp3／wav／aiff／tta／dsf／dff）、VORBIS_COMMENT（flac）、
++// MP4 ilst（m4a／alac）、RIFF INFO（wav）、APEv2（ape／wv／tak），
 +// 再按標籤自己的編碼位元組／BOM／UTF-8 有效性解一次，拿到的就是正確原文。
 +import { fetchNativeRange } from './nativeLinkedStorage';
 +import { getLocalSongs, saveLocalSongs } from './db';
@@ -6293,6 +6339,8 @@ index 0000000..e1c3f03
 +}
 +
 +const TAG_HEAD_BYTES = 4 * 1024 * 1024;
++// APEv2 的 footer 在檔案最尾端，DSF／DFF 的 ID3 也常貼在資料區後面，所以頭讀不到時再讀尾巴。
++const TAG_TAIL_BYTES = 512 * 1024;
 +
 +const utf8Strict = new TextDecoder('utf-8', { fatal: true });
 +
@@ -6371,9 +6419,9 @@ index 0000000..e1c3f03
 +
 +/** ID3v2：逐個 frame 找 TIT2／TPE1／TALB，照 frame 開頭的編碼位元組解。 */
 +const readId3Tags = (bytes: Uint8Array, out: RawTagStrings): void => {
-+    const version = bytes[3];
-+    const major = bytes[5];
-+    const flags = bytes[5 + version];
++    if (bytes.length < 10 || ascii(bytes, 0, 3) !== 'ID3') return;
++    const major = bytes[3];
++    const flags = bytes[5];
 +    let offset = 10;
 +    const tagSize = readSynchsafe(bytes, 6);
 +    const end = Math.min(bytes.length, offset + tagSize);
@@ -6434,7 +6482,7 @@ index 0000000..e1c3f03
 +    }
 +};
 +
-+/** MP4／M4A：在 moov/udta/meta/ilst 裡找 ©nam／©ART／©alb 的 data box。 */
++/** MP4／M4A／ALAC：在 moov/udta/meta/ilst 裡找 ©nam／©ART／©alb 的 data box。 */
 +const readMp4Tags = (bytes: Uint8Array, out: RawTagStrings): void => {
 +    const wanted: Array<[string, keyof RawTagStrings]> = [
 +        ['\u00a9nam', 'title'],
@@ -6460,35 +6508,141 @@ index 0000000..e1c3f03
 +    }
 +};
 +
-+/** 解析一份檔頭位元組；不是認得的容器就回 null。 */
++/** WAV：RIFF 內的 LIST/INFO（INAM／IART／IPRD），或 RIFF 裡的 id3 chunk。 */
++const readWavTags = (bytes: Uint8Array, out: RawTagStrings): void => {
++    let offset = 12;
++    while (offset + 8 <= bytes.length) {
++        const id = ascii(bytes, offset, 4);
++        const size = readUint32LE(bytes, offset + 4);
++        const bodyStart = offset + 8;
++        const bodyEnd = Math.min(bytes.length, bodyStart + size);
++        if (id === 'LIST' && ascii(bytes, bodyStart, 4) === 'INFO') {
++            let cursor = bodyStart + 4;
++            while (cursor + 8 <= bodyEnd) {
++                const subId = ascii(bytes, cursor, 4);
++                const subSize = readUint32LE(bytes, cursor + 4);
++                const value = clean(decodeTextBytes(bytes.subarray(cursor + 8, Math.min(bodyEnd, cursor + 8 + subSize))));
++                if (value) {
++                    if (subId === 'INAM' && !out.title) out.title = value;
++                    else if (subId === 'IART' && !out.artist) out.artist = value;
++                    else if (subId === 'IPRD' && !out.album) out.album = value;
++                }
++                cursor += 8 + subSize + (subSize & 1);
++            }
++        } else if (id === 'id3 ' || id === 'ID3 ') {
++            readId3Tags(bytes.subarray(bodyStart, bodyEnd), out);
++        }
++        offset = bodyStart + size + (size & 1);
++    }
++};
++
++/** AIFF／AIFC：FORM 內的 'ID3 ' chunk（大端長度）。 */
++const readAiffTags = (bytes: Uint8Array, out: RawTagStrings): void => {
++    let offset = 12;
++    while (offset + 8 <= bytes.length) {
++        const id = ascii(bytes, offset, 4);
++        const size = readUint32BE(bytes, offset + 4);
++        const bodyStart = offset + 8;
++        if (bodyStart + size > bytes.length) break;
++        if (id === 'ID3 ') readId3Tags(bytes.subarray(bodyStart, bodyStart + size), out);
++        offset = bodyStart + size + (size & 1);
++    }
++};
++
++/** APEv2：footer 在檔案最尾端，也可能有 header；item 依序是長度／flags／key…／值。 */
++const readApeTags = (bytes: Uint8Array, out: RawTagStrings): boolean => {
++    // 找最後一個 APETAGEX。
++    let footer = -1;
++    for (let index = bytes.length - 32; index >= 0; index -= 1) {
++        if (ascii(bytes, index, 8) === 'APETAGEX') { footer = index; break; }
++    }
++    if (footer < 0) return false;
++    const tagSize = readUint32LE(bytes, footer + 12);
++    const count = readUint32LE(bytes, footer + 16);
++    if (tagSize < 32) return false;
++    const itemsStart = Math.max(0, footer - (tagSize - 32));
++    let cursor = itemsStart;
++    for (let index = 0; index < count && cursor + 9 <= footer; index += 1) {
++        const itemSize = readUint32LE(bytes, cursor);
++        if (itemSize <= 9 || cursor + itemSize > footer) break;
++        const keyStart = cursor + 8;
++        let keyEnd = keyStart;
++        while (keyEnd < cursor + itemSize && bytes[keyEnd] !== 0) keyEnd += 1;
++        const key = ascii(bytes, keyStart, keyEnd - keyStart).toLowerCase();
++        const value = clean(decodeTextBytes(bytes.subarray(keyEnd + 1, cursor + itemSize), 'utf8'));
++        if (value) {
++            if ((key === 'title' || key === 'name') && !out.title) out.title = value;
++            else if (key === 'artist' && !out.artist) out.artist = value;
++            else if (key === 'album' && !out.album) out.album = value;
++        }
++        cursor += itemSize;
++    }
++    return true;
++};
++
++/** DSF／DFF／TAK／TTA 這些把 ID3v2 塞在容器裡或檔尾：直接掃 'ID3' 標記。 */
++const scanEmbeddedId3 = (bytes: Uint8Array, out: RawTagStrings): void => {
++    for (let index = 0; index + 10 <= bytes.length; index += 1) {
++        if (bytes[index] !== 0x49 || bytes[index + 1] !== 0x44 || bytes[index + 2] !== 0x33) continue;
++        const major = bytes[index + 3];
++        if (major < 2 || major > 4) continue;
++        const copy: RawTagStrings = {};
++        readId3Tags(bytes.subarray(index), copy);
++        if (copy.title || copy.artist || copy.album) {
++            if (copy.title && !out.title) out.title = copy.title;
++            if (copy.artist && !out.artist) out.artist = copy.artist;
++            if (copy.album && !out.album) out.album = copy.album;
++            return;
++        }
++    }
++};
++
++/**
++ * 解析一份位元組（可以是檔頭，也可以是檔尾）；認得的容器都試一輪。
++ * 副檔名只用來決定要不要試 MP4，其餘靠 magic 判斷。
++ */
 +export const parseRawTags = (bytes: Uint8Array, fileName: string): RawTagStrings | null => {
 +    const out: RawTagStrings = {};
 +    const lower = fileName.toLowerCase();
 +    try {
 +        if (bytes.length >= 10 && ascii(bytes, 0, 3) === 'ID3') readId3Tags(bytes, out);
 +        else if (ascii(bytes, 0, 4) === 'fLaC') readFlacTags(bytes, out);
++        else if (ascii(bytes, 0, 4) === 'RIFF') readWavTags(bytes, out);
++        else if (ascii(bytes, 0, 4) === 'FORM') readAiffTags(bytes, out);
 +        else if (lower.endsWith('.m4a') || lower.endsWith('.mp4') || lower.endsWith('.alac')) readMp4Tags(bytes, out);
-+        else return null;
-+    } catch {
++        if (!out.title && !out.artist && !out.album) readApeTags(bytes, out);
++        if (!out.title && !out.artist && !out.album) scanEmbeddedId3(bytes, out);
++    } catch (error) {
++        console.warn('[RawTags] parse failed', error);
 +        return null;
 +    }
 +    return Object.keys(out).length > 0 ? out : null;
 +};
 +
 +/**
-+ * 從原始位元組重讀一首連結歌曲的標籤。
-+ * 只在原生探針回來的字串含有 �（資訊已被丟掉）時才值得多讀一次檔案。
++ * 從原始位元組重讀一首連結歌曲的標籤：先讀檔頭 4 MB，APEv2／DSF 這類貼在檔尾的再讀尾巴 512 KB。
 + */
-+export const readLinkedSongRawTags = async (filePath: string, fileName: string): Promise<RawTagStrings | null> => {
++export const readLinkedSongRawTags = async (
++    filePath: string,
++    fileName: string,
++    fileSize?: number,
++): Promise<RawTagStrings | null> => {
 +    const head = await fetchNativeRange(filePath, TAG_HEAD_BYTES, 0);
-+    if (!head) return null;
-+    return parseRawTags(new Uint8Array(head), fileName);
++    if (head) {
++        const tags = parseRawTags(new Uint8Array(head), fileName);
++        if (tags) return tags;
++    }
++    const size = fileSize ?? 0;
++    if (size <= 0) return null;
++    const tailLength = Math.min(TAG_TAIL_BYTES, size);
++    const tail = await fetchNativeRange(filePath, tailLength, size - tailLength);
++    if (!tail) return null;
++    return parseRawTags(new Uint8Array(tail), fileName);
 +};
 +
 +/** 一段文字是不是「已經壞掉、救不回來」（含 U+FFFD）。 */
 +export const hasLostChars = (value: string | null | undefined): boolean => Boolean(value && /\ufffd/u.test(value));
 +
-+/** 用原始位元組修掉的欄位（只覆蓋壞掉的那一個，正常欄位不動）。 */
 +const patchFromRawTags = (song: LocalSong, tags: RawTagStrings): LocalSong | null => {
 +    const meta = song.importedMetadata;
 +    const artistLost = hasLostChars(meta.artistNames.join(''));
@@ -6501,6 +6655,10 @@ index 0000000..e1c3f03
 +    return next;
 +};
 +
++/**
++ * 已經匯入、標題卻含 � 的連結歌：回檔案讀原始標籤補回來。
++ * 每次啟動只補一小批（25 首），避免 2200 首一次讀檔把車機拖住。
++ */
 +export const backfillLinkedSongLostTags = async (): Promise<void> => {
 +    try {
 +        const songs = await getLocalSongs();
@@ -6513,7 +6671,7 @@ index 0000000..e1c3f03
 +        if (targets.length === 0) return;
 +        const patched: LocalSong[] = [];
 +        for (const song of targets) {
-+            const tags = await readLinkedSongRawTags(song.linkedFilePath as string, song.fileName);
++            const tags = await readLinkedSongRawTags(song.linkedFilePath as string, song.fileName, song.fileSize);
 +            if (!tags) continue;
 +            const fixed = patchFromRawTags(song, tags);
 +            if (fixed) patched.push(fixed);
@@ -7912,10 +8070,10 @@ index 0000000..4b966b1
 +});
 diff --git a/test/unit/localSongRawTags.test.ts b/test/unit/localSongRawTags.test.ts
 new file mode 100644
-index 0000000..39b48d7
+index 0000000..9c6a9f4
 --- /dev/null
 +++ b/test/unit/localSongRawTags.test.ts
-@@ -0,0 +1,75 @@
+@@ -0,0 +1,128 @@
 +import { describe, expect, it } from 'vitest';
 +import { parseRawTags } from '@/services/localSongRawTags';
 +
@@ -7989,6 +8147,59 @@ index 0000000..39b48d7
 +
 +    it('ignores unknown containers', () => {
 +        expect(parseRawTags(Uint8Array.from([1, 2, 3, 4]), 'e.wav')).toBeNull();
++    });
++});
++
++describe('parseRawTags：其他無損容器', () => {
++    const le32 = (value: number): number[] => [value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff];
++    const be32 = (value: number): number[] => [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff];
++    const utf8 = (text: string): number[] => Array.from(new TextEncoder().encode(text));
++
++    it('reads WAV LIST/INFO tags', () => {
++        const info = (id: string, value: string): number[] => {
++            const body = utf8(value);
++            const padded = body.length & 1 ? [...body, 0] : body;
++            return [...Array.from(id).map(char => char.charCodeAt(0)), ...le32(body.length), ...padded];
++        };
++        const sub = [...info('INAM', '晴天'), ...info('IART', '周杰伦')];
++        const list = [...Array.from('LIST').map(char => char.charCodeAt(0)), ...le32(4 + sub.length),
++            ...Array.from('INFO').map(char => char.charCodeAt(0)), ...sub];
++        const bytes = Uint8Array.from([
++            ...Array.from('RIFF').map(char => char.charCodeAt(0)), ...le32(4 + list.length),
++            ...Array.from('WAVE').map(char => char.charCodeAt(0)), ...list,
++        ]);
++        expect(parseRawTags(bytes, 'a.wav')).toEqual({ title: '晴天', artist: '周杰伦' });
++    });
++
++    it('reads AIFF ID3 chunk', () => {
++        const id3 = tag([...frame('TIT2', [3, ...utf8('夜曲')])], 4);
++        const chunk = [...Array.from('ID3 ').map(char => char.charCodeAt(0)), ...be32(id3.length), ...Array.from(id3)];
++        const form = [...Array.from('FORM').map(char => char.charCodeAt(0)), ...be32(4 + chunk.length),
++            ...Array.from('AIFF').map(char => char.charCodeAt(0)), ...chunk];
++        expect(parseRawTags(Uint8Array.from(form), 'b.aiff')?.title).toBe('夜曲');
++    });
++
++    it('reads APEv2 tags (ape / wv / tak)', () => {
++        const item = (key: string, value: string): number[] => {
++            const keyBytes = [...utf8(key), 0];
++            const valueBytes = utf8(value);
++            const size = 8 + keyBytes.length + valueBytes.length;
++            return [...le32(size), ...le32(0), ...keyBytes, ...valueBytes];
++        };
++        const items = [...item('Title', '夜空中最亮的星'), ...item('Artist', '逃跑计划')];
++        const tagSize = items.length + 32;
++        const footer = [
++            ...Array.from('APETAGEX').map(char => char.charCodeAt(0)),
++            ...le32(2000), ...le32(tagSize), ...le32(2), ...le32(0), ...le32(0), ...le32(0),
++        ];
++        const bytes = Uint8Array.from([...items, ...footer]);
++        expect(parseRawTags(bytes, 'c.ape')).toEqual({ title: '夜空中最亮的星', artist: '逃跑计划' });
++    });
++
++    it('finds ID3 tucked inside DSF / DFF containers', () => {
++        const id3 = tag([...frame('TIT2', [3, ...utf8('晴天')])], 4);
++        const bytes = Uint8Array.from([0x44, 0x53, 0x44, 0x20, 0, 0, 0, 0, ...Array.from({ length: 24 }, () => 0), ...Array.from(id3)]);
++        expect(parseRawTags(bytes, 'd.dsf')?.title).toBe('晴天');
 +    });
 +});
 diff --git a/test/unit/settings/settingsNavModel.test.ts b/test/unit/settings/settingsNavModel.test.ts
