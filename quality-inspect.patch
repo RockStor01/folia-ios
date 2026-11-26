@@ -21,7 +21,7 @@ index 39ec48c..114cb4d 100644
      <script src="/runtime-config.js"></script>
    <script type="importmap">
 diff --git a/package.json b/package.json
-index 6976461..63fbc3c 100644
+index 6976461..b7cbad6 100644
 --- a/package.json
 +++ b/package.json
 @@ -8,7 +8,7 @@
@@ -29,7 +29,7 @@ index 6976461..63fbc3c 100644
    },
    "private": true,
 -  "version": "0.8.0",
-+  "version": "0.9.6",
++  "version": "0.9.7",
    "license": "AGPL-3.0",
    "type": "module",
    "main": "electron/main.cjs",
@@ -893,12 +893,12 @@ index 5de4bf3..af66827 100644
      );
  };
 diff --git a/src/components/modal/newFeaturesRelease.ts b/src/components/modal/newFeaturesRelease.ts
-index e49a39c..da5365b 100644
+index e49a39c..f2f09ba 100644
 --- a/src/components/modal/newFeaturesRelease.ts
 +++ b/src/components/modal/newFeaturesRelease.ts
 @@ -1,4 +1,4 @@
 -import { ListMusic, MessageSquareText, Puzzle, SlidersVertical, Sparkles, Store } from 'lucide-react';
-+import { Gauge, HardDrive, ScanLine, Wand2 } from 'lucide-react';
++import { Languages, ListChecks, ShieldCheck, Type } from 'lucide-react';
  import type { LucideIcon } from 'lucide-react';
  
  // src/components/modal/newFeaturesRelease.ts
@@ -911,13 +911,13 @@ index e49a39c..da5365b 100644
      /** 重大更新：介绍上方显示「<代号> Update · 重大更新」标签；代号不翻译，文案在 help.majorUpdateLabel。
       *  servicePack：同一重大更新的热修复版，标签改成「<代号> Update SP<n> · 重大更新」，文案在 help.servicePackLabel。 */
      majorUpdate?: { codename: string; servicePack?: number };
-@@ -18,14 +20,12 @@ type NewFeaturesRelease = {
+@@ -18,14 +20,11 @@ type NewFeaturesRelease = {
  
  // Defines the current release's cards; their localized text lives under i18nKey in every locale.
  export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
 -    i18nKey: 'releaseNotes.v0_8_0',
 -    majorUpdate: { codename: 'Severance' },
-+    i18nKey: 'releaseNotes.v0_9_6',
++    i18nKey: 'releaseNotes.v0_9_7',
      features: [
 -        { id: 'sourceMods', icon: Puzzle },
 -        { id: 'modMarket', icon: Store },
@@ -925,12 +925,11 @@ index e49a39c..da5365b 100644
 -        { id: 'moments', icon: MessageSquareText },
 -        { id: 'stemMixer', icon: SlidersVertical },
 -        { id: 'moreDetails', icon: Sparkles },
-+        { id: 'moreFormats', icon: Wand2 },
-+        { id: 'sliceDecode', icon: Gauge },
-+        { id: 'parallelProbe', icon: ScanLine },
-+        { id: 'noBlankRow', icon: HardDrive },
++        { id: 'mixedTitle', icon: Type },
++        { id: 'singleChar', icon: Languages },
++        { id: 'noOverFix', icon: ShieldCheck },
      ],
-+    fixes: ['m4aMojibake', 'mp3Id3Footer', 'alacDepth', 'unknownRetry'],
++    fixes: ['existingLibrary', 'filenameFallback', 'unitTests'],
  };
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
@@ -1142,7 +1141,7 @@ index 92620c2..04852d7 100644
      general,
      interaction,
 diff --git a/src/components/modal/userGuideContent.ts b/src/components/modal/userGuideContent.ts
-index a8b5aa7..f27d26d 100644
+index a8b5aa7..8dee1f3 100644
 --- a/src/components/modal/userGuideContent.ts
 +++ b/src/components/modal/userGuideContent.ts
 @@ -13,7 +13,7 @@ export type UserGuideShortcut = {
@@ -1150,7 +1149,7 @@ index a8b5aa7..f27d26d 100644
  
  export const USER_GUIDE_PAGE_COUNT = 7;
 -export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.8.0';
-+export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.9.5';
++export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.9.7';
  
  export type HelpTabShortcut = {
      id: string;
@@ -1510,7 +1509,7 @@ index 0000000..c69bf5d
 +    return rows;
 +};
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..4e358f0 100644
+index 86f3b6d..8f6f214 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -1704,10 +1703,30 @@ index 86f3b6d..4e358f0 100644
      "minimizeToTray": "Minimize to tray",
      "closeToTray": "Close window to tray",
      "closeToTrayDesc": "The close button hides the window to the tray instead of quitting",
-@@ -4513,6 +4504,89 @@ export default {
+@@ -4513,6 +4504,109 @@ export default {
      "noDescription": "No description available",
    },
    "releaseNotes": {
++    "v0_9_7": {
++      "intro": "0.9.7 replaces the mojibake heuristic: instead of demanding that a string be 90% Chinese, it compares which decoding looks most like real text. Mixed Chinese/English titles, single-character labels and album names containing English are now repaired.",
++      "mixedTitle": {
++        "title": "Mixed Chinese/English titles are repaired too",
++        "description": "Titles like “Track 01 愛” or “Live 演唱會” used to be left alone because the Chinese share was under nine tenths. UTF-8 reinterpretation, GBK, Big5 and the ID3-specific repair are now scored together, and the most plausible one wins.",
++      },
++      "singleChar": {
++        "title": "Single-character labels (“李”) are repaired",
++        "description": "A title or album with only one character used to be skipped by the “at least two Chinese characters” rule. Short strings now have their own rule, so a single character is recovered as well.",
++      },
++      "noOverFix": {
++        "title": "Real Western text is not forced into Chinese",
++        "description": "“Björk”, “Café” and “Mötley Crüe” stay untouched: a candidate must score clearly better (1.2 points) than the original, and the GBK trail-byte trap (ö + r read as one Chinese character) is rejected.",
++      },
++      "fixes": {
++        "existingLibrary": "Garbled text already in the library is re-judged and written back, no re-import needed (manually renamed titles are left alone).",
++        "filenameFallback": "Tracks without embedded tags that fall back to the file name now get the file name repaired too.",
++        "unitTests": "Nine encoding regression tests added (GBK, Big5, UTF-8, UTF-16, mixed, single character, Western text, artist lists, import snapshot)."
++      }
++    },
 +    "v0_9_6": {
 +      "intro": "0.9.6 fixes tracks that could not be measured at all, and makes measuring much cheaper: no more decoding the whole file.",
 +      "moreFormats": {
@@ -1794,7 +1813,7 @@ index 86f3b6d..4e358f0 100644
      "v0_7_0": {
        "intro": "Here are the new features and improvements in version 0.7.0.",
        "temperaVisualExpansion": {
-@@ -5228,6 +5302,10 @@ export default {
+@@ -5228,6 +5322,10 @@ export default {
      "capsuleOpensPalette": "Click to open the command palette",
    },
    "localMusic": {
@@ -1805,7 +1824,7 @@ index 86f3b6d..4e358f0 100644
      "foldersAndPlaylists": "Folders",
      "albums": "Albums",
      "artists": "Artists",
-@@ -5242,8 +5320,34 @@ export default {
+@@ -5242,8 +5340,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -1840,7 +1859,7 @@ index 86f3b6d..4e358f0 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6157,13 @@ export default {
+@@ -6053,8 +6177,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -1855,8 +1874,39 @@ index 86f3b6d..4e358f0 100644
      "grid": {
        "title": "Grid",
        "tag": "Classic",
+diff --git a/src/i18n/locales/in.ts b/src/i18n/locales/in.ts
+index fac0d47..40e51f2 100644
+--- a/src/i18n/locales/in.ts
++++ b/src/i18n/locales/in.ts
+@@ -4513,6 +4513,26 @@ export default {
+     "noDescription": "Tidak ada deskripsi tersedia"
+   },
+   "releaseNotes": {
++    "v0_9_7": {
++      "intro": "0.9.7 mengganti patokan perbaikan teks rusak: tidak lagi menuntut “sembilan puluh persen berbahasa Mandarin”, tetapi membandingkan decoding mana yang paling mirip teks asli. Judul campuran Mandarin/Inggris, label satu karakter, dan nama album berbahasa Inggris kini ikut diperbaiki.",
++      "mixedTitle": {
++        "title": "Judul campuran Mandarin/Inggris ikut diperbaiki",
++        "description": "Judul seperti “Track 01 愛” atau “Live 演唱會” dulu dibiarkan karena porsi Mandarin di bawah sembilan persepuluh. Sekarang reinterpretasi UTF-8, GBK, Big5, dan perbaikan khusus ID3 dinilai bersama, lalu yang paling masuk akal dipakai."
++      },
++      "singleChar": {
++        "title": "Label satu karakter (“李”) ikut diperbaiki",
++        "description": "Judul atau album yang hanya satu karakter dulu dilewati oleh aturan “minimal dua karakter Mandarin”. String pendek kini punya aturan sendiri."
++      },
++      "noOverFix": {
++        "title": "Teks Latin asli tidak dipaksa menjadi Mandarin",
++        "description": "“Björk”, “Café”, dan “Mötley Crüe” tetap tidak diubah: kandidat harus jelas lebih baik (1,2 poin) daripada aslinya, dan jebakan trail byte GBK (ö + r terbaca sebagai satu karakter Mandarin) ditolak."
++      },
++      "fixes": {
++        "existingLibrary": "Teks rusak yang sudah ada di pustaka dinilai ulang dan ditulis kembali, tanpa impor ulang (judul yang diubah manual tidak disentuh).",
++        "filenameFallback": "Lagu tanpa tag tersemat yang memakai nama berkas kini juga memperbaiki nama berkasnya.",
++        "unitTests": "Sembilan uji regresi encoding ditambahkan (GBK, Big5, UTF-8, UTF-16, campuran, satu karakter, teks Latin, daftar artis, snapshot impor)."
++      }
++    },
+     "v0_7_0": {
+       "intro": "Berikut fitur baru dan peningkatan di versi 0.7.0.",
+       "temperaVisualExpansion": {
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..05ab12e 100644
+index 0067e9a..8c7bc0e 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -1988,10 +2038,30 @@ index 0067e9a..05ab12e 100644
      "minimizeToTray": "最小化到托盘",
      "closeToTray": "关闭窗口时隐藏到托盘",
      "closeToTrayDesc": "点关闭按钮时不退出，隐藏到托盘继续播放",
-@@ -4513,6 +4575,89 @@ export default {
+@@ -4513,6 +4575,109 @@ export default {
      "noDescription": "暂无详细介绍",
    },
    "releaseNotes": {
++    "v0_9_7": {
++      "intro": "0.9.7 把亂碼修復的判準換掉：不再要求「九成以上是中文」，改成比「哪個解碼更像人話」。中英混排的歌名、單字標籤、含英文的專輯名都能修回來了。",
++      "mixedTitle": {
++        "title": "中英混排的歌名也能修",
++        "description": "以前「Track 01 愛」「Live 演唱會」這種中英混排的標籤，因為中文字不到九成，會被判定「不用修」而原樣留下。現在把 UTF-8 重解、GBK 重解、Big5 重解、ID3 專用修法四個結果一起比，用常用字與亂碼字元的分數挑最高的一個。",
++      },
++      "singleChar": {
++        "title": "單字標籤（「李」這種）也修",
++        "description": "歌名或專輯只有一個字的，以前因為「至少要有兩個中文字」而跳過。現在短字串另有判準，單字也會還原。",
++      },
++      "noOverFix": {
++        "title": "真的西歐文字不會被硬解成中文",
++        "description": "「Björk」「Café」「Mötley Crüe」這類標籤照樣原樣不動：候選要明顯比原字串更像人話（分數差 1.2 以上）才採用，而且 GBK 尾位涵蓋 ASCII 的陷阱（ö + r 被讀成一個中文字）已被擋掉。",
++      },
++      "fixes": {
++        "existingLibrary": "已經存在曲庫裡的亂碼會自動重判並回寫，不用重新匯入（手動改過歌名的不動）。",
++        "filenameFallback": "沒有內嵌標籤、退回檔名的歌，檔名裡的亂碼也一起修。",
++        "unitTests": "新增 9 條編碼回歸測試（GBK、Big5、UTF-8、UTF-16、混排、單字、西歐文字、歌手清單、匯入快照）。"
++      }
++    },
 +    "v0_9_6": {
 +      "intro": "0.9.6 修「有些歌量不出音質」，並把量測本身的成本降下來：不再整首解碼，只讀需要的那一段。",
 +      "moreFormats": {
@@ -2078,7 +2148,7 @@ index 0067e9a..05ab12e 100644
      "v0_7_0": {
        "intro": "以下是 0.7.0 的新功能与改进",
        "temperaVisualExpansion": {
-@@ -5228,6 +5373,10 @@ export default {
+@@ -5228,6 +5393,10 @@ export default {
      "capsuleOpensPalette": "点一下打开命令面板",
    },
    "localMusic": {
@@ -2089,7 +2159,7 @@ index 0067e9a..05ab12e 100644
      "foldersAndPlaylists": "文件夹",
      "albums": "专辑",
      "artists": "艺术家",
-@@ -5242,8 +5391,34 @@ export default {
+@@ -5242,8 +5411,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -2124,7 +2194,7 @@ index 0067e9a..05ab12e 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6226,13 @@ export default {
+@@ -6051,8 +6246,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -5538,10 +5608,10 @@ index c89a5ba..d9a1b83 100644
  
 diff --git a/src/utils/textEncodingRepair.ts b/src/utils/textEncodingRepair.ts
 new file mode 100644
-index 0000000..0e54a56
+index 0000000..786b248
 --- /dev/null
 +++ b/src/utils/textEncodingRepair.ts
-@@ -0,0 +1,167 @@
+@@ -0,0 +1,209 @@
 +import { repairLatin1DecodedGbkText } from './legacyTagTextRepair';
 +
 +// src/utils/textEncodingRepair.ts
@@ -5573,13 +5643,12 @@ index 0000000..0e54a56
 +    return bytes;
 +};
 +
-+/** 「看得出來是壞的」：拉丁補充區的常見開頭字元，或控制區殘留。 */
++/** 「看得出來是壞的」：拉丁補充區的常見開頭字元、控制區殘留，或解碼留下的替換字元。 */
 +const looksBroken = (text: string): boolean => (
-+    SUSPICIOUS_LATIN1_PATTERN.test(text) || SUSPICIOUS_LOW_LATIN1.test(text)
++    SUSPICIOUS_LATIN1_PATTERN.test(text)
++    || SUSPICIOUS_LOW_LATIN1.test(text)
++    || /\ufffd/u.test(text)
 +);
-+
-+/** 已經是正常中文、且沒有壞字元，就不用再嘗試。 */
-+const alreadyFine = (text: string): boolean => CJK_TEXT_PATTERN.test(text) && !looksBroken(text);
 +
 +const tryUtf8Reinterpretation = (text: string): string | null => {
 +    const bytes = latin1Bytes(text);
@@ -5593,67 +5662,110 @@ index 0000000..0e54a56
 +
 +// GBK 與 Big5 有時「都能解成中文」，只能挑更像人話的那個：用高頻字出現率當裁判。
 +const COMMON_CHARS = new Set(Array.from(
-+    '的一是在不了有和人这中大为上个国我以要他时来用们生到作地于出就分对成会可主发年动同工也能下过子说产种面而方后多定行学法所民得经十三之进着等部度家电力里如水化高自二理起小物现实加量都两体制机当使点从业本去把性好应开它合还因由其些然前外天政四日那社义事平形相全表间样与关各重新线内数正心反你明看原又么利比或但质气第向道命此变条只没结解问意建月公无系军很情者最立代想已通并提直题程展五果料象员革位入常文总次品式活设及管特件长求老头基资边流路级少图山统接知较将组见计别她手角期根论运农指几九区强放决西被干做必战先回则任取据处理世车技打歌音乐爱梦风花雪月夜星海雨云窗心情思念故乡春秋冬夏白黑红蓝绿黄金银铁石木水火土日月天地人名字傑倫范特西說聽寫讀課時間覺得裡個們來對開關聲應該樣這麼誰嗎呢吧啊喔嗯',
++    '的一是在不了有和人这中大为上个国我以要他时来用们生到作地于出就分对成会可主发年动同工也能下过子说产种面而方后多定行学法所民得经十三之进着等部度家电力里如水化高自二理起小物现实加量都两体制机当使点从业本去把性好应开它合还因由其些然前外天政四日那社义事平形相全表间样与关各重新线内数正心反你明看原又么利比或但质气第向道命此变条只没结解问意建月公无系军很情者最立代想已通并提直题程展五果料象员革位入常文总次品式活设及管特件长求老头基资边流路级少图山统接知较将组见计别她手角期根论运农指几九区强放决西被干做必战先回则任取据处理世车技打歌音乐爱梦风花雪月夜星海雨云窗心情思念故乡春秋冬夏白黑红蓝绿黄金银铁石木水火土日月天地人名字傑倫范特西說聽寫讀課時間覺得裡個們來對開關聲應該樣這麼誰嗎呢吧啊喔嗯了口氣溫柔帶我走飛翔自由紅塵戀人從前以後故事',
 +));
 +
-+const CJK_CHAR_PATTERN = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3040-\u30ff]/u;
++const CJK_CHAR_PATTERN = /[\u3000-\u303f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u;
++const CJK_LETTER_PATTERN = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u;
++
++const visibleChars = (text: string): string[] => Array.from(text).filter(char => !/\s/u.test(char));
 +
 +const commonScore = (text: string): number => {
-+    const visible = Array.from(text).filter(char => !/\s/u.test(char));
++    const visible = visibleChars(text);
 +    if (visible.length === 0) return 0;
 +    const hits = visible.filter(char => COMMON_CHARS.has(char)).length;
 +    return hits / visible.length;
 +};
 +
-+const isMostlyCjk = (text: string): boolean => {
-+    const visible = Array.from(text).filter(char => !/\s/u.test(char));
-+    if (visible.length === 0) return false;
-+    const cjk = visible.filter(char => CJK_CHAR_PATTERN.test(char)).length;
-+    // 兩字以上的結果，九成以上要是中文；單字結果（「李」這種）全中才算。
-+    return cjk / visible.length >= 0.9 && (cjk >= 2 || visible.length <= 2);
-+};
-+
-+const decodeCandidate = (label: 'gbk' | 'big5', bytes: Uint8Array): string | null => {
-+    const decoded = decode(label, bytes);
-+    if (!decoded || !CJK_TEXT_PATTERN.test(decoded) || looksBroken(decoded)) return null;
-+    if (!isMostlyCjk(decoded)) return null;
-+    return decoded === null ? null : decoded;
-+};
-+
-+/** GBK 與 Big5 兩個讀法都試，取高頻字命中率高的那個（平手時偏向 GBK，简体曲库远多于繁体）。 */
-+const tryChineseReinterpretation = (text: string): string | null => {
-+    const bytes = latin1Bytes(text);
-+    if (!bytes) return null;
-+    const gbk = decodeCandidate('gbk', bytes);
-+    const big5 = decodeCandidate('big5', bytes);
-+    if (!gbk && !big5) return null;
-+    if (!big5) return gbk;
-+    if (!gbk) return big5;
-+    return commonScore(big5) > commonScore(gbk) ? big5 : gbk;
++/** 中文字在整個字串裡的比例（含標點不算中文），以及中文字數。 */
++const cjkProfile = (text: string): { ratio: number; count: number; visible: number } => {
++    const visible = visibleChars(text);
++    const count = visible.filter(char => CJK_LETTER_PATTERN.test(char)).length;
++    return { ratio: visible.length ? count / visible.length : 0, count, visible: visible.length };
 +};
 +
 +/**
-+ * 修一個標籤字串。順序是 UTF-8 → GBK → 既有 ID3 專用修法；Big5 只在前面都不成立時試。
-+ * 任何一步失敗都原樣返回，正常文字（含英數、正常中日韓、重音符號）不會被動到。
++ * 「像人話」的分數：ASCII 與常用中文字加分，拉丁補充區（亂碼的特徵）與控制字元扣分。
++ * 拿來比較「原字串」與「某個解碼候選」，只有候選明顯更像人話才採用。
++ */
++const plausibility = (text: string): number => {
++    let score = 0;
++    for (const char of Array.from(text)) {
++        if (/\s/u.test(char)) continue;
++        const code = char.codePointAt(0) ?? 0;
++        if (char === '\ufffd') { score -= 4; continue; }
++        if (code < 0x80) { score += 0.25; continue; }
++        if (code <= 0x9f) { score -= 3; continue; }
++        if (code <= 0xff) { score -= 0.9; continue; } // 拉丁補充區：/¸/Ã/Ë 這種
++        if (CJK_CHAR_PATTERN.test(char)) { score += COMMON_CHARS.has(char) ? 1.4 : 0.7; continue; }
++        score += 0.1;
++    }
++    return score;
++};
++
++/**
++ * 一個解碼候選是否可信。三種情況放行：
++ *   1. 中文字佔多數（≥ 50% 且至少兩個字）——純中文標籤；
++ *   2. 極短字串（「李」這種單字標籤）；
++ *   3. 原字串本身就壞了（有控制字元），此時混著英文的中文標題（「Track 01 愛」）也算。
++ * 這樣「Björk」「Mötley Crüe」這類真的拉丁字母標籤不會被硬解成中文（GBK 的尾位範圍涵蓋 ASCII）。
++ */
++const acceptableCandidate = (original: string, candidate: string): boolean => {
++    if (!CJK_TEXT_PATTERN.test(candidate) || looksBroken(candidate)) return false;
++    const { ratio, count, visible } = cjkProfile(candidate);
++    const mostlyChinese = ratio >= 0.3 && count >= 2;
++    const tiny = visible <= 2 && count >= 1;
++    const rescueBroken = looksBroken(original) && count >= 1;
++    if (!mostlyChinese && !tiny && !rescueBroken) return false;
++    // 候選要比原字串明顯更像人話，否則寧可原樣返回。
++    return plausibility(candidate) - plausibility(original) >= 1.2;
++};
++
++const decodeCandidate = (label: 'gbk' | 'big5', bytes: Uint8Array, original: string): string | null => {
++    const decoded = decode(label, bytes);
++    if (!decoded) return null;
++    return acceptableCandidate(original, decoded) ? decoded : null;
++};
++
++/** 所有候選一起比：UTF-8 重解、ID3 專用 GBK 修法、GBK 重解、Big5 重解。 */
++const collectCandidates = (text: string): string[] => {
++    const out: string[] = [];
++    const utf8 = tryUtf8Reinterpretation(text);
++    if (utf8) out.push(utf8);
++    const bytes = latin1Bytes(text);
++    if (bytes) {
++        // 舊的 ID3 專用修法只看 0xA1–0xFE 的位元組對，對「整段都是 GBK」最可靠。
++        const legacy = repairLatin1DecodedGbkText(text);
++        if (legacy !== text) out.push(legacy);
++        const gbk = decodeCandidate('gbk', bytes, text);
++        if (gbk) out.push(gbk);
++        const big5 = decodeCandidate('big5', bytes, text);
++        if (big5) out.push(big5);
++    }
++    return Array.from(new Set(out)).filter(candidate => acceptableCandidate(text, candidate));
++};
++
++/**
++ * 修一個標籤字串。UTF-8 重解、ID3 專用 GBK 修法、GBK 重解、Big5 重解都當候選，
++ * 用「像人話」的分數挑最高的一個；分數沒有明顯變好就原樣返回。
++ * 正常文字（含英數、正常中日韓、重音符號）不會被動到。
 + */
 +export const repairTagText = (input: string | null | undefined): string => {
 +    if (!input) return input ?? '';
 +    const text = input.trim();
 +    if (!text) return text;
-+    if (alreadyFine(text)) return text;
 +    // 沒有高位字元（全 ASCII）就沒得修。
 +    if (!/[\u0080-\u00ff]/u.test(text)) return text;
++    // 已經正常的中文（沒有壞字元）就不必再猜。
++    if (!looksBroken(text) && cjkProfile(text).ratio >= 0.5) return text;
 +
-+    const utf8 = tryUtf8Reinterpretation(text);
-+    if (utf8) return utf8;
-+
-+    const id3 = repairLatin1DecodedGbkText(text);
-+    if (id3 !== text) return id3;
-+
-+    const chinese = tryChineseReinterpretation(text);
-+    if (chinese) return chinese;
-+
-+    return text;
++    const candidates = collectCandidates(text);
++    if (candidates.length === 0) return text;
++    let best = candidates[0];
++    for (const candidate of candidates) {
++        if (plausibility(candidate) > plausibility(best)) best = candidate;
++    }
++    return best;
 +};
 +
 +/** 一次修一組（歌手清單）；空字串與 undefined 原樣保留。 */
@@ -5723,3 +5835,107 @@ index 64ef098..d4357bc 100644
  
  export type UiZoomStep = typeof UI_ZOOM_STEPS[number];
  
+diff --git a/test/unit/textEncodingRepair.test.ts b/test/unit/textEncodingRepair.test.ts
+new file mode 100644
+index 0000000..659414d
+--- /dev/null
++++ b/test/unit/textEncodingRepair.test.ts
+@@ -0,0 +1,98 @@
++// test/unit/textEncodingRepair.test.ts
++// 亂碼修復的回歸測試：這裡的「壞字串」都是真的會被 parser 產生的樣子，
++// 不是手寫的假資料 —— 用 latin1 表示位元組，正是 music-metadata 把 ID3 的 encoding byte 0
++// 當 ISO-8859-1 解出來的結果。
++//
++// 為什麼要有這批用例：Aurora 那類播放器在解 ID3 時是「先試 GBK，看起來像人話才用」，
++// 所以中英混排的歌名（"Track 01 愛"）與單字標籤都能正常顯示；我們以前要求「九成以上是中文」，
++// 這兩類就一直留在亂碼。下面第一組就是照這個差異補的。
++
++import { describe, expect, it } from 'vitest';
++import { repairTagText, repairTagTextList, repairLocalSongTagText } from '../../src/utils/textEncodingRepair';
++import { buildImportedMetadataSnapshot } from '../../src/utils/localSongMetadata';
++
++/** UTF-8 位元組被當西歐編碼解（"Ã¦ÂµÂ" 這型）。 */
++const utf8Mojibake = (text: string): string => {
++    const bytes = Buffer.from(text, 'utf8');
++    return Array.from(bytes).map(byte => String.fromCharCode(byte)).join('');
++};
++describe('repairTagText', () => {
++    it('GBK 標籤（簡中）還原', () => {
++        expect(repairTagText('¸ÃËÀµÄÎÂÈá')).toBe('该死的温柔');
++        expect(repairTagText('ÂíÌìÓî')).toBe('马天宇');
++        expect(repairTagText('Óî¹âÊ®É«')).toBe('宇光十色');
++    });
++
++    it('Big5 標籤（繁中）還原', () => {
++        expect(repairTagText('\u00adS\u00afS\u00a6\u00e8')).toBe('范特西');
++        expect(repairTagText('\u00a9P\u00aaN\u00ad\u00db')).toBe('周杰倫');
++        expect(repairTagText('\u00b8\u00ad\u00b4f\u00ac\u00fc')).toBe('葉惠美');
++    });
++
++    it('UTF-8 被誤讀一次也還原', () => {
++        expect(repairTagText(utf8Mojibake('起风了'))).toBe('起风了');
++        expect(repairTagText(utf8Mojibake('大约'))).toBe('大约');
++    });
++
++    it('中英混排的歌名與單字標籤（Aurora 有、我們以前沒修）', () => {
++        expect(repairTagText('Track 01 \u0090\u00db')).toBe('Track 01 愛');
++        expect(repairTagText('\u00c0\u00ee')).toBe('李');
++        expect(repairTagText('\u00d5\u00c5\u00f6\u00a6\u00d3\u00b1')).toBe('张靓颖');
++    });
++
++    it('真的西歐文字不被動到', () => {
++        expect(repairTagText('Björk')).toBe('Björk');
++        expect(repairTagText('Café')).toBe('Café');
++        expect(repairTagText('Mötley Crüe')).toBe('Mötley Crüe');
++        expect(repairTagText('Motörhead')).toBe('Motörhead');
++        expect(repairTagText('Homogenic')).toBe('Homogenic');
++    });
++
++    it('正常中日韓與 ASCII 原樣返回', () => {
++        expect(repairTagText('该死的温柔')).toBe('该死的温柔');
++        expect(repairTagText('周杰倫')).toBe('周杰倫');
++        expect(repairTagText('起风了')).toBe('起风了');
++        expect(repairTagText('夜に駆ける')).toBe('夜に駆ける');
++        expect(repairTagText('Track 01')).toBe('Track 01');
++        expect(repairTagText('')).toBe('');
++        expect(repairTagText(null)).toBe('');
++        expect(repairTagText(undefined)).toBe('');
++    });
++
++    it('歌手清單逐項修、空字串丟掉', () => {
++        expect(repairTagTextList(['¸ÃËÀµÄÎÂÈá', 'Björk', '', null, 'ÂíÌìÓî']))
++            .toEqual(['该死的温柔', 'Björk', '马天宇']);
++    });
++
++    it('只修匯入值，手動改過的歌名不動', () => {
++        const song = {
++            id: 'a',
++            title: '¸ÃËÀµÄÎÂÈá',
++            titleOrigin: 'import',
++            importedMetadata: { title: '¸ÃËÀµÄÎÂÈá', artistNames: ['ÂíÌìÓî'], albumName: 'Óî¹âÊ®É«' },
++        };
++        const repaired = repairLocalSongTagText(song).song;
++        expect(repaired.title).toBe('该死的温柔');
++        expect(repaired.importedMetadata.artistNames).toEqual(['马天宇']);
++
++        const manual = { ...song, titleOrigin: 'manual' as const, title: '我自己改的名字' };
++        expect(repairLocalSongTagText(manual).song.title).toBe('我自己改的名字');
++    });
++
++    it('匯入快照：檔名與內嵌標籤都先修一次', () => {
++        const snapshot = buildImportedMetadataSnapshot({
++            fileName: '05 - ¸ÃËÀµÄÎÂÈá.mp3',
++            embeddedTitle: '¸ÃËÀµÄÎÂÈá',
++            embeddedArtists: ['ÂíÌìÓî'],
++            embeddedAlbum: 'Óî¹âÊ®É«',
++        });
++        expect(snapshot.title).toBe('该死的温柔');
++        expect(snapshot.artistNames).toEqual(['马天宇']);
++        expect(snapshot.albumName).toBe('宇光十色');
++
++        // 沒有內嵌標籤時退回檔名，檔名裡的亂碼也要修掉。
++        const fromFileName = buildImportedMetadataSnapshot({ fileName: 'Track 01 \u0090\u00db.mp3' });
++        expect(fromFileName.title).toBe('Track 01 愛');
++        expect(fromFileName.titleSource).toBe('filename');
++    });
++});
