@@ -21,7 +21,7 @@ index 39ec48c..114cb4d 100644
      <script src="/runtime-config.js"></script>
    <script type="importmap">
 diff --git a/package.json b/package.json
-index 6976461..23d9564 100644
+index 6976461..4e9ab19 100644
 --- a/package.json
 +++ b/package.json
 @@ -8,7 +8,7 @@
@@ -29,7 +29,7 @@ index 6976461..23d9564 100644
    },
    "private": true,
 -  "version": "0.8.0",
-+  "version": "0.9.12",
++  "version": "0.9.13",
    "license": "AGPL-3.0",
    "type": "module",
    "main": "electron/main.cjs",
@@ -998,12 +998,12 @@ index 5de4bf3..af66827 100644
      );
  };
 diff --git a/src/components/modal/newFeaturesRelease.ts b/src/components/modal/newFeaturesRelease.ts
-index e49a39c..d95866f 100644
+index e49a39c..5d21c50 100644
 --- a/src/components/modal/newFeaturesRelease.ts
 +++ b/src/components/modal/newFeaturesRelease.ts
 @@ -1,4 +1,4 @@
 -import { ListMusic, MessageSquareText, Puzzle, SlidersVertical, Sparkles, Store } from 'lucide-react';
-+import { FileAudio, KeyRound, Languages, ListChecks, MonitorOff, Music2, Play, RefreshCw, ShieldCheck, Type } from 'lucide-react';
++import { FileAudio, KeyRound, Languages, ListChecks, MonitorOff, Music2, Play, RefreshCw, ShieldCheck, SpellCheck, Type } from 'lucide-react';
  import type { LucideIcon } from 'lucide-react';
  
  // src/components/modal/newFeaturesRelease.ts
@@ -1022,7 +1022,7 @@ index e49a39c..d95866f 100644
  export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
 -    i18nKey: 'releaseNotes.v0_8_0',
 -    majorUpdate: { codename: 'Severance' },
-+    i18nKey: 'releaseNotes.v0_9_12',
++    i18nKey: 'releaseNotes.v0_9_13',
      features: [
 -        { id: 'sourceMods', icon: Puzzle },
 -        { id: 'modMarket', icon: Store },
@@ -1030,9 +1030,9 @@ index e49a39c..d95866f 100644
 -        { id: 'moments', icon: MessageSquareText },
 -        { id: 'stemMixer', icon: SlidersVertical },
 -        { id: 'moreDetails', icon: Sparkles },
-+        { id: 'desktopCleanup', icon: MonitorOff },
++        { id: 'mozjibake', icon: SpellCheck },
      ],
-+    fixes: ['window', 'output', 'update', 'shortcuts', 'keep'],
++    fixes: ['roundtrip', 'gate', 'safe'],
  };
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
@@ -2046,7 +2046,7 @@ index 2f367df..361d5da 100644
              enabled
              && window.electron?.requestTranscodeFallback
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..5e89bb0 100644
+index 86f3b6d..ea6b33c 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -2250,10 +2250,22 @@ index 86f3b6d..5e89bb0 100644
      "transcodeFallbackDesc": "Converts tracks that cannot be decoded with FFmpeg. The file is not changed.",
      "playbackFade": "Fade on pause and resume",
      "playbackFadeDesc": "Fades out before pausing and back in on resume.",
-@@ -4513,6 +4506,183 @@ export default {
+@@ -4513,6 +4506,195 @@ export default {
      "noDescription": "No description available",
    },
    "releaseNotes": {
++    "v0_9_13": {
++      "intro": "0.9.13 takes another pass at mojibake: titles that already look like Chinese but were decoded wrong (“鍛ㄦ澃浼” for 周杰伦, “澶滄洸” for 夜曲) are mapped back to GBK/Big5 bytes and re-decoded as UTF-8.",
++      "mozjibake": {
++        "title": "Second family of mojibake: Chinese-looking text decoded from UTF-8",
++        "description": "The old repair only re-decoded text as GBK. This release adds the reverse path: each character is looked up in the GBK/Big5 table to recover the original bytes, then decoded as UTF-8. Chinese strings made of rare characters are no longer waved through as normal text. When the trailing byte is missing the guess is skipped rather than forced.",
++      },
++      "fixes": {
++        "roundtrip": "New reverse pass: GBK/Big5 bytes → UTF-8 for titles like 鍛ㄦ澃浼 or 澶滄洸.",
++        "gate": "Chinese text with too few common characters is no longer treated as clean.",
++        "safe": "No guess, no change: normal Chinese and accented Latin (Björk) stay untouched.",
++      }
++    },
 +    "v0_9_12": {
 +      "intro": "0.9.12 clears desktop-only system settings out of the phone UI: the head unit and iOS no longer show switches that only mean something in the Windows/Linux/macOS desktop app.",
 +      "desktopCleanup": {
@@ -2434,7 +2446,7 @@ index 86f3b6d..5e89bb0 100644
      "v0_7_0": {
        "intro": "Here are the new features and improvements in version 0.7.0.",
        "temperaVisualExpansion": {
-@@ -5228,6 +5398,10 @@ export default {
+@@ -5228,6 +5410,10 @@ export default {
      "capsuleOpensPalette": "Click to open the command palette",
    },
    "localMusic": {
@@ -2445,7 +2457,7 @@ index 86f3b6d..5e89bb0 100644
      "foldersAndPlaylists": "Folders",
      "albums": "Albums",
      "artists": "Artists",
-@@ -5242,8 +5416,34 @@ export default {
+@@ -5242,8 +5428,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -2480,7 +2492,7 @@ index 86f3b6d..5e89bb0 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6253,13 @@ export default {
+@@ -6053,8 +6265,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -2496,7 +2508,7 @@ index 86f3b6d..5e89bb0 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/in.ts b/src/i18n/locales/in.ts
-index fac0d47..f5c8eb8 100644
+index fac0d47..47055c3 100644
 --- a/src/i18n/locales/in.ts
 +++ b/src/i18n/locales/in.ts
 @@ -2796,6 +2796,7 @@ export default {
@@ -2517,10 +2529,22 @@ index fac0d47..f5c8eb8 100644
      "transcodeFallbackDesc": "Mengonversi trek yang tidak dapat didekode dengan FFmpeg. Berkas tidak diubah.",
      "playbackFade": "Fade saat jeda dan lanjut",
      "playbackFadeDesc": "Fade keluar sebelum jeda dan masuk kembali saat lanjut.",
-@@ -4513,6 +4516,100 @@ export default {
+@@ -4513,6 +4516,112 @@ export default {
      "noDescription": "Tidak ada deskripsi tersedia"
    },
    "releaseNotes": {
++    "v0_9_13": {
++      "intro": "0.9.13 takes another pass at mojibake: titles that already look like Chinese but were decoded wrong (“鍛ㄦ澃浼” for 周杰伦, “澶滄洸” for 夜曲) are mapped back to GBK/Big5 bytes and re-decoded as UTF-8.",
++      "mozjibake": {
++        "title": "Second family of mojibake: Chinese-looking text decoded from UTF-8",
++        "description": "The old repair only re-decoded text as GBK. This release adds the reverse path: each character is looked up in the GBK/Big5 table to recover the original bytes, then decoded as UTF-8. Chinese strings made of rare characters are no longer waved through as normal text. When the trailing byte is missing the guess is skipped rather than forced.",
++      },
++      "fixes": {
++        "roundtrip": "New reverse pass: GBK/Big5 bytes → UTF-8 for titles like 鍛ㄦ澃浼 or 澶滄洸.",
++        "gate": "Chinese text with too few common characters is no longer treated as clean.",
++        "safe": "No guess, no change: normal Chinese and accented Latin (Björk) stay untouched.",
++      }
++    },
 +    "v0_9_12": {
 +      "intro": "0.9.12 membersihkan pengaturan khusus desktop dari antarmuka ponsel: head unit dan iOS tidak lagi menampilkan sakelar yang hanya berarti di aplikasi desktop.",
 +      "desktopCleanup": {
@@ -2641,7 +2665,7 @@ index 23ebf79..336af7d 100644
      "playbackFade": "Làm mờ khi tạm dừng và tiếp tục",
      "playbackFadeDesc": "Giảm âm dần trước khi tạm dừng và tăng dần khi tiếp tục thay vì ngắt âm đột ngột. Bỏ qua nếu âm thanh không đi qua bộ xử lý âm thanh.",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..31c83e9 100644
+index 0067e9a..685e4c8 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -2783,10 +2807,22 @@ index 0067e9a..31c83e9 100644
      "transcodeFallbackDesc": "遇到无法解码的歌曲时用 FFmpeg 转换，不修改原文件。",
      "playbackFade": "暂停/播放淡入淡出",
      "playbackFadeDesc": "暂停前淡出，恢复时淡入。",
-@@ -4513,6 +4577,183 @@ export default {
+@@ -4513,6 +4577,195 @@ export default {
      "noDescription": "暂无详细介绍",
    },
    "releaseNotes": {
++    "v0_9_13": {
++      "intro": "0.9.13 再修一次乱码：这次处理「字串本身已经是中文、其实被错误解码过」这一类（「鍛ㄦ澃浼」←「周杰伦」、「澶滄洸」←「夜曲」），把位元组还原回去再用 UTF-8 重解。",
++      "mozjibake": {
++        "title": "第二类乱码：看着像中文，其实是 UTF-8 被 GBK／Big5 解过",
++        "description": "以前的修法是把字串当成「被 GBK 解过的 UTF-8」再解一次，只能修出「锟斤拷」那一类。这次新增反向路径：把乱码字元逐个查回 GBK／Big5 的位元组，再按 UTF-8 解回来；同时对「全是罕用字的中文」不再直接当成正常文字放行。缺尾位元组的（结尾出现「」或问号方块）只能猜，猜不准时保留原样，不乱改。",
++      },
++      "fixes": {
++        "roundtrip": "新增反向还原：GBK／Big5 位元组 → UTF-8，修「鍛ㄦ澃浼」「澶滄洸」这类。",
++        "gate": "「常用字不够多」的中文不再直接放行，避免把乱码当成正常歌名。",
++        "safe": "猜不准就不动：正常中文、西欧重音字母（Björk）照旧不变。",
++      }
++    },
 +    "v0_9_12": {
 +      "intro": "0.9.12 把桌面端专属的系统设定从手机端界面清掉：车机和 iOS 上不再出现只对 Windows／Linux／macOS 桌面版有意义的开关，设置页只剩手机真的用得到的东西。",
 +      "desktopCleanup": {
@@ -2967,7 +3003,7 @@ index 0067e9a..31c83e9 100644
      "v0_7_0": {
        "intro": "以下是 0.7.0 的新功能与改进",
        "temperaVisualExpansion": {
-@@ -5228,6 +5469,10 @@ export default {
+@@ -5228,6 +5481,10 @@ export default {
      "capsuleOpensPalette": "点一下打开命令面板",
    },
    "localMusic": {
@@ -2978,7 +3014,7 @@ index 0067e9a..31c83e9 100644
      "foldersAndPlaylists": "文件夹",
      "albums": "专辑",
      "artists": "艺术家",
-@@ -5242,8 +5487,34 @@ export default {
+@@ -5242,8 +5499,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -3013,7 +3049,7 @@ index 0067e9a..31c83e9 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6322,13 @@ export default {
+@@ -6051,8 +6334,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -6954,10 +6990,10 @@ index 2622b3d..67b5a09 100644
      remoteControl: { section: 'remote' },
 diff --git a/src/utils/textEncodingRepair.ts b/src/utils/textEncodingRepair.ts
 new file mode 100644
-index 0000000..786b248
+index 0000000..314603a
 --- /dev/null
 +++ b/src/utils/textEncodingRepair.ts
-@@ -0,0 +1,209 @@
+@@ -0,0 +1,327 @@
 +import { repairLatin1DecodedGbkText } from './legacyTagTextRepair';
 +
 +// src/utils/textEncodingRepair.ts
@@ -7008,7 +7044,7 @@ index 0000000..786b248
 +
 +// GBK 與 Big5 有時「都能解成中文」，只能挑更像人話的那個：用高頻字出現率當裁判。
 +const COMMON_CHARS = new Set(Array.from(
-+    '的一是在不了有和人这中大为上个国我以要他时来用们生到作地于出就分对成会可主发年动同工也能下过子说产种面而方后多定行学法所民得经十三之进着等部度家电力里如水化高自二理起小物现实加量都两体制机当使点从业本去把性好应开它合还因由其些然前外天政四日那社义事平形相全表间样与关各重新线内数正心反你明看原又么利比或但质气第向道命此变条只没结解问意建月公无系军很情者最立代想已通并提直题程展五果料象员革位入常文总次品式活设及管特件长求老头基资边流路级少图山统接知较将组见计别她手角期根论运农指几九区强放决西被干做必战先回则任取据处理世车技打歌音乐爱梦风花雪月夜星海雨云窗心情思念故乡春秋冬夏白黑红蓝绿黄金银铁石木水火土日月天地人名字傑倫范特西說聽寫讀課時間覺得裡個們來對開關聲應該樣這麼誰嗎呢吧啊喔嗯了口氣溫柔帶我走飛翔自由紅塵戀人從前以後故事',
++    '的一是在不了有和人这中大为上个国我以要他时来用们生到作地于出就分对成会可主发年动同工也能下过子说产种面而方后多定行学法所民得经十三之进着等部度家电力里如水化高自二理起小物现实加量都两体制机当使点从业本去把性好应开它合还因由其些然前外天政四日那社义事平形相全表间样与关各重新线内数正心反你明看原又么利比或但质气第向道命此变条只没结解问意建月公无系军很情者最立代想已通并提直题程展五果料象员革位入常文总次品式活设及管特件长求老头基资边流路级少图山统接知较将组见计别她手角期根论运农指几九区强放决西被干做必战先回则任取据处理世车技打歌音乐爱梦风花雪月夜星海雨云窗心情思念故乡春秋冬夏白黑红蓝绿黄金银铁石木水火土日月天地人名字傑倫范特西說聽寫讀課時間覺得裡個們來對開關聲應該樣這麼誰嗎呢吧啊喔嗯了口氣溫柔帶我走飛翔自由紅塵戀人從前以後故事這是們來對開關聲應該樣這麼誰嗎呢吧啊喔嗯了口氣溫柔帶我走飛翔自由紅塵戀人從前以後故事時間覺得裡個聽寫讀說愛夢風花雪月夜星海雨雲窗心情思念故鄉春秋冬夏無與倫比的美麗晴天七里香夜曲稻香東風破青花瓷簡單愛後來冷雨夜光輝歲月海闊天空喜歡你告白氣球演員模特兒小幸運份愛你陳奕迅周杰倫林俊傑五月天蘇打綠蔡依林鄧紫棋張學友劉德華黎明郭富城王菲那英孫燕姿梁靜茹劉若英莫文蔚李宗盛羅大佑黃家駒黃貫中楊千嬅容祖兒陳慧嫻鄭秀文陳慧琳楊丞琳蔡健雅徐佳瑩田馥甄hebe張惠妹A-Lin蕭亞軒林憶蓮王力宏陶喆方大同薛之謙李榮浩毛不易華晨宇鄧麗君費玉清張信哲張宇庾澄慶齊秦伍佰任賢齊周華健李宗盛陳昇黃品源動力火車信樂團Beyond草蜢Twins李克勤古巨基側田衛蘭謝安琪陳柏宇林宥嘉盧廣仲韋禮安玖壹壹茄子蛋美秀集團告五人落日飛車血肉果汁機杰伦伦星迅俊亮静宇伟芳娜敏丽强磊军洋勇艳娟涛超秀霞平刚桂英华玉兰萍红玲芬燕彬鹏辉建峰倩婷雪琳晨曦涵轩泽睿桐萱昊博武浩然豪嘉荣楠颖蕾薇璐瑶琪琦璇玥萌蕊岚岩松柏柳梅桃杏梨荷莲菊竹森泉溪河江湖海浪涛潮洲屿岸滩沙谷洞穴崖壁塔楼阁亭台桥街巷村镇城州县郡府京都港湾岛辰空霞雾霜冰露雷电光影火焰烟灰尘泥波澜汐源瀑潭泊洋礁峡岭窟矿田野原漠林桦榆稻麦米豆果草叶根枝干皮实甜苦辣酸淡浓鲜嫩熟冷暖寒昼早晚午纪元古今未来过去现在永远瞬间刹那',
 +));
 +
 +const CJK_CHAR_PATTERN = /[\u3000-\u303f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u;
@@ -7043,7 +7079,7 @@ index 0000000..786b248
 +        if (code < 0x80) { score += 0.25; continue; }
 +        if (code <= 0x9f) { score -= 3; continue; }
 +        if (code <= 0xff) { score -= 0.9; continue; } // 拉丁補充區：/¸/Ã/Ë 這種
-+        if (CJK_CHAR_PATTERN.test(char)) { score += COMMON_CHARS.has(char) ? 1.4 : 0.7; continue; }
++        if (CJK_CHAR_PATTERN.test(char)) { score += COMMON_CHARS.has(char) ? 1.6 : -0.35; continue; }
 +        score += 0.1;
 +    }
 +    return score;
@@ -7073,7 +7109,115 @@ index 0000000..786b248
 +    return acceptableCandidate(original, decoded) ? decoded : null;
 +};
 +
-+/** 所有候選一起比：UTF-8 重解、ID3 專用 GBK 修法、GBK 重解、Big5 重解。 */
++
++/**
++ * 「UTF-8 的中文被當成 GBK／Big5 解了一次」是最常見、也最難修的一種：
++ * 「周杰伦」的 UTF-8 位元組用 GBK 解就變成「鍛ㄦ澃浼�」，看起來全是中文、沒有拉丁字元，
++ * 舊的「像不像人話」判斷因此直接放行。要修就得反過來：把字串每個字對回原編碼的位元組，
++ * 再依 UTF-8 解一次。這裡的兩張表在第一次用到時才建（各兩萬多格），建好快取。
++ */
++type ReverseTable = Map<string, [number, number]>;
++const reverseTables: Partial<Record<'gbk' | 'big5', ReverseTable>> = {};
++
++const buildReverseTable = (label: 'gbk' | 'big5'): ReverseTable => {
++    const cached = reverseTables[label];
++    if (cached) return cached;
++    const table: ReverseTable = new Map();
++    const decoder = new TextDecoder(label === 'gbk' ? 'gb18030' : 'big5', { fatal: true });
++    const ranges = label === 'gbk'
++        ? { lead: [0x81, 0xfe], trailA: [0x40, 0xfe] }
++        : { lead: [0xa1, 0xf9], trailA: [0x40, 0xfe] };
++    const buffer = new Uint8Array(2);
++    for (let lead = ranges.lead[0]; lead <= ranges.lead[1]; lead += 1) {
++        for (let trail = ranges.trailA[0]; trail <= ranges.trailA[1]; trail += 1) {
++            if (trail === 0x7f) continue;
++            buffer[0] = lead;
++            buffer[1] = trail;
++            let decoded: string | null = null;
++            try {
++                decoded = decoder.decode(buffer);
++            } catch {
++                continue;
++            }
++            if (decoded && decoded.length === 1 && !table.has(decoded)) {
++                table.set(decoded, [lead, trail]);
++            }
++        }
++    }
++    reverseTables[label] = table;
++    return table;
++};
++
++/** CP1252 的 0x80–0x9F 被對到特殊字元；要還原成位元組得反查。 */
++const CP1252_HIGH: Record<string, number> = {
++    '\u20ac': 0x80, '\u201a': 0x82, '\u0192': 0x83, '\u201e': 0x84, '\u2026': 0x85, '\u2020': 0x86,
++    '\u2021': 0x87, '\u02c6': 0x88, '\u2030': 0x89, '\u0160': 0x8a, '\u2039': 0x8b, '\u0152': 0x8c,
++    '\u017d': 0x8e, '\u2018': 0x91, '\u2019': 0x92, '\u201c': 0x93, '\u201d': 0x94, '\u2022': 0x95,
++    '\u2013': 0x96, '\u2014': 0x97, '\u02dc': 0x98, '\u2122': 0x99, '\u0161': 0x9a, '\u203a': 0x9b,
++    '\u0153': 0x9c, '\u017e': 0x9e, '\u0178': 0x9f,
++};
++
++/** 字串 → 指定位元組；任何一個字對不回就整個放棄（真中文會在這裡被擋掉）。 */
++const encodeThrough = (text: string, label: 'gbk' | 'big5'): Uint8Array | null => {
++    const table = buildReverseTable(label);
++    const out: number[] = [];
++    for (const char of Array.from(text)) {
++        const code = char.codePointAt(0) ?? 0;
++        if (code < 0x80) { out.push(code); continue; }
++        if (code >= 0x80 && code <= 0x9f) { out.push(code); continue; }
++        const cp1252 = CP1252_HIGH[char];
++        if (cp1252 !== undefined) { out.push(cp1252); continue; }
++        if (code <= 0xff) { out.push(code); continue; }
++        const pair = table.get(char);
++        if (!pair) return null;
++        out.push(pair[0], pair[1]);
++    }
++    return Uint8Array.from(out);
++};
++
++/** 把「被 GBK／Big5 解過一次」的字串還原成原本的 UTF-8 文字。 */
++const tryRoundTrip = (text: string, label: 'gbk' | 'big5'): string | null => {
++    const bytes = encodeThrough(text, label);
++    if (!bytes) return null;
++    const decoded = decode('utf-8', bytes);
++    if (!decoded || decoded === text) return null;
++    if (decoded.split('\ufffd').length - 1 > 0) return null;
++    return acceptableCandidate(text, decoded) ? decoded : null;
++};
++
++
++/**
++ * 尾端有 �：UTF-8 位元組是奇數個，GBK 解完最後剩一個孤兒位元組（「周杰伦」→「鍛ㄦ澃浼�」）。
++ * 少的那個位元組只知道範圍（0x40–0xFE），把每個可能都補上再用 UTF-8 解，取「最像常用字」那個。
++ */
++const tryRoundTripLostTail = (text: string, label: 'gbk' | 'big5'): string | null => {
++    const stripped = text.replace(/\ufffd+$/u, '');
++    if (stripped === text) return null;
++    const head = encodeThrough(stripped, label);
++    if (!head) return null;
++    let best: string | null = null;
++    let bestScore = -Infinity;
++    let runnerUp = -Infinity;
++    for (let byte = 0x40; byte <= 0xfe; byte += 1) {
++        if (byte === 0x7f) continue;
++        const bytes = new Uint8Array(head.length + 1);
++        bytes.set(head, 0);
++        bytes[head.length] = byte;
++        const decoded = decode('utf-8', bytes);
++        if (!decoded || decoded.includes('\ufffd')) continue;
++        // 最後一個字是猜的：不是常用字就不列入（避免「周杰伍」這種）。
++        const last = Array.from(decoded).pop() ?? '';
++        if (!COMMON_CHARS.has(last)) continue;
++        const score = plausibility(decoded);
++        if (score > bestScore) { runnerUp = bestScore; bestScore = score; best = decoded; }
++        else if (score > runnerUp) runnerUp = score;
++    }
++    // 兩個候選分數太接近就代表猜不準（「林俊杰」會被猜成「林俊李」），寧可保留原字串。
++    if (!best || bestScore - runnerUp < 0.5) return null;
++    return acceptableCandidate(text, best) ? best : null;
++};
++
++/** 所有候選一起比：UTF-8 重解、ID3 專用 GBK 修法、GBK 重解、Big5 重解，以及反向的 GBK／Big5 → UTF-8 還原。 */
 +const collectCandidates = (text: string): string[] => {
 +    const out: string[] = [];
 +    const utf8 = tryUtf8Reinterpretation(text);
@@ -7088,6 +7232,15 @@ index 0000000..786b248
 +        const big5 = decodeCandidate('big5', bytes, text);
 +        if (big5) out.push(big5);
 +    }
++    // 反向：字串本身是中文，但其實是 UTF-8 被 GBK／Big5 解過（「鍛ㄦ澃浼」←「周杰伦」）。
++    const lostGbk = tryRoundTripLostTail(text, 'gbk');
++    if (lostGbk) out.push(lostGbk);
++    const lostBig5 = tryRoundTripLostTail(text, 'big5');
++    if (lostBig5) out.push(lostBig5);
++    const roundGbk = tryRoundTrip(text, 'gbk');
++    if (roundGbk) out.push(roundGbk);
++    const roundBig5 = tryRoundTrip(text, 'big5');
++    if (roundBig5) out.push(roundBig5);
 +    return Array.from(new Set(out)).filter(candidate => acceptableCandidate(text, candidate));
 +};
 +
@@ -7100,10 +7253,11 @@ index 0000000..786b248
 +    if (!input) return input ?? '';
 +    const text = input.trim();
 +    if (!text) return text;
-+    // 沒有高位字元（全 ASCII）就沒得修。
-+    if (!/[\u0080-\u00ff]/u.test(text)) return text;
-+    // 已經正常的中文（沒有壞字元）就不必再猜。
-+    if (!looksBroken(text) && cjkProfile(text).ratio >= 0.5) return text;
++    // 全 ASCII 就沒得修；純中文仍要進來，因為可能是「UTF-8 被 GBK 解」的罕用字。
++    if (!/[^\x00-\x7f]/u.test(text)) return text;
++    // 已經正常的中文就不必再猜：除了「幾乎都是中文」，還要「常用字夠多」才放行，
++    // 否則「澶滄洸」這種每個字都是罕用字的中文（其實是 UTF-8 被 GBK 解）會被誤判成正常。
++    if (!looksBroken(text) && cjkProfile(text).ratio >= 0.5 && commonScore(text) >= 0.5) return text;
 +
 +    const candidates = collectCandidates(text);
 +    if (candidates.length === 0) return text;
