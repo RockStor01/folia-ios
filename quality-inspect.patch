@@ -21,7 +21,7 @@ index 39ec48c..114cb4d 100644
      <script src="/runtime-config.js"></script>
    <script type="importmap">
 diff --git a/package.json b/package.json
-index 6976461..e4566af 100644
+index 6976461..76a6fa2 100644
 --- a/package.json
 +++ b/package.json
 @@ -8,7 +8,7 @@
@@ -29,12 +29,12 @@ index 6976461..e4566af 100644
    },
    "private": true,
 -  "version": "0.8.0",
-+  "version": "0.9.15",
++  "version": "0.9.16",
    "license": "AGPL-3.0",
    "type": "module",
    "main": "electron/main.cjs",
 diff --git a/src/App.tsx b/src/App.tsx
-index 7cf3c35..3604d5a 100644
+index 7cf3c35..101b914 100644
 --- a/src/App.tsx
 +++ b/src/App.tsx
 @@ -35,6 +35,7 @@ import ReleaseNotesDialog from './components/modal/ReleaseNotesDialog';
@@ -53,7 +53,15 @@ index 7cf3c35..3604d5a 100644
  import { useMediaSessionBridge } from './hooks/useMediaSessionBridge';
  import { usePlayerChromeAutoHide } from './hooks/usePlayerChromeAutoHide';
  import { useMacWallpaperHitRegions } from './hooks/useMacWallpaperHitRegions';
-@@ -362,6 +364,11 @@ export default function App() {
+@@ -199,6 +201,7 @@ import { PlayerBottomBarLayoutContext } from './components/floating-player/Playe
+ import { useFoliumHostBridge } from './mods/runtime/hostBridge';
+ import { useFoliumHostActions } from './mods/runtime/hostActions';
+ import { useFoliumAnimationIntensity } from './mods/runtime/visualizer/hostAnimationIntensity';
++import LosslessSearchHost from './components/lossless-search/LosslessSearchHost';
+ import { refreshPrefetchAfterQueueEdit } from './services/prefetchService';
+ import { FoliumStageLayerSlot } from './mods/folium/registries/stageLayers';
+ import { runsOnWindows } from './utils/platform';
+@@ -362,6 +365,11 @@ export default function App() {
          prevSettingsOpenRef.current = isOpen;
      }, [settingsModalState.isOpen, navidromeEnabled, loadNavidromeFavorites]);
  
@@ -65,7 +73,7 @@ index 7cf3c35..3604d5a 100644
      // Player State
      useEffect(() => {
          (window as any).__folia_current_time = currentTime;
-@@ -1434,6 +1441,16 @@ export default function App() {
+@@ -1434,6 +1442,16 @@ export default function App() {
          isNowPlayingControlDisabledRef,
      };
      useMediaSessionBridge(mediaSessionOptions);
@@ -82,6 +90,16 @@ index 7cf3c35..3604d5a 100644
      // Linux: on the HiFi route the system media controls come from main's MPRIS, fed the same.
      useHifiMpris(mediaSessionOptions);
      useHifiMediaSessionKeepAlive();
+@@ -2942,6 +2960,9 @@ export default function App() {
+             />
+ 
+             {/* 胶囊槽位「记下这个时刻」弹出的小框：全局一份，钉在点下的那个按钮上方。 */}
++            {/* 無損搜尋：命令面板「搜尋無損歌曲」打開，只挑本機無損檔，可線上補標籤。 */}
++            <LosslessSearchHost />
++
+             <SongNotePinHost />
+ 
+             <CommandPalette
 diff --git a/src/components/FloatingPlayerControls.tsx b/src/components/FloatingPlayerControls.tsx
 index 8692eec..c8fca72 100644
 --- a/src/components/FloatingPlayerControls.tsx
@@ -731,6 +749,50 @@ index 0bae1a8..0ff0d37 100644
              return true;
          },
      }),
+diff --git a/src/components/command-palette/commands/index.ts b/src/components/command-palette/commands/index.ts
+index ac2104e..f2af939 100644
+--- a/src/components/command-palette/commands/index.ts
++++ b/src/components/command-palette/commands/index.ts
+@@ -1,5 +1,6 @@
+ import { assertExecuteShortcutsArePrefixFree } from '../executeShortcuts';
+ import type { CommandPaletteCommand } from '../types';
++import { losslessSearchCommand } from './losslessSearchCommand';
+ import { filterViewCommand } from './filterViewCommand';
+ import { gridCommands } from './gridCommands';
+ import { directoryCommands } from './directoryCommands';
+@@ -81,6 +82,7 @@ const buildOpenHotkeyIndex = (commands: CommandPaletteCommand[]) => {
+ 
+ export const ALL_COMMAND_PALETTE_COMMANDS: CommandPaletteCommand[] = assertExecuteShortcutsArePrefixFree(assertUniqueOpenHotkeys(assertUniqueCommandIds([
+     filterViewCommand,
++    losslessSearchCommand,
+     ...gridCommands,
+     ...directoryCommands,
+     ...artistCommands,
+diff --git a/src/components/command-palette/commands/losslessSearchCommand.ts b/src/components/command-palette/commands/losslessSearchCommand.ts
+new file mode 100644
+index 0000000..e4dfb0e
+--- /dev/null
++++ b/src/components/command-palette/commands/losslessSearchCommand.ts
+@@ -0,0 +1,19 @@
++import { Search } from 'lucide-react';
++import type { CommandPaletteCommand } from '../types';
++import { useLosslessSearchStore } from '../../lossless-search/useLosslessSearchStore';
++
++// src/components/command-palette/commands/losslessSearchCommand.ts
++// 打開「無損搜尋」面板：只搜本機曲庫裡的無損檔，並且可以線上補標籤。
++
++export const losslessSearchCommand: CommandPaletteCommand = {
++    id: 'lossless-search',
++    group: 'search',
++    title: '搜尋無損歌曲',
++    description: '只在本機曲庫裡找無損檔（FLAC／WAV／ALAC／APE…），可線上補標籤',
++    icon: Search,
++    keywords: ['lossless', 'flac', 'hires', 'hifi', '无损', '無損', '無損搜尋', '音質'],
++    execute: () => {
++        useLosslessSearchStore.getState().open();
++        return true;
++    },
++};
 diff --git a/src/components/command-palette/commands/settingsCommands.ts b/src/components/command-palette/commands/settingsCommands.ts
 index 7f8ac91..83bf1d5 100644
 --- a/src/components/command-palette/commands/settingsCommands.ts
@@ -966,6 +1028,213 @@ index 0000000..8719e05
 +};
 +
 +export default LinkedFolderPicker;
+diff --git a/src/components/lossless-search/LosslessSearchHost.tsx b/src/components/lossless-search/LosslessSearchHost.tsx
+new file mode 100644
+index 0000000..9f885d2
+--- /dev/null
++++ b/src/components/lossless-search/LosslessSearchHost.tsx
+@@ -0,0 +1,181 @@
++import React, { useCallback, useEffect, useMemo, useState } from 'react';
++import { Search, Sparkles, X } from 'lucide-react';
++import type { LocalSong } from '../../types';
++import { getLocalSongs, saveLocalSong } from '../../services/db';
++import { getCachedQuality } from '../../services/audioQuality/localQualityIndex';
++import { searchMusicBrainzRecordings, type MusicBrainzMatch } from '../../services/musicbrainzSearch';
++import { useLosslessSearchStore } from './useLosslessSearchStore';
++
++// src/components/lossless-search/LosslessSearchHost.tsx
++// 車機／手機上的「無損搜尋」面板：只在曲庫裡挑無損檔（不連網抓音檔），
++// 並且可以拿歌名＋歌手去 MusicBrainz 補回正確的歌名／歌手／專輯（只查文字資料）。
++
++/** 副檔名就能肯定是無損的容器（m4a 可能是 AAC，所以只認 alac）。 */
++const LOSSLESS_EXTENSIONS = /\.(flac|wav|aiff?|alac|ape|wv|tta|tak|dsf|dff|caf)$/i;
++
++const isLossless = (song: LocalSong): boolean => {
++    const cached = getCachedQuality(song.id);
++    if (cached) return cached.lossless;
++    if (/\.(m4a|mp4)$/i.test(song.fileName)) return false;
++    return LOSSLESS_EXTENSIONS.test(song.fileName);
++};
++
++const qualityLabel = (song: LocalSong): string => {
++    const cached = getCachedQuality(song.id);
++    if (cached) {
++        const rate = cached.sampleRate ? `${(cached.sampleRate / 1000).toFixed(1)} kHz` : '';
++        const depth = cached.bitDepth ? `${cached.bitDepth} bit` : '';
++        return [cached.codec.toUpperCase(), rate, depth].filter(Boolean).join(' · ');
++    }
++    const extension = song.fileName.match(/\.([a-z0-9]+)$/i)?.[1]?.toUpperCase() ?? '';
++    return `${extension} · 無損`;
++};
++
++const artistText = (song: LocalSong): string => song.importedMetadata.artistNames.join(' / ');
++
++const LosslessSearchHost: React.FC = () => {
++    const isOpen = useLosslessSearchStore(state => state.isOpen);
++    const close = useLosslessSearchStore(state => state.close);
++    const [songs, setSongs] = useState<LocalSong[]>([]);
++    const [query, setQuery] = useState('');
++    const [matches, setMatches] = useState<Record<string, MusicBrainzMatch[] | 'loading' | 'empty'>>({});
++
++    useEffect(() => {
++        if (!isOpen) return;
++        let alive = true;
++        void getLocalSongs().then(list => { if (alive) setSongs(list); });
++        return () => { alive = false; };
++    }, [isOpen]);
++
++    useEffect(() => {
++        if (!isOpen) return;
++        const onKeyDown = (event: KeyboardEvent) => {
++            if (event.key === 'Escape') close();
++        };
++        window.addEventListener('keydown', onKeyDown);
++        return () => window.removeEventListener('keydown', onKeyDown);
++    }, [isOpen, close]);
++
++    const losslessSongs = useMemo(() => songs.filter(isLossless), [songs]);
++
++    const results = useMemo(() => {
++        const needle = query.trim().toLowerCase();
++        if (!needle) return losslessSongs.slice(0, 200);
++        const hits = losslessSongs.filter(song => {
++            const haystack = [song.title, artistText(song), song.importedMetadata.albumName ?? '', song.fileName]
++                .join('\n').toLowerCase();
++            return haystack.includes(needle);
++        });
++        return hits.slice(0, 200);
++    }, [losslessSongs, query]);
++
++    const lookup = useCallback(async (song: LocalSong) => {
++        setMatches(prev => ({ ...prev, [song.id]: 'loading' }));
++        const found = await searchMusicBrainzRecordings(song.title, artistText(song), 5);
++        setMatches(prev => ({ ...prev, [song.id]: found.length ? found : 'empty' }));
++    }, []);
++
++    const applyMatch = useCallback(async (song: LocalSong, match: MusicBrainzMatch) => {
++        const meta = {
++            ...song.importedMetadata,
++            title: match.title,
++            titleSource: 'embedded' as const,
++            artistNames: match.artist ? match.artist.split(' / ') : song.importedMetadata.artistNames,
++            albumName: match.album ?? song.importedMetadata.albumName,
++        };
++        const next: LocalSong = { ...song, title: match.title, importedMetadata: meta };
++        await saveLocalSong(next);
++        setSongs(prev => prev.map(item => (item.id === song.id ? next : item)));
++        setMatches(prev => ({ ...prev, [song.id]: [{ ...match }] }));
++    }, []);
++
++    if (!isOpen) return null;
++
++    return (
++        <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/55 backdrop-blur-sm p-3">
++            <div className="flex h-full max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0b0b0e]/95 text-white shadow-2xl">
++                <div className="flex items-center gap-3 border-b border-white/10 px-5 py-3">
++                    <Search size={18} className="shrink-0 opacity-60" />
++                    <input
++                        autoFocus
++                        value={query}
++                        onChange={event => setQuery(event.target.value)}
++                        placeholder="在無損曲庫裡搜歌名、歌手、專輯或檔名"
++                        className="min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:opacity-45"
++                    />
++                    <span className="shrink-0 text-xs opacity-55">
++                        {results.length} / {losslessSongs.length} 首無損
++                    </span>
++                    <button type="button" onClick={close} className="shrink-0 rounded-full p-1.5 hover:bg-white/10" aria-label="關閉">
++                        <X size={18} />
++                    </button>
++                </div>
++
++                <div className="min-h-0 flex-1 overflow-y-auto">
++                    {results.length === 0 && (
++                        <div className="p-8 text-center text-sm opacity-60">
++                            {losslessSongs.length === 0 ? '曲庫裡還沒有無損檔（FLAC／WAV／ALAC／APE 等）' : '沒有符合的無損歌曲'}
++                        </div>
++                    )}
++                    {results.map(song => {
++                        const match = matches[song.id];
++                        return (
++                            <div key={song.id} className="border-b border-white/5 px-5 py-3">
++                                <div className="flex items-start gap-3">
++                                    <div className="min-w-0 flex-1">
++                                        <div className="truncate text-[15px] font-medium">{song.title}</div>
++                                        <div className="truncate text-xs opacity-60">
++                                            {artistText(song) || '未知歌手'}
++                                            {song.importedMetadata.albumName ? ` · ${song.importedMetadata.albumName}` : ''}
++                                        </div>
++                                        <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] text-emerald-300">
++                                            {qualityLabel(song)}
++                                        </div>
++                                    </div>
++                                    <button
++                                        type="button"
++                                        onClick={() => void lookup(song)}
++                                        className="shrink-0 rounded-full border border-white/15 px-3 py-1.5 text-xs hover:bg-white/10"
++                                    >
++                                        {match === 'loading' ? '查詢中…' : '線上配對標籤'}
++                                    </button>
++                                </div>
++
++                                {Array.isArray(match) && (
++                                    <div className="mt-2 space-y-1.5 rounded-2xl bg-white/5 p-2">
++                                        {match.map(candidate => (
++                                            <button
++                                                key={candidate.recordingId}
++                                                type="button"
++                                                onClick={() => void applyMatch(song, candidate)}
++                                                className="flex w-full items-start gap-2 rounded-xl px-2 py-1.5 text-left text-xs hover:bg-white/10"
++                                            >
++                                                <Sparkles size={13} className="mt-0.5 shrink-0 text-amber-300" />
++                                                <span className="min-w-0">
++                                                    <span className="block truncate text-[13px]">{candidate.title}</span>
++                                                    <span className="block truncate opacity-60">
++                                                        {[candidate.artist, candidate.album, candidate.year].filter(Boolean).join(' · ')}
++                                                    </span>
++                                                </span>
++                                                <span className="ml-auto shrink-0 text-[11px] opacity-45">套用</span>
++                                            </button>
++                                        ))}
++                                    </div>
++                                )}
++                                {match === 'empty' && (
++                                    <div className="mt-2 text-xs opacity-50">MusicBrainz 沒有符合的結果（或目前沒網路）</div>
++                                )}
++                            </div>
++                        );
++                    })}
++                </div>
++
++                <div className="border-t border-white/10 px-5 py-2 text-[11px] opacity-45">
++                    只搜尋本機曲庫裡的無損檔；「線上配對標籤」只查 MusicBrainz 的文字資料，不下載任何音檔。
++                </div>
++            </div>
++        </div>
++    );
++};
++
++export default LosslessSearchHost;
+diff --git a/src/components/lossless-search/useLosslessSearchStore.ts b/src/components/lossless-search/useLosslessSearchStore.ts
+new file mode 100644
+index 0000000..fff2641
+--- /dev/null
++++ b/src/components/lossless-search/useLosslessSearchStore.ts
+@@ -0,0 +1,14 @@
++// src/components/lossless-search/useLosslessSearchStore.ts
++import { create } from 'zustand';
++
++interface LosslessSearchState {
++    isOpen: boolean;
++    open: () => void;
++    close: () => void;
++}
++
++export const useLosslessSearchStore = create<LosslessSearchState>(set => ({
++    isOpen: false,
++    open: () => set({ isOpen: true }),
++    close: () => set({ isOpen: false }),
++}));
 diff --git a/src/components/modal/NewFeaturesIntro.tsx b/src/components/modal/NewFeaturesIntro.tsx
 index 5de4bf3..af66827 100644
 --- a/src/components/modal/NewFeaturesIntro.tsx
@@ -998,12 +1267,12 @@ index 5de4bf3..af66827 100644
      );
  };
 diff --git a/src/components/modal/newFeaturesRelease.ts b/src/components/modal/newFeaturesRelease.ts
-index e49a39c..ec63c7c 100644
+index e49a39c..f0524fb 100644
 --- a/src/components/modal/newFeaturesRelease.ts
 +++ b/src/components/modal/newFeaturesRelease.ts
 @@ -1,4 +1,4 @@
 -import { ListMusic, MessageSquareText, Puzzle, SlidersVertical, Sparkles, Store } from 'lucide-react';
-+import { FileAudio, KeyRound, Languages, ListChecks, MonitorOff, Music2, Play, RefreshCw, ShieldCheck, SpellCheck, Type } from 'lucide-react';
++import { FileAudio, KeyRound, Languages, ListChecks, MonitorOff, Music2, Play, RefreshCw, Search, ShieldCheck, SpellCheck, Type } from 'lucide-react';
  import type { LucideIcon } from 'lucide-react';
  
  // src/components/modal/newFeaturesRelease.ts
@@ -1022,7 +1291,7 @@ index e49a39c..ec63c7c 100644
  export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
 -    i18nKey: 'releaseNotes.v0_8_0',
 -    majorUpdate: { codename: 'Severance' },
-+    i18nKey: 'releaseNotes.v0_9_15',
++    i18nKey: 'releaseNotes.v0_9_16',
      features: [
 -        { id: 'sourceMods', icon: Puzzle },
 -        { id: 'modMarket', icon: Store },
@@ -1030,9 +1299,9 @@ index e49a39c..ec63c7c 100644
 -        { id: 'moments', icon: MessageSquareText },
 -        { id: 'stemMixer', icon: SlidersVertical },
 -        { id: 'moreDetails', icon: Sparkles },
-+        { id: 'lossless', icon: FileAudio },
++        { id: 'losslessSearch', icon: Search },
      ],
-+    fixes: ['ape', 'riff', 'scan'],
++    fixes: ['panel', 'mb', 'offline'],
  };
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
@@ -2046,7 +2315,7 @@ index 2f367df..361d5da 100644
              enabled
              && window.electron?.requestTranscodeFallback
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..dc20b10 100644
+index 86f3b6d..8ee3966 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -2250,10 +2519,22 @@ index 86f3b6d..dc20b10 100644
      "transcodeFallbackDesc": "Converts tracks that cannot be decoded with FFmpeg. The file is not changed.",
      "playbackFade": "Fade on pause and resume",
      "playbackFadeDesc": "Fades out before pausing and back in on resume.",
-@@ -4513,6 +4506,219 @@ export default {
+@@ -4513,6 +4506,231 @@ export default {
      "noDescription": "No description available",
    },
    "releaseNotes": {
++    "v0_9_16": {
++      "intro": "0.9.16 adds a lossless search panel: open it from the command palette by typing “lossless”, it lists only lossless files already in your library, and can fill in correct title/artist/album from MusicBrainz.",
++      "losslessSearch": {
++        "title": "Search lossless songs and fix tags online",
++        "description": "The panel reads the library only — it never downloads audio. Lossless is decided from the container and the cached quality entry (flac/wav/aiff/alac/ape/wv/tta/tak/dsf/dff); each row shows codec, sample rate and bit depth. “Match tags online” asks MusicBrainz for recordings by title + artist and lists five candidates; tapping one writes the tags back.",
++      },
++      "fixes": {
++        "panel": "Type “lossless” in the command palette; search by title, artist, album or file name.",
++        "mb": "MusicBrainz matching is text-only and never downloads audio; applying writes to the library immediately.",
++        "offline": "With no network it just reports no matches; search and playback keep working.",
++      }
++    },
 +    "v0_9_15": {
 +      "intro": "0.9.15 extends raw tag parsing to every lossless container: RIFF INFO and ID3 chunks in wav/aiff, APEv2 in ape/wv/tak, ID3v2 inside tta/dsf/dff, plus the existing flac and alac.",
 +      "lossless": {
@@ -2470,7 +2751,7 @@ index 86f3b6d..dc20b10 100644
      "v0_7_0": {
        "intro": "Here are the new features and improvements in version 0.7.0.",
        "temperaVisualExpansion": {
-@@ -5228,6 +5434,10 @@ export default {
+@@ -5228,6 +5446,10 @@ export default {
      "capsuleOpensPalette": "Click to open the command palette",
    },
    "localMusic": {
@@ -2481,7 +2762,7 @@ index 86f3b6d..dc20b10 100644
      "foldersAndPlaylists": "Folders",
      "albums": "Albums",
      "artists": "Artists",
-@@ -5242,8 +5452,34 @@ export default {
+@@ -5242,8 +5464,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -2516,7 +2797,7 @@ index 86f3b6d..dc20b10 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6289,13 @@ export default {
+@@ -6053,8 +6301,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -2532,7 +2813,7 @@ index 86f3b6d..dc20b10 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/in.ts b/src/i18n/locales/in.ts
-index fac0d47..73db8f2 100644
+index fac0d47..c9cbbe2 100644
 --- a/src/i18n/locales/in.ts
 +++ b/src/i18n/locales/in.ts
 @@ -2796,6 +2796,7 @@ export default {
@@ -2553,10 +2834,22 @@ index fac0d47..73db8f2 100644
      "transcodeFallbackDesc": "Mengonversi trek yang tidak dapat didekode dengan FFmpeg. Berkas tidak diubah.",
      "playbackFade": "Fade saat jeda dan lanjut",
      "playbackFadeDesc": "Fade keluar sebelum jeda dan masuk kembali saat lanjut.",
-@@ -4513,6 +4516,136 @@ export default {
+@@ -4513,6 +4516,148 @@ export default {
      "noDescription": "Tidak ada deskripsi tersedia"
    },
    "releaseNotes": {
++    "v0_9_16": {
++      "intro": "0.9.16 adds a lossless search panel: open it from the command palette by typing “lossless”, it lists only lossless files already in your library, and can fill in correct title/artist/album from MusicBrainz.",
++      "losslessSearch": {
++        "title": "Search lossless songs and fix tags online",
++        "description": "The panel reads the library only — it never downloads audio. Lossless is decided from the container and the cached quality entry (flac/wav/aiff/alac/ape/wv/tta/tak/dsf/dff); each row shows codec, sample rate and bit depth. “Match tags online” asks MusicBrainz for recordings by title + artist and lists five candidates; tapping one writes the tags back.",
++      },
++      "fixes": {
++        "panel": "Type “lossless” in the command palette; search by title, artist, album or file name.",
++        "mb": "MusicBrainz matching is text-only and never downloads audio; applying writes to the library immediately.",
++        "offline": "With no network it just reports no matches; search and playback keep working.",
++      }
++    },
 +    "v0_9_15": {
 +      "intro": "0.9.15 extends raw tag parsing to every lossless container: RIFF INFO and ID3 chunks in wav/aiff, APEv2 in ape/wv/tak, ID3v2 inside tta/dsf/dff, plus the existing flac and alac.",
 +      "lossless": {
@@ -2713,7 +3006,7 @@ index 23ebf79..336af7d 100644
      "playbackFade": "Làm mờ khi tạm dừng và tiếp tục",
      "playbackFadeDesc": "Giảm âm dần trước khi tạm dừng và tăng dần khi tiếp tục thay vì ngắt âm đột ngột. Bỏ qua nếu âm thanh không đi qua bộ xử lý âm thanh.",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..d2fbeba 100644
+index 0067e9a..2ebf753 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -2855,10 +3148,22 @@ index 0067e9a..d2fbeba 100644
      "transcodeFallbackDesc": "遇到无法解码的歌曲时用 FFmpeg 转换，不修改原文件。",
      "playbackFade": "暂停/播放淡入淡出",
      "playbackFadeDesc": "暂停前淡出，恢复时淡入。",
-@@ -4513,6 +4577,219 @@ export default {
+@@ -4513,6 +4577,231 @@ export default {
      "noDescription": "暂无详细介绍",
    },
    "releaseNotes": {
++    "v0_9_16": {
++      "intro": "0.9.16 加了「無損搜尋」面板：命令面板打「無損」就能開，只列本機曲庫裡的無損檔，還能一鍵用 MusicBrainz 把歌名／歌手／專輯補回正確寫法。",
++      "losslessSearch": {
++        "title": "搜尋無損歌曲 + 線上補標籤",
++        "description": "面板只讀曲庫，不連網抓音檔：按副檔名與音質快取判斷是不是真無損（flac／wav／aiff／alac／ape／wv／tta／tak／dsf／dff），列表顯示編碼、取樣率、位深。點「線上配對標籤」會拿歌名＋歌手去 MusicBrainz 查錄音，列 5 筆候選（歌名／歌手／專輯／年份），點一下就寫回標籤。查不到或沒網路只會顯示提示，不影響其他功能。",
++      },
++      "fixes": {
++        "panel": "命令面板搜「無損」或「lossless」即可開面板，支援歌名／歌手／專輯／檔名搜尋。",
++        "mb": "MusicBrainz 配對只查文字資料，不下載任何音檔；套用後立即寫回曲庫。",
++        "offline": "沒網路時只顯示「查不到」，搜尋與播放照舊。",
++      }
++    },
 +    "v0_9_15": {
 +      "intro": "0.9.15 把原始标签解析补到全部无损容器：wav／aiff 的 RIFF INFO 与 ID3 chunk、ape／wv／tak 的 APEv2、tta／dsf／dff 里的 ID3v2，加上原本的 flac 与 alac。",
 +      "lossless": {
@@ -3075,7 +3380,7 @@ index 0067e9a..d2fbeba 100644
      "v0_7_0": {
        "intro": "以下是 0.7.0 的新功能与改进",
        "temperaVisualExpansion": {
-@@ -5228,6 +5505,10 @@ export default {
+@@ -5228,6 +5517,10 @@ export default {
      "capsuleOpensPalette": "点一下打开命令面板",
    },
    "localMusic": {
@@ -3086,7 +3391,7 @@ index 0067e9a..d2fbeba 100644
      "foldersAndPlaylists": "文件夹",
      "albums": "专辑",
      "artists": "艺术家",
-@@ -5242,8 +5523,34 @@ export default {
+@@ -5242,8 +5535,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -3121,7 +3426,7 @@ index 0067e9a..d2fbeba 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6358,13 @@ export default {
+@@ -6051,8 +6370,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -6682,6 +6987,74 @@ index 0000000..368b099
 +        console.info(`[RawTags] repaired ${patched.length} linked song(s) from raw tag bytes`);
 +    } catch (error) {
 +        console.warn('[RawTags] backfill failed', error);
++    }
++};
+diff --git a/src/services/musicbrainzSearch.ts b/src/services/musicbrainzSearch.ts
+new file mode 100644
+index 0000000..2d5cf06
+--- /dev/null
++++ b/src/services/musicbrainzSearch.ts
+@@ -0,0 +1,62 @@
++// src/services/musicbrainzSearch.ts
++// 線上補標籤：拿歌名＋歌手去 MusicBrainz 查錄音，回傳最可信的幾筆候選（歌名／歌手／專輯／年份）。
++// 只查「文字資料」，不下載任何音檔；MusicBrainz 開放 CORS，車機有網路就能用。
++const MB_ENDPOINT = 'https://musicbrainz.org/ws/2/recording';
++const USER_AGENT = 'Folia/0.9.16 (https://github.com/RockStor01/folia-ios)';
++
++export interface MusicBrainzMatch {
++    recordingId: string;
++    title: string;
++    artist: string;
++    album?: string;
++    year?: string;
++    score: number;
++}
++
++const escapeLucene = (value: string): string => value.replace(/["\\]/g, ' ').trim();
++
++/** 查錄音候選。查不到或網路不通就回空陣列，呼叫端只顯示「查不到」，不影響其他功能。 */
++export const searchMusicBrainzRecordings = async (
++    title: string,
++    artist?: string,
++    limit = 5,
++): Promise<MusicBrainzMatch[]> => {
++    const cleanTitle = escapeLucene(title);
++    if (!cleanTitle) return [];
++    const cleanArtist = artist ? escapeLucene(artist) : '';
++    const query = cleanArtist
++        ? `recording:"${cleanTitle}" AND artist:"${cleanArtist}"`
++        : `recording:"${cleanTitle}"`;
++    const url = `${MB_ENDPOINT}?query=${encodeURIComponent(query)}&fmt=json&limit=${Math.min(Math.max(limit, 1), 10)}`;
++    try {
++        const response = await fetch(url, { headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' } });
++        if (!response.ok) return [];
++        const data = await response.json() as {
++            recordings?: Array<{
++                id?: string;
++                title?: string;
++                score?: number;
++                'artist-credit'?: Array<{ name?: string; artist?: { name?: string } }>;
++                releases?: Array<{ title?: string; date?: string }>;
++            }>;
++        };
++        const rows = data.recordings ?? [];
++        return rows.map(row => {
++            const artists = (row['artist-credit'] ?? [])
++                .map(credit => credit.name || credit.artist?.name || '')
++                .filter(Boolean);
++            const release = row.releases?.find(item => item.title);
++            return {
++                recordingId: row.id ?? '',
++                title: String(row.title ?? '').trim(),
++                artist: artists.join(' / '),
++                album: release?.title,
++                year: release?.date?.slice(0, 4),
++                score: Number(row.score ?? 0),
++            };
++        }).filter(match => match.recordingId && match.title);
++    } catch (error) {
++        console.warn('[MusicBrainz] search failed', error);
++        return [];
 +    }
 +};
 diff --git a/src/services/nativeLinkedStorage.ts b/src/services/nativeLinkedStorage.ts
