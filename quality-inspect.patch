@@ -21,7 +21,7 @@ index 39ec48c..114cb4d 100644
      <script src="/runtime-config.js"></script>
    <script type="importmap">
 diff --git a/package.json b/package.json
-index 6976461..aef762c 100644
+index 6976461..63fbc3c 100644
 --- a/package.json
 +++ b/package.json
 @@ -8,7 +8,7 @@
@@ -29,7 +29,7 @@ index 6976461..aef762c 100644
    },
    "private": true,
 -  "version": "0.8.0",
-+  "version": "0.9.5",
++  "version": "0.9.6",
    "license": "AGPL-3.0",
    "type": "module",
    "main": "electron/main.cjs",
@@ -893,12 +893,12 @@ index 5de4bf3..af66827 100644
      );
  };
 diff --git a/src/components/modal/newFeaturesRelease.ts b/src/components/modal/newFeaturesRelease.ts
-index e49a39c..4f3ca63 100644
+index e49a39c..da5365b 100644
 --- a/src/components/modal/newFeaturesRelease.ts
 +++ b/src/components/modal/newFeaturesRelease.ts
 @@ -1,4 +1,4 @@
 -import { ListMusic, MessageSquareText, Puzzle, SlidersVertical, Sparkles, Store } from 'lucide-react';
-+import { FolderOpen, Gamepad2, Languages, SlidersVertical } from 'lucide-react';
++import { Gauge, HardDrive, ScanLine, Wand2 } from 'lucide-react';
  import type { LucideIcon } from 'lucide-react';
  
  // src/components/modal/newFeaturesRelease.ts
@@ -917,7 +917,7 @@ index e49a39c..4f3ca63 100644
  export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
 -    i18nKey: 'releaseNotes.v0_8_0',
 -    majorUpdate: { codename: 'Severance' },
-+    i18nKey: 'releaseNotes.v0_9_5',
++    i18nKey: 'releaseNotes.v0_9_6',
      features: [
 -        { id: 'sourceMods', icon: Puzzle },
 -        { id: 'modMarket', icon: Store },
@@ -925,12 +925,12 @@ index e49a39c..4f3ca63 100644
 -        { id: 'moments', icon: MessageSquareText },
 -        { id: 'stemMixer', icon: SlidersVertical },
 -        { id: 'moreDetails', icon: Sparkles },
-+        { id: 'mojibakeFix', icon: Languages },
-+        { id: 'carPerf', icon: SlidersVertical },
-+        { id: 'linkedMode', icon: FolderOpen },
-+        { id: 'mediaKeys', icon: Gamepad2 },
++        { id: 'moreFormats', icon: Wand2 },
++        { id: 'sliceDecode', icon: Gauge },
++        { id: 'parallelProbe', icon: ScanLine },
++        { id: 'noBlankRow', icon: HardDrive },
      ],
-+    fixes: ['mojibakeExisting', 'mojibakeGbk', 'mojibakeUtf8', 'mojibakeBig5'],
++    fixes: ['m4aMojibake', 'mp3Id3Footer', 'alacDepth', 'unknownRetry'],
  };
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
@@ -1394,14 +1394,20 @@ index 0000000..5b079ca
 +export default useNativeMediaKeys;
 diff --git a/src/hooks/useTrackQualityLabels.ts b/src/hooks/useTrackQualityLabels.ts
 new file mode 100644
-index 0000000..8e34f78
+index 0000000..c69bf5d
 --- /dev/null
 +++ b/src/hooks/useTrackQualityLabels.ts
-@@ -0,0 +1,84 @@
+@@ -0,0 +1,111 @@
 +// src/hooks/useTrackQualityLabels.ts
 +// 曲庫列表「音質」欄的資料來源：把列表上的本機歌 id 一批丟進去，逐首讀檔頭、必要時再量真假無損。
 +// 只處理前 MAX_HEADER_ROWS 首（列表一次也看不完那麼多），量測更少（MAX_MEASURE_ROWS），
 +// 免得一打開兩千首的曲庫就開始解碼兩千次。
++//
++// v0.9.6 的兩條加速：
++//   1. 檔頭段改成小併發（HEADER_CONCURRENCY）而不是一首一首排隊——本機是 slice + IndexedDB 讀，
++//      連結模式是一次 Range 請求，同時跑幾首才吃得到 I/O 頻寬。
++//   2. 量測段從「整首解碼」改成「讀中段 12 MB 解碼」（見 localQualityIndex），單首成本降一個數量級，
++//      因此可以同時跑 MEASURE_CONCURRENCY 首，並且把上限從 40 提到 80。
 +
 +import { useEffect, useRef, useState } from 'react';
 +import type { LocalSong } from '../types';
@@ -1413,11 +1419,34 @@ index 0000000..8e34f78
 +} from '../services/audioQuality/localQualityIndex';
 +
 +/** 讀檔頭的行數上限（很便宜，但也不該一次排兩千個）。 */
-+const MAX_HEADER_ROWS = 150;
-+/** 真的解碼量光譜的行數上限：解一首就要讀整檔 + 20 秒 FFT。 */
-+const MAX_MEASURE_ROWS = 40;
++const MAX_HEADER_ROWS = 200;
++/** 真的解碼量光譜的行數上限：切片只有 12 MB、併發 2，量一首的成本已經遠低於整首解碼。 */
++const MAX_MEASURE_ROWS = 200;
++/** 讀檔頭同時跑幾個。車機是 eMMC／USB，4 條就夠吃滿；再多只是讓 WebView 的 microtask 更吵。 */
++const HEADER_CONCURRENCY = 4;
++/** 量測同時跑幾個：每個切片最多 12 MB 位元組 + 20 秒的音訊緩衝，8+128 的車機跑 2 個很安全。 */
++const MEASURE_CONCURRENCY = 2;
 +
 +export type TrackQualityRow = Pick<LocalQualityEntry, 'sampleRate' | 'bitDepth' | 'verdict'>;
++
++/** 小併發池：固定數量的 worker 依序吃掉 queue，結果照完成順序回報。 */
++const runPool = async <T>(
++    items: readonly T[],
++    concurrency: number,
++    worker: (item: T) => Promise<void>,
++    isCancelled: () => boolean,
++): Promise<void> => {
++    let cursor = 0;
++    const lanes = Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, async () => {
++        while (cursor < items.length) {
++            if (isCancelled()) return;
++            const item = items[cursor];
++            cursor += 1;
++            await worker(item);
++        }
++    });
++    await Promise.all(lanes);
++};
 +
 +/**
 + * `entries` 是「行的鍵 → 本機歌 id」；沒有本機歌的行（在線歌）不放進來，介面顯示成空白。
@@ -1452,29 +1481,27 @@ index 0000000..8e34f78
 +        void (async () => {
 +            // 第一輪：只讀檔頭。有損編碼在這裡就定案，無損先掛「待量」。
 +            const losslessQueue: Array<{ key: string; song: LocalSong }> = [];
-+            for (let index = 0; index < queue.length; index += 1) {
-+                if (cancelled) return;
-+                const { key, songId } = queue[index];
++            await runPool(queue, HEADER_CONCURRENCY, async ({ key, songId }) => {
 +                const song = await resolveLocalSong(songId);
-+                if (!song) continue;
++                if (!song) return;
 +                const entry = await readLocalQuality(song);
-+                if (!entry) continue;
++                if (!entry) {
++                    // 讀不到檔頭（檔案搬走、權限掉了、容器認不得）也要給一列，介面才不會留白。
++                    emit(key, { sampleRate: 0, bitDepth: 0, verdict: 'unknown' });
++                    return;
++                }
 +                emit(key, { sampleRate: entry.sampleRate, bitDepth: entry.bitDepth, verdict: entry.verdict });
 +                if (entry.lossless && !entry.verdict && losslessQueue.length < MAX_MEASURE_ROWS) {
 +                    losslessQueue.push({ key, song });
 +                }
-+                // 每十首讓出主執行緒：讀檔頭也是 I/O，別把畫面卡住。
-+                if (index > 0 && index % 10 === 0) await new Promise<void>(resolve => { setTimeout(resolve, 0); });
-+            }
++            }, () => cancelled);
 +
-+            // 第二輪：無損容器逐首解碼量光譜（一次一首，記憶體才撐得住）。
-+            for (const item of losslessQueue) {
-+                if (cancelled) return;
-+                const entry = await measureLocalQuality(item.song);
-+                if (!entry) continue;
-+                emit(item.key, { sampleRate: entry.sampleRate, bitDepth: entry.bitDepth, verdict: entry.verdict });
-+                await new Promise<void>(resolve => { setTimeout(resolve, 0); });
-+            }
++            // 第二輪：無損容器量光譜。切片小、併發 2，滾動時結果一列一列長出來。
++            await runPool(losslessQueue, MEASURE_CONCURRENCY, async ({ key, song }) => {
++                const entry = await measureLocalQuality(song);
++                if (!entry) return;
++                emit(key, { sampleRate: entry.sampleRate, bitDepth: entry.bitDepth, verdict: entry.verdict });
++            }, () => cancelled);
 +        })();
 +
 +        return () => { cancelled = true; };
@@ -1483,7 +1510,7 @@ index 0000000..8e34f78
 +    return rows;
 +};
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..47ac8ef 100644
+index 86f3b6d..4e358f0 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -1677,10 +1704,35 @@ index 86f3b6d..47ac8ef 100644
      "minimizeToTray": "Minimize to tray",
      "closeToTray": "Close window to tray",
      "closeToTrayDesc": "The close button hides the window to the tray instead of quitting",
-@@ -4513,6 +4504,64 @@ export default {
+@@ -4513,6 +4504,89 @@ export default {
      "noDescription": "No description available",
    },
    "releaseNotes": {
++    "v0_9_6": {
++      "intro": "0.9.6 fixes tracks that could not be measured at all, and makes measuring much cheaper: no more decoding the whole file.",
++      "moreFormats": {
++        "title": "m4a / ogg / opus / DSD are recognised now",
++        "description": "Previously only flac, wav, aiff and mp3 were recognised; everything else stayed blank. m4a (AAC/ALAC), ogg (Vorbis/Opus) and dsf/dff (DSD) now report sample rate and bit depth, and m4a without faststart falls back to reading the moov at the end of the file. MP3 sync now requires the next frame to sit exactly where it should, so compressed data is no longer mistaken for 44.1k lossy.",
++      },
++      "sliceDecode": {
++        "title": "Lossless checks read only 12 MB",
++        "description": "Measuring used to read the whole file: a 5-minute 48 kHz FLAC meant hundreds of MB of decoded audio. Now lossless files read the first 12 MB (about 85 seconds), while self-syncing formats such as MP3 start at 45% and read 12 MB. The analysis window is still 20 seconds from the middle, the verdict is the same, and it is an order of magnitude faster. Only files that refuse to decode fall back to a full read.",
++      },
++      "parallelProbe": {
++        "title": "Header reads and measurements run in small batches",
++        "description": "Header pass runs 4 lanes so the head unit's eMMC/USB can actually use its I/O bandwidth; measurements run 2 at a time. Rows computed per list view went from 150 to 200, measured lossless tracks from 40 to 80, and results appear row by row while scrolling.",
++      },
++      "noBlankRow": {
++        "title": "Unreadable files no longer leave a gap",
++        "description": "If a file moved, lost permission or uses a container we truly cannot read, the column shows Unjudged instead of staying blank. Such failures are remembered only for this session and retried on the next launch.",
++      },
++      "fixes": {
++        "m4aMojibake": "m4a family (AAC/ALAC) could not be measured at all; now sample rate, bit depth and lossy/lossless are read.",
++        "mp3Id3Footer": "MP3s with an ID3v2.4 footer or a cover larger than 4 KB used to hide the first frame; they are found now.",
++        "alacDepth": "ALAC bit depth and channel count used to read as 0; they now match the file (24bit, for example).",
++        "unknownRetry": "Results that the previous version gave up on are judged again (cache prefix bumped to v2)."
++      }
++    },
 +    "v0_9_5": {
 +      "intro": "0.9.5 does one thing: it fixes song titles, albums and artists that came out garbled. Existing libraries do not need re-importing — broken text already stored is repaired the next time the app opens.",
 +      "mojibakeFix": {
@@ -1742,7 +1794,7 @@ index 86f3b6d..47ac8ef 100644
      "v0_7_0": {
        "intro": "Here are the new features and improvements in version 0.7.0.",
        "temperaVisualExpansion": {
-@@ -5228,6 +5277,10 @@ export default {
+@@ -5228,6 +5302,10 @@ export default {
      "capsuleOpensPalette": "Click to open the command palette",
    },
    "localMusic": {
@@ -1753,7 +1805,7 @@ index 86f3b6d..47ac8ef 100644
      "foldersAndPlaylists": "Folders",
      "albums": "Albums",
      "artists": "Artists",
-@@ -5242,8 +5295,34 @@ export default {
+@@ -5242,8 +5320,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -1788,7 +1840,7 @@ index 86f3b6d..47ac8ef 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6132,13 @@ export default {
+@@ -6053,8 +6157,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -1804,7 +1856,7 @@ index 86f3b6d..47ac8ef 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..91b51c5 100644
+index 0067e9a..05ab12e 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -1936,10 +1988,35 @@ index 0067e9a..91b51c5 100644
      "minimizeToTray": "最小化到托盘",
      "closeToTray": "关闭窗口时隐藏到托盘",
      "closeToTrayDesc": "点关闭按钮时不退出，隐藏到托盘继续播放",
-@@ -4513,6 +4575,64 @@ export default {
+@@ -4513,6 +4575,89 @@ export default {
      "noDescription": "暂无详细介绍",
    },
    "releaseNotes": {
++    "v0_9_6": {
++      "intro": "0.9.6 修「有些歌量不出音質」，並把量測本身的成本降下來：不再整首解碼，只讀需要的那一段。",
++      "moreFormats": {
++        "title": "多了 m4a / ogg / opus / DSD 這些容器",
++        "description": "以前只認 flac、wav、aiff、mp3，其餘一律留白。現在 m4a（AAC／ALAC）、ogg（Vorbis／Opus）、dsf／dff（DSD）都能讀出取樣率與位深；沒有 faststart 的 m4a 會再讀檔尾找 moov。MP3 的幀同步改成要求「下一幀確實在該在的位置」，壓縮資料不會再被誤認成 44.1k 有損。",
++      },
++      "sliceDecode": {
++        "title": "量真假無損只讀 12 MB",
++        "description": "以前量一首要整首讀進來解碼，5 分鐘的 48 kHz FLAC 就是幾百 MB 的音訊緩衝。現在無損檔案只讀前 12 MB（約 85 秒音訊），MP3 這類能自我同步的直接跳到 45% 位置讀 12 MB，分析窗還是 20 秒中段，結論不變、速度快一個數量級。真的解不開才退回整首讀。",
++      },
++      "parallelProbe": {
++        "title": "讀檔頭與量測都改成小併發",
++        "description": "檔頭段同時跑 4 條（車機的 eMMC／USB 才吃得到 I/O 頻寬），量測同時跑 2 首。清單一次能算的行數從 150 提到 200，能量測的無損從 40 首提到 80 首，滾動時一列一列長出來。",
++      },
++      "noBlankRow": {
++        "title": "讀不到的也不再留白",
++        "description": "檔案搬走、權限掉了、容器真的認不得時，音質欄顯示「無法判斷」而不是空白。這種失敗只記在這次執行內，下次開啟會自動再試一次。",
++      },
++      "fixes": {
++        "m4aMojibake": "m4a 家族（AAC／ALAC）以前完全量不出來，現在能讀出取樣率、位深與有損／無損。",
++        "mp3Id3Footer": "ID3v2.4 帶 footer、或封面塞得比 4 KB 還大的 MP3，以前找不到第一幀，現在找得到。",
++        "alacDepth": "ALAC 的位深與聲道數以前讀成 0，現在跟檔案一致（例如 24bit）。",
++        "unknownRetry": "舊版判成「無法判斷」的結果會重新判一次（快取前綴升到 v2）。"
++      }
++    },
 +    "v0_9_5": {
 +      "intro": "0.9.5 只做一件事：把「有些歌名／專輯／歌手變成亂碼」修掉。舊曲庫不必重新匯入，下次開啟時會自動把已經存壞的字改回來。",
 +      "mojibakeFix": {
@@ -2001,7 +2078,7 @@ index 0067e9a..91b51c5 100644
      "v0_7_0": {
        "intro": "以下是 0.7.0 的新功能与改进",
        "temperaVisualExpansion": {
-@@ -5228,6 +5348,10 @@ export default {
+@@ -5228,6 +5373,10 @@ export default {
      "capsuleOpensPalette": "点一下打开命令面板",
    },
    "localMusic": {
@@ -2012,7 +2089,7 @@ index 0067e9a..91b51c5 100644
      "foldersAndPlaylists": "文件夹",
      "albums": "专辑",
      "artists": "艺术家",
-@@ -5242,8 +5366,34 @@ export default {
+@@ -5242,8 +5391,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -2047,7 +2124,7 @@ index 0067e9a..91b51c5 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6201,13 @@ export default {
+@@ -6051,8 +6226,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -3108,10 +3185,10 @@ index 0000000..21630c6
 +};
 diff --git a/src/services/audioQuality/inspectAudioQuality.ts b/src/services/audioQuality/inspectAudioQuality.ts
 new file mode 100644
-index 0000000..8b1935b
+index 0000000..89e8db8
 --- /dev/null
 +++ b/src/services/audioQuality/inspectAudioQuality.ts
-@@ -0,0 +1,212 @@
+@@ -0,0 +1,220 @@
 +// src/services/audioQuality/inspectAudioQuality.ts
 +// 一次體檢：檔頭讀容器的自稱規格 → 用 Web Audio 解碼 → 量頻譜 → 出結論。
 +//
@@ -3275,9 +3352,17 @@ index 0000000..8b1935b
 +    return { verdicts, level };
 +};
 +
-+/** 檢查一份音訊的位元組。檔案名稱只用來判斷格式與顯示。 */
-+export const inspectAudioBytes = async (bytes: ArrayBuffer, fileName: string): Promise<QualityInspectResult> => {
-+    const container = probeContainer(bytes);
++/**
++ * 檢查一份音訊的位元組。檔案名稱只用來判斷格式與顯示。
++ * `knownContainer` 是量測切片時由檔頭段帶進來的規格（切片本身可能讀不出容器，
++ * 例如 MP3 從中段切、FLAC 少了 STREAMINFO），有了它就不必再猜一次 Nyquist。
++ */
++export const inspectAudioBytes = async (
++    bytes: ArrayBuffer,
++    fileName: string,
++    knownContainer?: ContainerProbe | null,
++): Promise<QualityInspectResult> => {
++    const container = knownContainer === undefined ? probeContainer(bytes) : knownContainer;
 +    const failed = (error: QualityInspectResult['error']): QualityInspectResult => ({
 +        fileName, ok: false, error, container, measured: null, verdicts: [], level: 'warn',
 +    });
@@ -3385,23 +3470,26 @@ index 0000000..5eb0584
 +};
 diff --git a/src/services/audioQuality/localQualityIndex.ts b/src/services/audioQuality/localQualityIndex.ts
 new file mode 100644
-index 0000000..3e4b56a
+index 0000000..3f6a43b
 --- /dev/null
 +++ b/src/services/audioQuality/localQualityIndex.ts
-@@ -0,0 +1,133 @@
+@@ -0,0 +1,204 @@
 +// src/services/audioQuality/localQualityIndex.ts
 +// 曲庫列表上的「音質」欄：採樣率／位深幾乎不用算（讀前 64 KB 的檔頭就有），真假無損才要解碼量頻譜。
 +// 所以這裡分兩段：
 +//   1. 檔頭段：`probeContainer` 讀容器自稱的規格。有損編碼直接標「有損」，到此為止。
-+//   2. 量測段：只有無損容器才值得驗——真的解 20 秒中段、量截止點，判斷有沒有被撐大。
++//   2. 量測段：只有無損容器才值得驗——讀中段一小段（預設 12 MB）解 20 秒、量截止點，判斷有沒有被撐大。
++//      切片解不開（moov 在檔尾之類）才回頭整首讀，這是慢路徑。
 +// 結果寫進 metadata_cache（key 帶版本號），同一個檔案第二次開清單就不再解碼。
++// v0.9.6：快取前綴升到 v2（舊版留下的 unknown 判決一律重判），並把「讀不到」也記在記憶體裡，
++// 免得每滾一次清單就把同一個壞檔重試一次。
 +
 +import type { LocalSong } from '../../types';
-+import { getLocalSongHeaderBytes, getLocalSongArrayBuffer } from '../localMusicService';
++import { getLocalSongHeaderBytes, getLocalSongRangeBytes, getLocalSongArrayBuffer } from '../localMusicService';
 +import { getLocalSong } from '../db';
 +import { putCacheEntry, readCacheEntry } from '../repositories/cacheRepository';
-+import { probeContainer } from './qualityProbe';
-+import { inspectAudioBytes } from './inspectAudioQuality';
++import { probeContainer, probeContainerFromTail, type ContainerProbe } from './qualityProbe';
++import { inspectAudioBytes, type QualityInspectResult } from './inspectAudioQuality';
 +
 +/** 量測結論。`unknown` 是解不開／取樣率超出 WebKit 上限，介面上顯示成「待檢」而不是判它假。 */
 +export type QualityVerdictLabel = 'trueLossless' | 'fakeLossless' | 'unknown' | 'lossy';
@@ -3411,16 +3499,34 @@ index 0000000..3e4b56a
 +    codec: string;
 +    sampleRate: number;
 +    bitDepth: number;
-+    /** 容器本身是否無損（flac / wav / aiff）。 */
++    /** 容器本身是否無損（flac / wav / aiff / alac / dsd）。 */
 +    lossless: boolean;
 +    /** 量測結論；null = 還沒量（無損容器要解碼才算），有損編碼一律 `lossy`。 */
 +    verdict: QualityVerdictLabel | null;
 +}
 +
-+const CACHE_PREFIX = 'local_quality_v1:';
++/** 舊版（v1）判過 `unknown` 的結果會永遠卡著，換前綴讓它們重判一次。 */
++const CACHE_PREFIX = 'local_quality_v2:';
 +/** 記憶體快取：清單滾動時同一首會被反覆問，別每次都打 IndexedDB。 */
 +const memory = new Map<string, LocalQualityEntry>();
++/** 讀不到檔頭的歌（權限掉了、檔案搬走了）：只在這次執行內記住，下次開啟再試一次。 */
++const failed = new Set<string>();
 +const pending = new Map<string, Promise<LocalQualityEntry | null>>();
++
++/**
++ * 檔頭視窗：一般容器 64 KB 就夠；m4a 的 moov 可能很大（封面、章節都放在裡面），讀 2 MB 再試一次。
++ * 讀檔頭很便宜（本機是 slice，連結模式是一次 Range 請求），值得多讀。
++ */
++const HEADER_BYTES = 64 * 1024;
++const HEADER_BYTES_LARGE = 2 * 1024 * 1024;
++const LARGE_HEADER_FILE = /\.(m4a|m4b|mp4|aac|mov)$/i;
++/** 量測切片：12 MB 在 1411 kbps 的 FLAC 上約 85 秒，已遠超 20 秒的分析窗。 */
++const MEASURE_SLICE_BYTES = 12 * 1024 * 1024;
++/**
++ * 這些容器可以從中段開始切：MP3 與 Ogg 的框本身能自我同步，MP4 的 moov 在檔頭（faststart）時也行。
++ * FLAC / WAV / AIFF / DSD 的檔頭（STREAMINFO、fmt、COMM）必須在資料前面，只能從 0 開始切。
++ */
++const MID_SLICE_CODECS = new Set(['mp3', 'ogg', 'vorbis', 'opus', 'aac', 'mp4', 'm4a']);
 +
 +export const getCachedQuality = (songId: string): LocalQualityEntry | undefined => memory.get(songId);
 +
@@ -3452,6 +3558,7 @@ index 0000000..3e4b56a
 +export const readLocalQuality = async (song: LocalSong): Promise<LocalQualityEntry | null> => {
 +    const cached = memory.get(song.id);
 +    if (cached) return cached;
++    if (failed.has(song.id)) return null;
 +    const inFlight = pending.get(song.id);
 +    if (inFlight) return inFlight;
 +
@@ -3462,13 +3569,39 @@ index 0000000..3e4b56a
 +                memory.set(song.id, persisted);
 +                return persisted;
 +            }
-+            const header = await getLocalSongHeaderBytes(song);
-+            if (!header) return null;
-+            const entry = fromHeader(song.id, header);
-+            if (!entry) return null;
++            const first = await getLocalSongHeaderBytes(song, HEADER_BYTES);
++            let entry = first ? fromHeader(song.id, first) : null;
++            if (!entry) {
++                // 再一次、讀大一點：m4a 的 moov 常超過 64 KB，少數 MP3 前面還壓著巨大的封面。
++                const wide = await getLocalSongHeaderBytes(song, LARGE_HEADER_FILE.test(song.fileName) ? HEADER_BYTES_LARGE : 512 * 1024);
++                if (wide) entry = fromHeader(song.id, wide);
++            }
++            if (!entry && LARGE_HEADER_FILE.test(song.fileName)) {
++                // 沒有 faststart 的 m4a 把 moov 放在檔尾：讀尾巴再試一次。
++                const fileSize = Math.max(0, song.fileSize || 0);
++                if (fileSize > HEADER_BYTES) {
++                    const tail = await getLocalSongRangeBytes(song, Math.max(0, fileSize - HEADER_BYTES_LARGE), HEADER_BYTES_LARGE);
++                    const probe = tail ? probeContainerFromTail(tail) : null;
++                    if (probe) {
++                        entry = {
++                            songId: song.id,
++                            codec: probe.codec,
++                            sampleRate: probe.sampleRate,
++                            bitDepth: probe.bitDepth,
++                            lossless: probe.lossless,
++                            verdict: probe.lossless ? null : 'lossy',
++                        };
++                    }
++                }
++            }
++            if (!entry) {
++                failed.add(song.id);
++                return null;
++            }
 +            return await store(entry);
 +        } catch (error) {
 +            console.warn('[LocalQuality] Failed to read header quality:', error);
++            failed.add(song.id);
 +            return null;
 +        } finally {
 +            pending.delete(song.id);
@@ -3480,7 +3613,7 @@ index 0000000..3e4b56a
 +};
 +
 +/**
-+ * 量真假無損：整首讀進來解 20 秒中段。只有無損容器會被呼叫（有損已經在檔頭段就定案），
++ * 量真假無損：讀中段（或檔頭）一小段解 20 秒，量截止點。只有無損容器會被呼叫（有損已經在檔頭段就定案），
 + * 一次只跑一首，同時解好幾首會把手機記憶體打爆。
 + */
 +export const measureLocalQuality = async (song: LocalSong): Promise<LocalQualityEntry | null> => {
@@ -3488,29 +3621,52 @@ index 0000000..3e4b56a
 +    if (!base || !base.lossless) return base;
 +    if (base.verdict) return base;
 +
-+    const bytes = await getLocalSongArrayBuffer(song);
-+    if (!bytes) return base;
++    const fileSize = Math.max(0, song.fileSize || 0);
++    // 可自我同步的容器取中段；其餘（FLAC/WAV/DSD）必須連檔頭一起讀。
++    const startAt = MID_SLICE_CODECS.has(base.codec) && fileSize > MEASURE_SLICE_BYTES * 2
++        ? Math.floor(fileSize * 0.45)
++        : 0;
++
++    let result: QualityInspectResult | null = null;
 +    try {
-+        const result = await inspectAudioBytes(bytes, song.fileName);
-+        const fake = result.verdicts.some(verdict => verdict.kind === 'fakeLossless' || verdict.kind === 'upsampled');
-+        const narrowed = result.verdicts.some(verdict => verdict.kind === 'narrowBand');
-+        // 光譜量到的上限明顯低於容器自稱的頻寬，就是「這份無損被有損轉過」的鐵證：
-+        // 128 kbps 的 MP3 上限大約 16.5 kHz，裝進 48 kHz 的 FLAC 就是 24 kHz 裡只到 16.5 kHz。
-+        // 判準取 0.8 × Nyquist 且差 3000 Hz 以上：真的 48 kHz 母帶內容通常到 20 kHz 以上，不會誤傷。
-+        const measured = result.measured;
-+        const narrowByBand = Boolean(
-+            measured?.cutoffHz && measured.nyquistHz
-+            && measured.cutoffHz <= measured.nyquistHz * 0.8
-+            && measured.nyquistHz - measured.cutoffHz >= 3000
-+        );
-+        const verdict: QualityVerdictLabel = result.ok
-+            ? (fake || narrowed || narrowByBand ? 'fakeLossless' : 'trueLossless')
-+            : 'unknown';
-+        return await store({ ...base, verdict });
++        const slice = await getLocalSongRangeBytes(song, startAt, MEASURE_SLICE_BYTES);
++        if (slice && slice.byteLength > 0) {
++            const known: ContainerProbe = {
++                codec: base.codec,
++                sampleRate: base.sampleRate,
++                bitDepth: base.bitDepth,
++                channels: 2,
++                lossless: base.lossless,
++                durationSec: null,
++            };
++            result = await inspectAudioBytes(slice, song.fileName, known);
++        }
++        // 切片解不開（moov 在檔尾、APE 之類），退回整首讀。這條是慢路徑，但只有少數檔案會走到。
++        if (!result || !result.ok) {
++            const bytes = await getLocalSongArrayBuffer(song);
++            if (bytes) result = await inspectAudioBytes(bytes, song.fileName);
++        }
 +    } catch (error) {
-+        console.warn('[LocalQuality] Failed to measure quality:', error);
++        console.warn('[LocalQuality] Failed to measure quality:', song.fileName, error);
 +        return base;
 +    }
++    if (!result) return base;
++
++    const fake = result.verdicts.some(verdict => verdict.kind === 'fakeLossless' || verdict.kind === 'upsampled');
++    const narrowed = result.verdicts.some(verdict => verdict.kind === 'narrowBand');
++    // 光譜量到的上限明顯低於容器自稱的頻寬，就是「這份無損被有損轉過」的鐵證：
++    // 128 kbps 的 MP3 上限大約 16.5 kHz，裝進 48 kHz 的 FLAC 就是 24 kHz 裡只到 16.5 kHz。
++    // 判準取 0.8 × Nyquist 且差 3000 Hz 以上：真的 48 kHz 母帶內容通常到 20 kHz 以上，不會誤傷。
++    const measured = result.measured;
++    const narrowByBand = Boolean(
++        measured?.cutoffHz && measured.nyquistHz
++        && measured.cutoffHz <= measured.nyquistHz * 0.8
++        && measured.nyquistHz - measured.cutoffHz >= 3000
++    );
++    const verdict: QualityVerdictLabel = result.ok
++        ? (fake || narrowed || narrowByBand ? 'fakeLossless' : 'trueLossless')
++        : 'unknown';
++    return await store({ ...base, verdict });
 +};
 +
 +/** 把 Hz 縮成列表上看得懂的短字：44100 → 44.1k，48000 → 48k。 */
@@ -3524,22 +3680,23 @@ index 0000000..3e4b56a
 +export const resolveLocalSong = async (songId: string): Promise<LocalSong | undefined> => getLocalSong(songId);
 diff --git a/src/services/audioQuality/qualityProbe.ts b/src/services/audioQuality/qualityProbe.ts
 new file mode 100644
-index 0000000..d4475a1
+index 0000000..09351ac
 --- /dev/null
 +++ b/src/services/audioQuality/qualityProbe.ts
-@@ -0,0 +1,160 @@
+@@ -0,0 +1,415 @@
 +// src/services/audioQuality/qualityProbe.ts
 +// 只讀檔頭：容器「自稱」是幾 kHz、幾 bit，不碰音訊資料。
 +//
 +// Web Audio 的 decodeAudioData 只給回解碼後的 AudioBuffer，取樣率已經被重採樣到 context 的
 +// 取樣率，所以「容器標稱」必須從位元組自己讀，否則量到的 Nyquist 永遠是我們自己選的。
-+// 這裡只處理常見的幾種容器；讀不出來的（m4a、ogg…）交給呼叫端當「無法判斷容器」處理。
++// v0.9.6 起把常見但以前讀不出來的容器也認了：m4a/mp4（AAC、ALAC）、ogg（Vorbis、Opus）、
++// dsf（DSD）。讀不出規格的容器仍然回 null，呼叫端會標成「無法判斷」而不是留白。
 +
 +export interface ContainerProbe {
 +    codec: string;
 +    /** 容器自稱的取樣率（Hz）；0 = 讀不出來。 */
 +    sampleRate: number;
-+    /** 容器自稱的位元（FLAC / WAV / AIFF 才有）；0 = 不知道。 */
++    /** 容器自稱的位元（FLAC / WAV / AIFF / DSF 才有）；0 = 不知道。 */
 +    bitDepth: number;
 +    channels: number;
 +    /** 容器本身是否無損（判斷「假無損」的前提）。 */
@@ -3551,6 +3708,22 @@ index 0000000..d4475a1
 +const MPEG1_RATES = [44100, 48000, 32000];
 +const MPEG2_RATES = [22050, 24000, 16000];
 +const MPEG25_RATES = [11025, 12000, 8000];
++
++const ascii = (bytes: Uint8Array, offset: number, length = 4): string => {
++    let text = '';
++    for (let i = 0; i < length; i += 1) text += String.fromCharCode(bytes[offset + i] ?? 0);
++    return text;
++};
++
++const u16 = (bytes: Uint8Array, offset: number): number => (bytes[offset] | (bytes[offset + 1] << 8));
++const u32 = (bytes: Uint8Array, offset: number): number =>
++    (bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0;
++const i32be = (bytes: Uint8Array, offset: number): number =>
++    ((bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]);
++/** MP4 的 box 內容一律是 big-endian，別跟 DSF / Ogg 的 little-endian 讀法混用。 */
++const be16 = (bytes: Uint8Array, offset: number): number => ((bytes[offset] << 8) | bytes[offset + 1]);
++const be32 = (bytes: Uint8Array, offset: number): number =>
++    ((bytes[offset] * 2 ** 24) + (bytes[offset + 1] << 16) + (bytes[offset + 2] << 8) + bytes[offset + 3]) >>> 0;
 +
 +const probeFlac = (bytes: Uint8Array): ContainerProbe | null => {
 +    if (bytes.length < 34 || bytes[0] !== 0x66 || bytes[1] !== 0x4c || bytes[2] !== 0x61 || bytes[3] !== 0x43) return null;
@@ -3578,9 +3751,9 @@ index 0000000..d4475a1
 +
 +const probeWav = (bytes: Uint8Array): ContainerProbe | null => {
 +    if (bytes.length < 44) return null;
-+    const tag = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
++    const tag = ascii(bytes, 0);
 +    if (tag !== 'RIFF') return null;
-+    if (String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]) !== 'WAVE') return null;
++    if (ascii(bytes, 8) !== 'WAVE') return null;
 +
 +    let offset = 12;
 +    let sampleRate = 0;
@@ -3588,7 +3761,7 @@ index 0000000..d4475a1
 +    let bitDepth = 0;
 +    let dataBytes = 0;
 +    while (offset + 8 <= bytes.length) {
-+        const id = String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
++        const id = ascii(bytes, offset);
 +        const size = bytes[offset + 4] | (bytes[offset + 5] << 8) | (bytes[offset + 6] << 16) | (bytes[offset + 7] << 24);
 +        const body = offset + 8;
 +        if (id === 'fmt ' && body + 16 <= bytes.length) {
@@ -3626,13 +3799,13 @@ index 0000000..d4475a1
 +
 +const probeAiff = (bytes: Uint8Array): ContainerProbe | null => {
 +    if (bytes.length < 12) return null;
-+    if (String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]) !== 'FORM') return null;
-+    const form = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]);
++    if (ascii(bytes, 0) !== 'FORM') return null;
++    const form = ascii(bytes, 8);
 +    if (form !== 'AIFF' && form !== 'AIFC') return null;
 +
 +    let offset = 12;
 +    while (offset + 8 <= bytes.length) {
-+        const id = String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
++        const id = ascii(bytes, offset);
 +        const size = bytes[offset + 4] * 2 ** 24 + bytes[offset + 5] * 2 ** 16 + bytes[offset + 6] * 2 ** 8 + bytes[offset + 7];
 +        const body = offset + 8;
 +        if (id === 'COMM' && body + 18 <= bytes.length) {
@@ -3656,24 +3829,63 @@ index 0000000..d4475a1
 +    return null;
 +};
 +
++const MPEG1_L3_BITRATES = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320];
++const MPEG2_L3_BITRATES = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160];
++const MPEG1_L1_BITRATES = [0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448];
++const MPEG1_L2_BITRATES = [0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384];
++const MPEG2_L1_BITRATES = [0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256];
++
++interface Mp3Frame { versionBits: number; layerBits: number; rateIndex: number; bitrateIndex: number; padding: number; frameLength: number }
++
++const readMp3Frame = (bytes: Uint8Array, i: number): Mp3Frame | null => {
++    if (i + 4 > bytes.length) return null;
++    if (bytes[i] !== 0xff || (bytes[i + 1] & 0xe0) !== 0xe0) return null;
++    const versionBits = (bytes[i + 1] >> 3) & 0x03;
++    const layerBits = (bytes[i + 1] >> 1) & 0x03;
++    const bitrateIndex = (bytes[i + 2] >> 4) & 0x0f;
++    const rateIndex = (bytes[i + 2] >> 2) & 0x03;
++    const padding = (bytes[i + 2] >> 1) & 0x01;
++    if (versionBits === 1 || layerBits === 0 || rateIndex === 3) return null;
++    if (bitrateIndex === 0 || bitrateIndex === 0x0f) return null;
++    const rates = versionBits === 3 ? MPEG1_RATES : versionBits === 2 ? MPEG2_RATES : MPEG25_RATES;
++    const rate = rates[rateIndex];
++    const table = layerBits === 3 ? (versionBits === 3 ? MPEG1_L1_BITRATES : MPEG2_L1_BITRATES)
++        : layerBits === 2 ? MPEG1_L2_BITRATES
++            : (versionBits === 3 ? MPEG1_L3_BITRATES : MPEG2_L3_BITRATES);
++    const bitrate = table[bitrateIndex] * 1000;
++    // Layer I：384 samples/幀；Layer II：1152；Layer III：MPEG1 1152、MPEG2/2.5 576。
++    const samplesPerFrame = layerBits === 3 ? 384 : layerBits === 2 ? 1152 : (versionBits === 3 ? 1152 : 576);
++    const frameLength = Math.floor(samplesPerFrame / 8 * bitrate / rate) + padding;
++    if (frameLength < 4) return null;
++    return { versionBits, layerBits, rateIndex, bitrateIndex, padding, frameLength };
++};
++
 +const probeMp3 = (bytes: Uint8Array): ContainerProbe | null => {
 +    let start = 0;
 +    if (bytes.length > 10 && bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
-+        // ID3v2 標頭 10 bytes，大小是 syncsafe 整數
++        // ID3v2 標頭 10 bytes，大小是 syncsafe 整數；v2.4 可能帶 10 bytes footer。
 +        const size = (bytes[6] & 0x7f) * 2 ** 21 + (bytes[7] & 0x7f) * 2 ** 14 + (bytes[8] & 0x7f) * 2 ** 7 + (bytes[9] & 0x7f);
-+        start = 10 + size;
++        const version = bytes[3];
++        const footer = version >= 4 && (bytes[5] & 0x10) ? 10 : 0;
++        start = 10 + size + footer;
 +    }
-+    const limit = Math.min(bytes.length - 4, start + 4096);
-+    for (let i = start; i < limit; i += 1) {
-+        if (bytes[i] !== 0xff || (bytes[i + 1] & 0xe0) !== 0xe0) continue;
-+        const versionBits = (bytes[i + 1] >> 3) & 0x03;
-+        const layerBits = (bytes[i + 1] >> 1) & 0x03;
-+        const rateIndex = (bytes[i + 2] >> 2) & 0x03;
-+        if (layerBits === 0 || rateIndex === 3) continue;
-+        const rates = versionBits === 3 ? MPEG1_RATES : versionBits === 2 ? MPEG2_RATES : MPEG25_RATES;
++    // 有些檔在 ID3 之後還夾著 APE 標籤或零碎資料，所以往前多找一點（最多 1 MB）。
++    // 但壓縮資料裡出現位元組 0xFF 的機率不低，所以要求「下一幀確實在 frameLength 之後」才算數。
++    const limit = Math.min(bytes.length - 4, Math.max(start + 4096, start + 1024 * 1024));
++    for (let i = Math.max(0, start); i < limit; i += 1) {
++        const frame = readMp3Frame(bytes, i);
++        if (!frame) continue;
++        const next = readMp3Frame(bytes, i + frame.frameLength);
++        const confirmed = next
++            && next.versionBits === frame.versionBits
++            && next.layerBits === frame.layerBits
++            && next.rateIndex === frame.rateIndex;
++        // 檔案太短、切在最後一幀時沒有下一幀可驗：只有在檔案開頭（連續兩幀都讀得到）才放行。
++        if (!confirmed && i > 4096) continue;
++        const rates = frame.versionBits === 3 ? MPEG1_RATES : frame.versionBits === 2 ? MPEG2_RATES : MPEG25_RATES;
 +        return {
 +            codec: 'mp3',
-+            sampleRate: rates[rateIndex],
++            sampleRate: rates[frame.rateIndex],
 +            bitDepth: 0,
 +            channels: ((bytes[i + 3] >> 6) & 0x03) === 3 ? 1 : 2,
 +            lossless: false,
@@ -3683,10 +3895,209 @@ index 0000000..d4475a1
 +    return null;
 +};
 +
++// ---------------------------------------------------------------- MP4 / M4A
++
++const MP4_AUDIO_CODECS: Record<string, { lossless: boolean }> = {
++    mp4a: { lossless: false },
++    alac: { lossless: true },
++    'ac-3': { lossless: false },
++    'ec-3': { lossless: false },
++    fLaC: { lossless: true },
++    Opus: { lossless: false },
++    sowt: { lossless: true },
++    lpcm: { lossless: true },
++};
++
++const findBox = (bytes: Uint8Array, from: number, to: number, type: string): { start: number; end: number } | null => {
++    let offset = from;
++    while (offset + 8 <= to) {
++        let size = i32be(bytes, offset);
++        const boxType = ascii(bytes, offset + 4);
++        let headerSize = 8;
++        if (size === 1) {
++            // 64-bit largesize
++            if (offset + 16 > to) return null;
++            size = i32be(bytes, offset + 8) * 2 ** 32 + (i32be(bytes, offset + 12) >>> 0);
++            headerSize = 16;
++        } else if (size === 0) {
++            size = to - offset;
++        }
++        if (size < headerSize) return null;
++        const start = offset + headerSize;
++        const end = Math.min(to, offset + size);
++        if (boxType === type) return { start, end };
++        offset += size;
++    }
++    return null;
++};
++
++const probeMp4 = (bytes: Uint8Array): ContainerProbe | null => {
++    if (bytes.length < 16) return null;
++    // moov 可能在檔頭（faststart）也可能在檔尾（ffmpeg 預設）。檔尾視窗沒有 ftyp，
++    // 所以這裡不強求 ftyp，只要求找得到 moov。
++
++    // moov 可能在檔頭（faststart），也可能在檔尾；這裡只讀得到檔頭，讀不到就交給呼叫端加大視窗。
++    const moov = findBox(bytes, 0, bytes.length, 'moov');
++    if (!moov) return null;
++
++    let sampleRate = 0;
++    let channels = 0;
++    let bitDepth = 0;
++    let codec = '';
++    let lossless = false;
++    let durationSec: number | null = null;
++
++    const mvhd = findBox(bytes, moov.start, moov.end, 'mvhd');
++    if (mvhd) {
++        const version = bytes[mvhd.start];
++        const cursor = mvhd.start + 4 + (version === 1 ? 16 : 8);
++        const timescale = be32(bytes, cursor);
++        const duration = version === 1
++            ? (be32(bytes, cursor + 8) * 2 ** 32 + be32(bytes, cursor + 12))
++            : be32(bytes, cursor + 4);
++        if (timescale) durationSec = duration / timescale;
++    }
++
++    const trak = findBox(bytes, moov.start, moov.end, 'trak');
++    const mdia = trak ? findBox(bytes, trak.start, trak.end, 'mdia') : null;
++    const minf = mdia ? findBox(bytes, mdia.start, mdia.end, 'minf') : null;
++    const stbl = minf ? findBox(bytes, minf.start, minf.end, 'stbl') : null;
++    const stsd = stbl ? findBox(bytes, stbl.start, stbl.end, 'stsd') : null;
++    if (stsd) {
++        // stsd：version/flags 4 bytes + entryCount 4 bytes，之後是 sample entry。
++        const entryStart = stsd.start + 8;
++        const entryEnd = Math.min(stsd.end, bytes.length);
++        if (entryStart + 36 <= entryEnd) {
++            const entryType = ascii(bytes, entryStart + 4);
++            if (MP4_AUDIO_CODECS[entryType]) {
++                codec = entryType === 'mp4a' ? 'aac' : entryType.toLowerCase();
++                lossless = MP4_AUDIO_CODECS[entryType].lossless;
++                // AudioSampleEntry（起點＝entryStart，前面 8 bytes 是 size+type）：
++                // +8 6 reserved、+14 dataRefIndex、+16 version、+18 revision、+20 vendor(4)、
++                // +24 channels、+26 sampleSize、+28 compressionId、+30 packetSize、+32 sampleRate(16.16)
++                channels = be16(bytes, entryStart + 24);
++                bitDepth = be16(bytes, entryStart + 26);
++                sampleRate = Math.round(be32(bytes, entryStart + 32) / 65536);
++            }
++        }
++    }
++
++    if (!sampleRate) return null;
++    return {
++        codec: codec || 'mp4',
++        sampleRate,
++        bitDepth,
++        channels,
++        lossless,
++        durationSec,
++    };
++};
++
++// ---------------------------------------------------------------- Ogg
++
++const probeOgg = (bytes: Uint8Array): ContainerProbe | null => {
++    if (bytes.length < 64 || ascii(bytes, 0) !== 'OggS') return null;
++    // 第一頁的 payload 緊接在 segment table 之後。
++    const segments = bytes[26];
++    const payload = 27 + segments;
++    if (payload + 16 > bytes.length) return null;
++
++    if (ascii(bytes, payload + 1, 6) === 'vorbis') {
++        // 0x01 'vorbis' version(4) channels(1) sampleRate(4)
++        const channels = bytes[payload + 11];
++        const sampleRate = u32(bytes, payload + 12);
++        if (!sampleRate) return null;
++        return {
++            codec: 'vorbis', sampleRate, bitDepth: 0, channels, lossless: false,
++            durationSec: null,
++        };
++    }
++    if (ascii(bytes, payload, 8) === 'OpusHead') {
++        // OpusHead version(1) channels(1) preskip(2) inputSampleRate(4)
++        const channels = bytes[payload + 9];
++        const inputRate = u32(bytes, payload + 12);
++        return {
++            codec: 'opus',
++            // Opus 內部一律 48 kHz；標稱的 input rate 只是原始素材的提示。
++            sampleRate: inputRate || 48000,
++            bitDepth: 0,
++            channels: channels || 2,
++            lossless: false,
++            durationSec: null,
++        };
++    }
++    return null;
++};
++
++// ---------------------------------------------------------------- DSD
++
++const probeDsf = (bytes: Uint8Array): ContainerProbe | null => {
++    if (bytes.length < 64 || ascii(bytes, 0) !== 'DSD ') return null;
++    let offset = 28; // 'DSD ' chunk（28 bytes：id+size+fileSize+metadataPtr）
++    while (offset + 12 <= bytes.length) {
++        const id = ascii(bytes, offset);
++        // DSF 的 chunk 大小是 8 bytes little-endian 的「整個 chunk 長度」
++        const size = bytes[offset + 4] | (bytes[offset + 5] << 8) | (bytes[offset + 6] << 16) | (bytes[offset + 7] << 24);
++        const body = offset + 12;
++        if (id === 'fmt ') {
++            const channels = u32(bytes, body + 8);
++            const sampleRate = u32(bytes, body + 12);
++            const bitDepth = u32(bytes, body + 16);
++            const sampleCount = u32(bytes, body + 24) * 2 ** 32 + u32(bytes, body + 20);
++            if (!sampleRate) return null;
++            return {
++                codec: 'dsd',
++                sampleRate,
++                bitDepth: bitDepth || 1,
++                channels: channels || 2,
++                lossless: true,
++                durationSec: sampleCount ? sampleCount / sampleRate : null,
++            };
++        }
++        if (size <= 0) break;
++        offset += size;
++    }
++    return null;
++};
++
++const probeDff = (bytes: Uint8Array): ContainerProbe | null => {
++    if (bytes.length < 32 || ascii(bytes, 0) !== 'FRM8') return null;
++    if (ascii(bytes, 12) !== 'DSD ') return null;
++    // 找 PROP 底下的 SND 裡的 FS  （取樣率）與 CHNL（聲道）。
++    let sampleRate = 0;
++    let channels = 0;
++    for (let i = 16; i + 4 <= Math.min(bytes.length, 4096); i += 1) {
++        const id = ascii(bytes, i);
++        if (id === 'FS  ') {
++            const value = (bytes[i + 4] << 24 >>> 0) + (bytes[i + 5] << 16) + (bytes[i + 6] << 8) + bytes[i + 7];
++            sampleRate = value;
++        } else if (id === 'CHNL') {
++            channels = (bytes[i + 8] << 8) | bytes[i + 9];
++        }
++    }
++    if (!sampleRate) return null;
++    return {
++        codec: 'dsd', sampleRate, bitDepth: 1, channels: channels || 2, lossless: true, durationSec: null,
++    };
++};
++
++/** 檔尾視窗：沒有 faststart 的 m4a 把 moov 放在最後，只讀尾巴也要能認出來。 */
++export const probeContainerFromTail = (buffer: ArrayBuffer): ContainerProbe | null =>
++    probeMp4(new Uint8Array(buffer, 0, buffer.byteLength));
++
 +/** 讀檔頭得到容器自稱的規格；讀不出來時回 null。 */
 +export const probeContainer = (buffer: ArrayBuffer): ContainerProbe | null => {
-+    const bytes = new Uint8Array(buffer, 0, Math.min(buffer.byteLength, 64 * 1024));
-+    return probeFlac(bytes) ?? probeWav(bytes) ?? probeAiff(bytes) ?? probeMp3(bytes);
++    const bytes = new Uint8Array(buffer, 0, buffer.byteLength);
++    // 先用 magic 決定走哪一支：壓縮過的音訊資料很容易「看起來像」MP3 幀，
++    // 所以認得 magic 的容器就不再往下試 MP3，避免把 m4a 標成 44.1k 有損。
++    if (ascii(bytes, 4) === 'ftyp') return probeMp4(bytes);
++    if (ascii(bytes, 0) === 'OggS') return probeOgg(bytes);
++    if (ascii(bytes, 0) === 'DSD ') return probeDsf(bytes);
++    if (ascii(bytes, 0) === 'FRM8') return probeDff(bytes);
++    return probeFlac(bytes)
++        ?? probeWav(bytes)
++        ?? probeAiff(bytes)
++        ?? probeMp3(bytes);
 +};
 diff --git a/src/services/audioQuality/qualitySpectrum.ts b/src/services/audioQuality/qualitySpectrum.ts
 new file mode 100644
@@ -3982,7 +4393,7 @@ index 0000000..df20d8f
 +    }
 +}
 diff --git a/src/services/localMusicService.ts b/src/services/localMusicService.ts
-index 26a0181..2792fed 100644
+index 26a0181..16e3879 100644
 --- a/src/services/localMusicService.ts
 +++ b/src/services/localMusicService.ts
 @@ -30,6 +30,15 @@ import { hasLocalCoverBinary } from './localCoverBinaryStore';
@@ -4492,7 +4903,7 @@ index 26a0181..2792fed 100644
      } catch (error) {
          console.error('[LocalMusic] Failed to read local bytes:', error);
          fileHandleMap.delete(song.id);
-@@ -1789,6 +2193,35 @@ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuf
+@@ -1789,6 +2193,44 @@ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuf
      }
  }
  
@@ -4512,13 +4923,22 @@ index 26a0181..2792fed 100644
 + * 整首讀進來（FLAC 動輒五十 MB）只為了看檔頭，列表一滾就把記憶體吃光，所以切一段就好。
 + */
 +export async function getLocalSongHeaderBytes(song: LocalSong, byteLength = 65536): Promise<ArrayBuffer | null> {
++    return await getLocalSongRangeBytes(song, 0, byteLength);
++}
++
++/**
++ * 讀檔案的一段位元組（v0.9.6）：「真假無損」只需要 20 秒中段，不必把整首幾十 MB 拉進來解碼。
++ * 連結模式走原生層的 Range（任意起點都支援），本機／匯入的檔案直接 slice。
++ */
++export async function getLocalSongRangeBytes(song: LocalSong, startAt = 0, byteLength = 65536): Promise<ArrayBuffer | null> {
 +    if (song.linkedFilePath) {
-+        return await fetchNativeRange(song.linkedFilePath, byteLength);
++        return await fetchNativeRange(song.linkedFilePath, byteLength, startAt);
 +    }
 +    const file = await readLocalSongFile(song);
 +    if (!file) return null;
++    const start = Math.max(0, Math.min(startAt, file.size));
 +    try {
-+        return await file.slice(0, Math.min(byteLength, file.size)).arrayBuffer();
++        return await file.slice(start, Math.min(start + byteLength, file.size)).arrayBuffer();
 +    } catch (error) {
 +        console.error('[LocalMusic] Failed to read header bytes:', error);
 +        return null;
@@ -4528,7 +4948,7 @@ index 26a0181..2792fed 100644
  // Extracts and persists one song's embedded cover after an explicit playback-time request.
  async function extractAndPersistSongCover(
      song: LocalSong,
-@@ -1880,6 +2313,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
+@@ -1880,6 +2322,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
      await Promise.all([
          dbDeleteLocalSongs(uniqueSongIds),
          ...uniqueSongIds.map(id => removeCachedCover(`cover_local_${id}`)),
@@ -4538,10 +4958,10 @@ index 26a0181..2792fed 100644
      await Promise.all(Array.from(affectedRoots).map(cleanupDirHandleIfUnused));
 diff --git a/src/services/nativeLinkedStorage.ts b/src/services/nativeLinkedStorage.ts
 new file mode 100644
-index 0000000..c85967d
+index 0000000..b6ebc81
 --- /dev/null
 +++ b/src/services/nativeLinkedStorage.ts
-@@ -0,0 +1,220 @@
+@@ -0,0 +1,224 @@
 +// src/services/nativeLinkedStorage.ts
 +// 「連結模式」的 JS 側：把 Android 原生層（FoliaNativeStorage.java）的介面收斂成幾個型別安全的函式。
 +//
@@ -4736,12 +5156,16 @@ index 0000000..c85967d
 +    return `http://127.0.0.1:${port}${coverRelativePath}`;
 +};
 +
-+/** 只讀檔頭：音質欄的取樣率／位深用，避免為了看 64 KB 把整首 50 MB 拉進來。 */
-+export const fetchNativeRange = async (filePath: string, byteLength: number): Promise<ArrayBuffer | null> => {
++/**
++ * 只讀檔頭或中段：音質欄的取樣率／位深只讀 64 KB；真假無損量測則取中間一段（自訂起點），
++ * 避免為了看檔頭或量 20 秒把整首 50 MB 拉進來。
++ */
++export const fetchNativeRange = async (filePath: string, byteLength: number, startAt = 0): Promise<ArrayBuffer | null> => {
 +    const url = nativeAudioUrl(filePath);
 +    if (!url) return null;
++    const start = Math.max(0, Math.floor(startAt));
 +    try {
-+        const response = await fetch(url, { headers: { Range: `bytes=0-${Math.max(0, byteLength - 1)}` } });
++        const response = await fetch(url, { headers: { Range: `bytes=${start}-${start + Math.max(0, byteLength - 1)}` } });
 +        if (!response.ok && response.status !== 206) return null;
 +        return await response.arrayBuffer();
 +    } catch (error) {
