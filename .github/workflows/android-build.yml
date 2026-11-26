@@ -195,41 +195,27 @@ jobs:
         run: |
           set -e
           cp ../../folia-release.jks ../folia-release.jks
-          python3 - app/build.gradle <<'PY'
-          import re, os, sys
-          path = sys.argv[1]
+          python3 - <<'PY'
+          import re, os
+          path = 'app/build.gradle'
           src = open(path).read()
           run_number = int(os.environ.get('GITHUB_RUN_NUMBER', '0') or 0)
-
-          signing = """    signingConfigs {
-        folia {
-            storeFile file("../../folia-release.jks")
-            storePassword "folia-car-2026"
-            keyAlias "folia"
-            keyPassword "folia-car-2026"
-        }
-    }
-"""
+          signing = '    signingConfigs {\n        folia {\n            storeFile file("../../folia-release.jks")\n            storePassword "folia-car-2026"\n            keyAlias "folia"\n            keyPassword "folia-car-2026"\n        }\n    }\n'
           if 'signingConfigs {' not in src:
               src = src.replace('android {', 'android {\n' + signing, 1)
-
-          # versionCode 必須單調遞增，否則同樣會逼使用者先移除再裝。
           src = re.sub(r'versionCode\s+\d+', 'versionCode ' + str(1000 + run_number), src, count=1)
-
-          build_types = re.search(r'buildTypes\s*{', src)
-          if build_types:
-              body_start = build_types.end()
+          m = re.search(r'buildTypes\s*{', src)
+          if m:
+              body_start = m.end()
               if 'debug {' not in src[body_start:]:
-                  src = src[:body_start] + """
-        debug {
-            signingConfig signingConfigs.folia
-        }""" + src[body_start:]
-          # release 已經存在，只補一行，避免重複定義同一個 buildType。
-          src = re.sub(r'(release\s*{)', r'\1\n            signingConfig signingConfigs.folia', src, count=1)
+                  dbg = '\n        debug {\n            signingConfig signingConfigs.folia\n        }'
+                  src = src[:body_start] + dbg + src[body_start:]
+          if not re.search(r'release\s*{\s*\n\s*signingConfig', src):
+              src = re.sub(r'(release\s*{)', r'\1\n            signingConfig signingConfigs.folia', src, count=1)
           open(path, 'w').write(src)
-          print(src[src.index('android {'):src.index('android {') + 800])
+          print(src[src.index('android {'):src.index('android {') + 900])
           PY
-          grep -n "versionCode\|signingConfig" app/build.gradle | head -10
+          grep -n 'versionCode\|signingConfig' app/build.gradle | head -10
 
       - name: Build debug APK (installable)
         working-directory: folia/android
