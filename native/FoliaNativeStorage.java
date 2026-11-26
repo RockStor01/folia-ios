@@ -147,7 +147,14 @@ public class FoliaNativeStorage {
         });
     }
 
-    /** 可讀的儲存空間：內建 + 外接（USB 隨身碟會出現在 /storage/<UUID>）。 */
+    /**
+     * 可讀的儲存空間：內建 + 外接（USB／SD）。
+     *
+     * 為什麼不只列 /storage：車機上 USB 常被掛在別的點（/mnt/media_rw/<UUID>），而且
+     * /storage/<UUID> 不一定 canRead()。最可靠的是問系統「這個 App 在各個 volume 上的私有目錄」，
+     * 那是 /storage/<UUID>/Android/data/<pkg>/files 這種路徑，把 "/Android/" 之後切掉就是 volume 根。
+     * 這條路不需要任何權限就會回，剛好可以拿來找出「有哪些 volume 存在」。
+     */
     @JavascriptInterface
     public String roots() {
         JSONArray roots = new JSONArray();
@@ -156,28 +163,87 @@ public class FoliaNativeStorage {
             File internal = Environment.getExternalStorageDirectory();
             if (internal != null && internal.isDirectory()) {
                 seen.add(internal.getAbsolutePath());
-                roots.put(volume(internal.getAbsolutePath(), "內建儲存"));
+                roots.put(volume(internal.getAbsolutePath(), "內建儲存", internal.canRead()));
             }
-            File storage = new File("/storage");
-            File[] children = storage.listFiles();
-            if (children != null) {
-                Arrays.sort(children);
-                for (File child : children) {
-                    if (!child.isDirectory()) continue;
-                    String path = child.getAbsolutePath();
-                    if (seen.contains(path)) continue;
-                    String name = child.getName();
-                    // emulated（就是內建儲存，已經放過）、self（本 App 私有目錄）都跳過。
-                    if (name.equals("emulated") || name.equals("self")) continue;
-                    if (!child.canRead()) continue;
-                    seen.add(path);
-                    roots.put(volume(path, name));
+
+            // 1) 系統回報的每個 volume（含外接），從 App 私有目錄推回 volume 根。
+            try {
+                File[] appDirs = context.getExternalFilesDirs(null);
+                if (appDirs != null) {
+                    for (File appDir : appDirs) {
+                        if (appDir == null) continue;
+                        String path = appDir.getAbsolutePath();
+                        int cut = path.indexOf("/Android/");
+                        if (cut <= 0) continue;
+                        String rootPath = path.substring(0, cut);
+                        if (seen.contains(rootPath)) continue;
+                        File root = new File(rootPath);
+                        if (!root.isDirectory()) continue;
+                        seen.add(rootPath);
+                        roots.put(volume(rootPath, labelFor(rootPath), root.canRead()));
+                    }
                 }
+            } catch (Throwable error) {
+                android.util.Log.w("FoliaNativeStorage", "getExternalFilesDirs failed: " + error);
             }
+
+            // 2) /storage 底下沒被上面抓到的（某些車機會直接掛在那裡）。
+            collectVolumeRoots(new File("/storage"), roots, seen, 0);
+            // 3) USB 實際的掛載點。
+            collectVolumeRoots(new File("/mnt/media_rw"), roots, seen, 0);
+            // 4) 有些 ROM 用 /udisk、/usb。
+            collectVolumeRoots(new File("/mnt/usb"), roots, seen, 0);
+            collectVolumeRoots(new File("/udisk"), roots, seen, 0);
         } catch (Throwable error) {
             android.util.Log.e("FoliaNativeStorage", "roots failed", error);
         }
         return roots.toString();
+    }
+
+    /** 只往下挖兩層找目錄，用來撿 /storage、/mnt/media_rw 這種容器底下的 volume。 */
+    private void collectVolumeRoots(File container, JSONArray roots, List<String> seen, int depth) {
+        if (depth > 1 || !container.isDirectory()) return;
+        File[] children = container.listFiles();
+        if (children == null) return;
+        Arrays.sort(children);
+        for (File child : children) {
+            if (!child.isDirectory()) continue;
+            String name = child.getName();
+            if (name.equals("emulated") || name.equals("self")) {
+                // emulated 是內建儲存（上面已經放過），但 /storage/emulated/0 也是合法路徑。
+                continue;
+            }
+            String path = child.getAbsolutePath();
+            File[] grandchildren = child.listFiles();
+            if (grandchildren == null || grandchildren.length == 0) {
+                // 空目錄多半是沒掛載的殘骸，但還是留著讓使用者自己點進去看看。
+                if (!seen.contains(path)) {
+                    seen.add(path);
+                    try {
+                        roots.put(volume(path, labelFor(path), child.canRead()));
+                    } catch (Exception ignored) {
+                    }
+                }
+                continue;
+            }
+            if (!seen.contains(path)) {
+                seen.add(path);
+                try {
+                    roots.put(volume(path, labelFor(path), child.canRead()));
+                } catch (Exception ignored) {
+                }
+            }
+            collectVolumeRoots(child, roots, seen, depth + 1);
+        }
+    }
+
+    private static String labelFor(String path) {
+        String name = path.substring(path.lastIndexOf('/') + 1);
+        if (name.isEmpty()) name = path;
+        // UUID 樣式的卷宗（1234-ABCD）直接標成外接裝置，對使用者比較好認。
+        if (name.matches("[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}")) return "外接儲存（" + name + "）";
+        if (name.equals("0") || name.equals("sdcard0")) return "內建儲存";
+        return name;
     }
 
     /** 單層列目錄：只回子目錄與音檔，夠 JS 做一個檔案瀏覽器。 */
@@ -338,10 +404,11 @@ public class FoliaNativeStorage {
         return entry;
     }
 
-    private JSONObject volume(String path, String label) throws Exception {
+    private JSONObject volume(String path, String label, boolean readable) throws Exception {
         JSONObject object = new JSONObject();
         object.put("name", label);
         object.put("path", path);
+        object.put("readable", readable);
         return object;
     }
 

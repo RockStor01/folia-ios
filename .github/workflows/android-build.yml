@@ -127,6 +127,10 @@ jobs:
                    '  <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />\n')
           if 'MANAGE_EXTERNAL_STORAGE' not in src:
               src = src.replace('<application', perms + '  <application', 1)
+          # Android 10 的車機：targetSdk 34 在 10 上會強制 scoped storage，直接讀 /storage/<UUID> 會被拒。
+          # requestLegacyExternalStorage 只在 Android 10 生效，11+ 由 MANAGE_EXTERNAL_STORAGE 接手。
+          if 'requestLegacyExternalStorage' not in src:
+              src = src.replace('<application', '<application android:requestLegacyExternalStorage="true"', 1)
           open(path, 'w').write(src)
           print(src[:600])
           PY

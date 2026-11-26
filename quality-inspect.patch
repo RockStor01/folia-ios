@@ -580,10 +580,10 @@ index 0000000..8b22e15
 +export default SpectrumChart;
 diff --git a/src/components/local/LinkedFolderPicker.tsx b/src/components/local/LinkedFolderPicker.tsx
 new file mode 100644
-index 0000000..13d3b4a
+index 0000000..b7e1f44
 --- /dev/null
 +++ b/src/components/local/LinkedFolderPicker.tsx
-@@ -0,0 +1,168 @@
+@@ -0,0 +1,195 @@
 +// src/components/local/LinkedFolderPicker.tsx
 +// 車機「連結模式」的資料夾選擇器：選一個原生目錄，之後只登記路徑、不複製檔案。
 +//
@@ -613,6 +613,7 @@ index 0000000..13d3b4a
 +    path: string;
 +    dirs: NativeStorageDir[];
 +    files: NativeStorageFile[];
++    error?: string;
 +}
 +
 +const PermissionGate: React.FC<{ onGranted: () => void }> = ({ onGranted }) => {
@@ -658,8 +659,16 @@ index 0000000..13d3b4a
 +
 +    const enter = useCallback((path: string, name: string) => {
 +        const listing = listStorageDirectory(path);
-+        setFolder({ name, path, dirs: listing.dirs, files: listing.files });
++        setFolder({ name, path, dirs: listing.dirs, files: listing.files, error: listing.error });
 +    }, []);
++    // 自動探測撈不到的時候（車機把 USB 掛在奇怪的地方），留一條手動輸入路徑的路。
++    const [manualPath, setManualPath] = useState('');
++    const goManual = useCallback(() => {
++        const value = manualPath.trim();
++        if (!value) return;
++        setManualPath('');
++        enter(value, value.split('/').filter(Boolean).pop() ?? value);
++    }, [enter, manualPath]);
 +
 +    const goUp = useCallback(() => {
 +        if (!folder) return;
@@ -695,7 +704,10 @@ index 0000000..13d3b4a
 +                                <button type="button" onClick={goUp} className="mb-2 block text-sm opacity-70 hover:opacity-100">
 +                                    {`← ${t('localMusic.linkedUpFolder')}`}
 +                                </button>
-+                                {folder.dirs.length === 0 && folder.files.length === 0 ? (
++                                {folder.error ? (
++                                    <p className="py-2 text-sm text-amber-300/90">{t('localMusic.linkedUnreadable')}</p>
++                                ) : null}
++                                {!folder.error && folder.dirs.length === 0 && folder.files.length === 0 ? (
 +                                    <p className="py-3 text-sm opacity-60">{t('localMusic.linkedEmptyFolder')}</p>
 +                                ) : null}
 +                                <ul className="mb-3 flex flex-col">
@@ -736,12 +748,27 @@ index 0000000..13d3b4a
 +                                            onClick={() => enter(root.path, root.name)}
 +                                            className="w-full break-all py-1.5 text-left text-sm hover:bg-white/10"
 +                                        >
-+                                            {`${root.name}（${root.path}）`}
++                                            {`${root.name}（${root.path}）${root.readable === false ? '  ⚠' : ''}`}
 +                                        </button>
 +                                    </li>
 +                                ))}
 +                            </ul>
 +                        )}
++
++                        {!folder ? (
++                            <div className="mt-3 flex items-center gap-2">
++                                <input
++                                    value={manualPath}
++                                    onChange={event => setManualPath(event.target.value)}
++                                    onKeyDown={event => { if (event.key === 'Enter') goManual(); }}
++                                    placeholder="/storage/1234-5678"
++                                    className="min-w-0 flex-1 border border-white/20 bg-transparent px-2 py-1 text-sm outline-none"
++                                />
++                                <button type="button" onClick={goManual} className="border border-white/30 px-2 py-1 text-sm hover:bg-white/10">
++                                    {`[${t('localMusic.linkedGoToPath')}]`}
++                                </button>
++                            </div>
++                        ) : null}
 +
 +                        <p className="mt-3 text-xs opacity-40">{t('localMusic.linkedFolderHint')}</p>
 +                    </>
@@ -1168,7 +1195,7 @@ index 0000000..8e34f78
 +    return rows;
 +};
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..087e613 100644
+index 86f3b6d..41f5926 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -1339,7 +1366,7 @@ index 86f3b6d..087e613 100644
      "minimizeToTray": "Minimize to tray",
      "closeToTray": "Close window to tray",
      "closeToTrayDesc": "The close button hides the window to the tray instead of quitting",
-@@ -5242,8 +5224,30 @@ export default {
+@@ -5242,8 +5224,32 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -1354,7 +1381,9 @@ index 86f3b6d..087e613 100644
 +    "linkedPickFolder": "Choose a folder to read",
 +    "linkedUseThisFolder": "Link this folder",
 +    "linkedUpFolder": "Up one level",
-+    "linkedNoFolder": "No readable storage found",
++    "linkedNoFolder": "No readable storage was detected — type a path below.",
++    "linkedGoToPath": "Go",
++    "linkedUnreadable": "Cannot read this path: not mounted, or access denied (common on Android 10 head units).",
 +    "linkedEmptyFolder": "No audio files in this folder",
 +    "linkedFoundCount": "{{count}} audio file(s) in this folder",
 +    "linkedFailedProbe": "Some files could not be read (they may have moved) and were skipped.",
@@ -1370,7 +1399,7 @@ index 86f3b6d..087e613 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6057,13 @@ export default {
+@@ -6053,8 +6059,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -1386,7 +1415,7 @@ index 86f3b6d..087e613 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..f2be4de 100644
+index 0067e9a..4bc9c57 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -1487,7 +1516,7 @@ index 0067e9a..f2be4de 100644
      "minimizeToTray": "最小化到托盘",
      "closeToTray": "关闭窗口时隐藏到托盘",
      "closeToTrayDesc": "点关闭按钮时不退出，隐藏到托盘继续播放",
-@@ -5242,8 +5294,30 @@ export default {
+@@ -5242,8 +5294,32 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -1502,7 +1531,9 @@ index 0067e9a..f2be4de 100644
 +    "linkedPickFolder": "选择要读取的文件夹",
 +    "linkedUseThisFolder": "导入这个文件夹",
 +    "linkedUpFolder": "上一层",
-+    "linkedNoFolder": "没有可读取的储存空间",
++    "linkedNoFolder": "没有自动找到可读取的储存空间，可以在下面手动输入路径",
++    "linkedGoToPath": "前往",
++    "linkedUnreadable": "读不到这个路径：可能没挂载、或权限不足（Android 10 的车机常见）。",
 +    "linkedEmptyFolder": "这个文件夹里没有音频文件",
 +    "linkedFoundCount": "这个文件夹有 {{count}} 首音频",
 +    "linkedFailedProbe": "有几首读不到标签（文件可能已被移走），已跳过。",
@@ -1518,7 +1549,7 @@ index 0067e9a..f2be4de 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6125,13 @@ export default {
+@@ -6051,8 +6127,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -3756,10 +3787,10 @@ index 26a0181..e065a12 100644
      await Promise.all(Array.from(affectedRoots).map(cleanupDirHandleIfUnused));
 diff --git a/src/services/nativeLinkedStorage.ts b/src/services/nativeLinkedStorage.ts
 new file mode 100644
-index 0000000..dad8889
+index 0000000..35e8de1
 --- /dev/null
 +++ b/src/services/nativeLinkedStorage.ts
-@@ -0,0 +1,197 @@
+@@ -0,0 +1,199 @@
 +// src/services/nativeLinkedStorage.ts
 +// 「連結模式」的 JS 側：把 Android 原生層（FoliaNativeStorage.java）的介面收斂成幾個型別安全的函式。
 +//
@@ -3770,6 +3801,8 @@ index 0000000..dad8889
 +export interface NativeStorageRoot {
 +    name: string;
 +    path: string;
++    /** 原生層能不能列這個目錄（不能通常是沒掛載或權限不足，仍讓使用者點進去看到原因）。 */
++    readable?: boolean;
 +}
 +
 +export interface NativeStorageDir {
@@ -3863,12 +3896,12 @@ index 0000000..dad8889
 +    }
 +};
 +
-+export const listStorageDirectory = (dirPath: string): { dirs: NativeStorageDir[]; files: NativeStorageFile[] } => {
++export const listStorageDirectory = (dirPath: string): { dirs: NativeStorageDir[]; files: NativeStorageFile[]; error?: string } => {
 +    try {
 +        const raw = bridge()?.list(dirPath);
 +        if (!raw) return { dirs: [], files: [] };
-+        const payload = parse<{ dirs?: NativeStorageDir[]; files?: NativeStorageFile[] }>(raw, {});
-+        return { dirs: payload.dirs ?? [], files: payload.files ?? [] };
++        const payload = parse<{ dirs?: NativeStorageDir[]; files?: NativeStorageFile[]; error?: string }>(raw, {});
++        return { dirs: payload.dirs ?? [], files: payload.files ?? [], error: payload.error };
 +    } catch (error) {
 +        console.warn('[LinkedStorage] list failed', error);
 +        return { dirs: [], files: [] };
