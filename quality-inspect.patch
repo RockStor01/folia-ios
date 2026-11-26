@@ -21,7 +21,7 @@ index 39ec48c..114cb4d 100644
      <script src="/runtime-config.js"></script>
    <script type="importmap">
 diff --git a/package.json b/package.json
-index 6976461..4e9ab19 100644
+index 6976461..971d268 100644
 --- a/package.json
 +++ b/package.json
 @@ -8,7 +8,7 @@
@@ -29,7 +29,7 @@ index 6976461..4e9ab19 100644
    },
    "private": true,
 -  "version": "0.8.0",
-+  "version": "0.9.13",
++  "version": "0.9.14",
    "license": "AGPL-3.0",
    "type": "module",
    "main": "electron/main.cjs",
@@ -998,7 +998,7 @@ index 5de4bf3..af66827 100644
      );
  };
 diff --git a/src/components/modal/newFeaturesRelease.ts b/src/components/modal/newFeaturesRelease.ts
-index e49a39c..5d21c50 100644
+index e49a39c..b5472db 100644
 --- a/src/components/modal/newFeaturesRelease.ts
 +++ b/src/components/modal/newFeaturesRelease.ts
 @@ -1,4 +1,4 @@
@@ -1022,7 +1022,7 @@ index e49a39c..5d21c50 100644
  export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
 -    i18nKey: 'releaseNotes.v0_8_0',
 -    majorUpdate: { codename: 'Severance' },
-+    i18nKey: 'releaseNotes.v0_9_13',
++    i18nKey: 'releaseNotes.v0_9_14',
      features: [
 -        { id: 'sourceMods', icon: Puzzle },
 -        { id: 'modMarket', icon: Store },
@@ -1030,9 +1030,9 @@ index e49a39c..5d21c50 100644
 -        { id: 'moments', icon: MessageSquareText },
 -        { id: 'stemMixer', icon: SlidersVertical },
 -        { id: 'moreDetails', icon: Sparkles },
-+        { id: 'mozjibake', icon: SpellCheck },
++        { id: 'rawTags', icon: FileAudio },
      ],
-+    fixes: ['roundtrip', 'gate', 'safe'],
++    fixes: ['bytes', 'intro', 'backfill'],
  };
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
@@ -2046,7 +2046,7 @@ index 2f367df..361d5da 100644
              enabled
              && window.electron?.requestTranscodeFallback
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..ea6b33c 100644
+index 86f3b6d..61edd27 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -2250,10 +2250,22 @@ index 86f3b6d..ea6b33c 100644
      "transcodeFallbackDesc": "Converts tracks that cannot be decoded with FFmpeg. The file is not changed.",
      "playbackFade": "Fade on pause and resume",
      "playbackFadeDesc": "Fades out before pausing and back in on resume.",
-@@ -4513,6 +4506,195 @@ export default {
+@@ -4513,6 +4506,207 @@ export default {
      "noDescription": "No description available",
    },
    "releaseNotes": {
++    "v0_9_14": {
++      "intro": "0.9.14 stops repairing strings after the fact: titles, artists and albums are read from the file's raw tag bytes and decoded with the encoding the tag itself declares, so � garbage never reaches the library.",
++      "rawTags": {
++        "title": "Fix mojibake at the source: parse raw tag bytes",
++        "description": "The system metadata reader guesses a charset; when it guesses wrong the bytes are dropped into � and no later repair can bring them back. This release parses ID3v2 TIT2/TPE1/TALB (Latin-1, UTF-16, UTF-16BE, UTF-8), FLAC VORBIS_COMMENT and MP4 ilst ©nam/©ART/©alb itself. Tags that claim Latin-1 but hold GBK bytes are retried as GB18030/Big5. Existing library entries with � are re-read from the file in background batches of 25 on startup.",
++      },
++      "fixes": {
++        "bytes": "Raw tag parsing for MP3, FLAC and M4A instead of trusting the system decoder.",
++        "intro": "Import replaces � titles/artists/albums by re-reading the raw tags on the spot.",
++        "backfill": "Old entries heal in background after startup; no re-import needed.",
++      }
++    },
 +    "v0_9_13": {
 +      "intro": "0.9.13 takes another pass at mojibake: titles that already look like Chinese but were decoded wrong (“鍛ㄦ澃浼” for 周杰伦, “澶滄洸” for 夜曲) are mapped back to GBK/Big5 bytes and re-decoded as UTF-8.",
 +      "mozjibake": {
@@ -2446,7 +2458,7 @@ index 86f3b6d..ea6b33c 100644
      "v0_7_0": {
        "intro": "Here are the new features and improvements in version 0.7.0.",
        "temperaVisualExpansion": {
-@@ -5228,6 +5410,10 @@ export default {
+@@ -5228,6 +5422,10 @@ export default {
      "capsuleOpensPalette": "Click to open the command palette",
    },
    "localMusic": {
@@ -2457,7 +2469,7 @@ index 86f3b6d..ea6b33c 100644
      "foldersAndPlaylists": "Folders",
      "albums": "Albums",
      "artists": "Artists",
-@@ -5242,8 +5428,34 @@ export default {
+@@ -5242,8 +5440,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -2492,7 +2504,7 @@ index 86f3b6d..ea6b33c 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6265,13 @@ export default {
+@@ -6053,8 +6277,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -2508,7 +2520,7 @@ index 86f3b6d..ea6b33c 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/in.ts b/src/i18n/locales/in.ts
-index fac0d47..47055c3 100644
+index fac0d47..9697205 100644
 --- a/src/i18n/locales/in.ts
 +++ b/src/i18n/locales/in.ts
 @@ -2796,6 +2796,7 @@ export default {
@@ -2529,10 +2541,22 @@ index fac0d47..47055c3 100644
      "transcodeFallbackDesc": "Mengonversi trek yang tidak dapat didekode dengan FFmpeg. Berkas tidak diubah.",
      "playbackFade": "Fade saat jeda dan lanjut",
      "playbackFadeDesc": "Fade keluar sebelum jeda dan masuk kembali saat lanjut.",
-@@ -4513,6 +4516,112 @@ export default {
+@@ -4513,6 +4516,124 @@ export default {
      "noDescription": "Tidak ada deskripsi tersedia"
    },
    "releaseNotes": {
++    "v0_9_14": {
++      "intro": "0.9.14 stops repairing strings after the fact: titles, artists and albums are read from the file's raw tag bytes and decoded with the encoding the tag itself declares, so � garbage never reaches the library.",
++      "rawTags": {
++        "title": "Fix mojibake at the source: parse raw tag bytes",
++        "description": "The system metadata reader guesses a charset; when it guesses wrong the bytes are dropped into � and no later repair can bring them back. This release parses ID3v2 TIT2/TPE1/TALB (Latin-1, UTF-16, UTF-16BE, UTF-8), FLAC VORBIS_COMMENT and MP4 ilst ©nam/©ART/©alb itself. Tags that claim Latin-1 but hold GBK bytes are retried as GB18030/Big5. Existing library entries with � are re-read from the file in background batches of 25 on startup.",
++      },
++      "fixes": {
++        "bytes": "Raw tag parsing for MP3, FLAC and M4A instead of trusting the system decoder.",
++        "intro": "Import replaces � titles/artists/albums by re-reading the raw tags on the spot.",
++        "backfill": "Old entries heal in background after startup; no re-import needed.",
++      }
++    },
 +    "v0_9_13": {
 +      "intro": "0.9.13 takes another pass at mojibake: titles that already look like Chinese but were decoded wrong (“鍛ㄦ澃浼” for 周杰伦, “澶滄洸” for 夜曲) are mapped back to GBK/Big5 bytes and re-decoded as UTF-8.",
 +      "mozjibake": {
@@ -2665,7 +2689,7 @@ index 23ebf79..336af7d 100644
      "playbackFade": "Làm mờ khi tạm dừng và tiếp tục",
      "playbackFadeDesc": "Giảm âm dần trước khi tạm dừng và tăng dần khi tiếp tục thay vì ngắt âm đột ngột. Bỏ qua nếu âm thanh không đi qua bộ xử lý âm thanh.",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..685e4c8 100644
+index 0067e9a..6a7a4c0 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -2807,10 +2831,22 @@ index 0067e9a..685e4c8 100644
      "transcodeFallbackDesc": "遇到无法解码的歌曲时用 FFmpeg 转换，不修改原文件。",
      "playbackFade": "暂停/播放淡入淡出",
      "playbackFadeDesc": "暂停前淡出，恢复时淡入。",
-@@ -4513,6 +4577,195 @@ export default {
+@@ -4513,6 +4577,207 @@ export default {
      "noDescription": "暂无详细介绍",
    },
    "releaseNotes": {
++    "v0_9_14": {
++      "intro": "0.9.14 换掉「靠事后修字串」的做法：歌名／歌手／专辑改成直接读文件的原始标签位元组，按 ID3／Vorbis／MP4 自己写的编码解一次，� 这类已经丢掉位元组的乱码从源头消失。",
++      "rawTags": {
++        "title": "乱码从源头修：自己读原始标签位元组",
++        "description": "车机的系统播放器读标签时会猜编码，猜错就把字节丢成 �，事后再怎么修也救不回来。这一版不再信它：MP3 自己解析 ID3v2 的 TIT2／TPE1／TALB，照 frame 开头的编码位元组（Latin-1／UTF-16／UTF-16BE／UTF-8）解；FLAC 读 VORBIS_COMMENT；M4A 读 ilst 里的 ©nam／©ART／©alb。声明 Latin-1 但实际是 GBK 的老标签，会用 GB18030／Big5 再试一次。已经在库里的歌，下次启动会自动回读原始标签补回来（每次 25 首，慢慢补完）。",
++      },
++      "fixes": {
++        "bytes": "MP3／FLAC／M4A 直接解析原始标签位元组，不再依赖系统解码结果。",
++        "intro": "汇入时发现标题／歌手／专辑含 �，就当场回读原始标签替换。",
++        "backfill": "旧歌库里的 � 会在启动后分批回读修正，不用重新汇入。",
++      }
++    },
 +    "v0_9_13": {
 +      "intro": "0.9.13 再修一次乱码：这次处理「字串本身已经是中文、其实被错误解码过」这一类（「鍛ㄦ澃浼」←「周杰伦」、「澶滄洸」←「夜曲」），把位元组还原回去再用 UTF-8 重解。",
 +      "mozjibake": {
@@ -3003,7 +3039,7 @@ index 0067e9a..685e4c8 100644
      "v0_7_0": {
        "intro": "以下是 0.7.0 的新功能与改进",
        "temperaVisualExpansion": {
-@@ -5228,6 +5481,10 @@ export default {
+@@ -5228,6 +5493,10 @@ export default {
      "capsuleOpensPalette": "点一下打开命令面板",
    },
    "localMusic": {
@@ -3014,7 +3050,7 @@ index 0067e9a..685e4c8 100644
      "foldersAndPlaylists": "文件夹",
      "albums": "专辑",
      "artists": "艺术家",
-@@ -5242,8 +5499,34 @@ export default {
+@@ -5242,8 +5511,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -3049,7 +3085,7 @@ index 0067e9a..685e4c8 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6334,13 @@ export default {
+@@ -6051,8 +6346,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -5318,10 +5354,10 @@ index 0000000..df20d8f
 +    }
 +}
 diff --git a/src/services/localMusicService.ts b/src/services/localMusicService.ts
-index 26a0181..16e3879 100644
+index 26a0181..5939b52 100644
 --- a/src/services/localMusicService.ts
 +++ b/src/services/localMusicService.ts
-@@ -30,6 +30,15 @@ import { hasLocalCoverBinary } from './localCoverBinaryStore';
+@@ -30,6 +30,16 @@ import { hasLocalCoverBinary } from './localCoverBinaryStore';
  import { hasLocalSongCover } from '../utils/localSongCover';
  import { createFoliaIgnoreMatcher, isIgnoredByFoliaMatchers, type FoliaIgnoreMatcher } from '../utils/foliaIgnore';
  import { getLocalLibraryAvailability } from './localLibraryAvailability';
@@ -5334,10 +5370,11 @@ index 26a0181..16e3879 100644
 +    probeNativeFile,
 +    type NativeStorageFile,
 +} from './nativeLinkedStorage';
++import { hasLostChars, readLinkedSongRawTags } from './localSongRawTags';
  import { useLyricSettingsStore } from '../stores/useLyricSettingsStore';
  import { getLocalLyricFilePriority, isSameLocalLyricFormatOrder, normalizeLocalLyricFormatOrder, type LocalLyricFileFormat } from '../utils/lyrics/localLyricFormatOrder';
  import { readLyricFile } from '../utils/lyrics/lyricFileDecoding';
-@@ -296,8 +305,21 @@ export function extractMetadataFromFilename(fileName: string): { title?: string;
+@@ -296,8 +306,21 @@ export function extractMetadataFromFilename(fileName: string): { title?: string;
      };
  }
  
@@ -5359,7 +5396,7 @@ index 26a0181..16e3879 100644
      const playbackInput = await repairFlacMetadata(file, true);
      return new Promise((resolve) => {
          const audio = new Audio();
-@@ -307,17 +329,32 @@ async function getAudioDuration(file: File): Promise<number> {
+@@ -307,17 +330,32 @@ async function getAudioDuration(file: File): Promise<number> {
              return;
          }
  
@@ -5401,7 +5438,7 @@ index 26a0181..16e3879 100644
          audio.src = url;
      });
  }
-@@ -1204,6 +1241,334 @@ export async function importFolder(expectedRootName?: string): Promise<LocalSong
+@@ -1204,6 +1242,348 @@ export async function importFolder(expectedRootName?: string): Promise<LocalSong
      }
  }
  
@@ -5663,14 +5700,28 @@ index 26a0181..16e3879 100644
 +                continue;
 +            }
 +
++            // 原生探針用錯編碼解標籤時，字串會變成 �：位元組已經被丟掉，事後修不回來，
++            // 只能回頭讀檔案的原始標籤位元組，按 ID3／Vorbis／MP4 自己的編碼解一次。
++            let embeddedTitle = probe.title;
++            let embeddedArtist = probe.artist;
++            let embeddedAlbum = probe.album;
++            if (hasLostChars(probe.title) || hasLostChars(probe.artist) || hasLostChars(probe.album)) {
++                const rawTags = await readLinkedSongRawTags(file.path, file.name);
++                if (rawTags) {
++                    embeddedTitle = rawTags.title ?? embeddedTitle;
++                    embeddedArtist = rawTags.artist ?? embeddedArtist;
++                    embeddedAlbum = rawTags.album ?? embeddedAlbum;
++                }
++            }
++
 +            const metadata = extractMetadataFromFilename(file.name);
 +            const importedMetadata = buildImportedMetadataSnapshot({
 +                fileName: file.name,
-+                embeddedTitle: probe.title,
++                embeddedTitle,
 +                fallbackTitle: metadata.title,
-+                embeddedArtist: probe.artist,
++                embeddedArtist,
 +                fallbackArtist: metadata.artist,
-+                embeddedAlbum: probe.album,
++                embeddedAlbum,
 +            });
 +
 +            let localCoverAssetId: string | undefined;
@@ -5736,7 +5787,7 @@ index 26a0181..16e3879 100644
  /** Imports a folder the caller already holds instead of asking the picker (the dev mock song's OPFS folder). */
  export async function importDirectoryHandle(dirHandle: FileSystemDirectoryHandle): Promise<LocalSong[]> {
      return await runLocalFolderMutation(() => importFolderContents(dirHandle));
-@@ -1614,6 +1979,7 @@ export async function deleteLocalSong(id: string): Promise<void> {
+@@ -1614,6 +1994,7 @@ export async function deleteLocalSong(id: string): Promise<void> {
      await Promise.all([
          dbDeleteLocalSong(id),
          removeCachedCover(`cover_local_${id}`),
@@ -5744,7 +5795,7 @@ index 26a0181..16e3879 100644
      ]);
  }
  
-@@ -1714,6 +2080,14 @@ async function cleanupDirHandleIfUnused(rootFolderName: string): Promise<void> {
+@@ -1714,6 +2095,14 @@ async function cleanupDirHandleIfUnused(rootFolderName: string): Promise<void> {
  // Get audio blob from local song using fileHandle
  // Returns blob URL if fileHandle exists, null otherwise
  export async function getAudioFromLocalSong(song: LocalSong): Promise<string | null> {
@@ -5759,7 +5810,7 @@ index 26a0181..16e3879 100644
      const fileHandle = await getAccessibleFileHandle(song);
  
      if (fileHandle) {
-@@ -1738,6 +2112,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
+@@ -1738,6 +2127,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
          }
      }
  
@@ -5776,7 +5827,7 @@ index 26a0181..16e3879 100644
      // No accessible handle available - permission may need to be restored or the file moved.
      console.warn(`[LocalMusic] No accessible handle for song ${song.id}. Permission restore or re-import is required.`);
      return null;
-@@ -1745,6 +2129,15 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
+@@ -1745,6 +2144,15 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
  
  /** Resolves the current File for playback recovery without changing the song or minting a URL. */
  export async function getFileFromLocalSong(song: LocalSong): Promise<File | null> {
@@ -5792,7 +5843,7 @@ index 26a0181..16e3879 100644
      const fileHandle = await getAccessibleFileHandle(song);
      if (fileHandle) {
          try {
-@@ -1755,6 +2148,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+@@ -1755,6 +2163,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
          }
      }
  
@@ -5802,7 +5853,7 @@ index 26a0181..16e3879 100644
      const recoveredHandle = await recoverFileHandleFromPersistedDirectory(song);
      if (!recoveredHandle) return null;
      try {
-@@ -1774,14 +2170,22 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+@@ -1774,14 +2185,22 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
   * from its own handle. Mirrors getAudioFromLocalSong's resolution (accessible handle, else a recover)
   * but returns the ArrayBuffer. Null when no handle can be reached - permission not restored, or moved.
   */
@@ -5828,7 +5879,7 @@ index 26a0181..16e3879 100644
      } catch (error) {
          console.error('[LocalMusic] Failed to read local bytes:', error);
          fileHandleMap.delete(song.id);
-@@ -1789,6 +2193,44 @@ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuf
+@@ -1789,6 +2208,44 @@ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuf
      }
  }
  
@@ -5873,7 +5924,7 @@ index 26a0181..16e3879 100644
  // Extracts and persists one song's embedded cover after an explicit playback-time request.
  async function extractAndPersistSongCover(
      song: LocalSong,
-@@ -1880,6 +2322,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
+@@ -1880,6 +2337,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
      await Promise.all([
          dbDeleteLocalSongs(uniqueSongIds),
          ...uniqueSongIds.map(id => removeCachedCover(`cover_local_${id}`)),
@@ -6221,6 +6272,260 @@ index 0000000..72a4528
 +    console.info(`[FileLyrics] hydrated ${song.fileName} from ${payload.origin}`);
 +    return updated;
 +};
+diff --git a/src/services/localSongRawTags.ts b/src/services/localSongRawTags.ts
+new file mode 100644
+index 0000000..e1c3f03
+--- /dev/null
++++ b/src/services/localSongRawTags.ts
+@@ -0,0 +1,248 @@
++// src/services/localSongRawTags.ts
++// 車機的 MediaMetadataRetriever 會用錯編碼解標籤，整串變成 �（位元組已經被丟掉，事後再修也救不回來）。
++// 這裡改成自己讀檔頭的原始位元組：ID3v2（mp3）、VORBIS_COMMENT（flac）、MP4 ilst（m4a），
++// 再按標籤自己的編碼位元組／BOM／UTF-8 有效性解一次，拿到的就是正確原文。
++import { fetchNativeRange } from './nativeLinkedStorage';
++import { getLocalSongs, saveLocalSongs } from './db';
++import type { LocalSong } from '../types';
++
++export interface RawTagStrings {
++    title?: string;
++    artist?: string;
++    album?: string;
++}
++
++const TAG_HEAD_BYTES = 4 * 1024 * 1024;
++
++const utf8Strict = new TextDecoder('utf-8', { fatal: true });
++
++const decodeStrict = (bytes: Uint8Array, label: string): string | null => {
++    try {
++        return new TextDecoder(label, { fatal: true }).decode(bytes);
++    } catch {
++        return null;
++    }
++};
++
++/** 標籤位元組→字串：先看 BOM，再 UTF-8 嚴格解，最後才退回 GB18030／Big5／Latin-1。 */
++const decodeTextBytes = (bytes: Uint8Array, declared?: 'latin1' | 'utf16' | 'utf16be' | 'utf8'): string => {
++    if (bytes.length === 0) return '';
++    if (bytes[0] === 0xff && bytes[1] === 0xfe) {
++        const text = decodeStrict(bytes.subarray(2), 'utf-16le');
++        if (text) return text;
++    }
++    if (bytes[0] === 0xfe && bytes[1] === 0xff) {
++        const text = decodeStrict(bytes.subarray(2), 'utf-16be');
++        if (text) return text;
++    }
++    if (declared === 'utf16') {
++        const le = decodeStrict(bytes, 'utf-16le');
++        const be = decodeStrict(bytes, 'utf-16be');
++        // 沒有 BOM 的 UTF-16：看得出哪一種才用。
++        if (le && !/\ufffd/u.test(le) && /[\u4e00-\u9fff\u0020-\u007e]/u.test(le)) return le;
++        if (be && !/\ufffd/u.test(be)) return be;
++    }
++    if (declared === 'utf16be') {
++        const be = decodeStrict(bytes, 'utf-16be');
++        if (be) return be;
++    }
++    const utf8 = decodeStrict(bytes, 'utf-8');
++    if (utf8) return utf8;
++    // 不是合法 UTF-8：老盤多半是 GBK（簡中）或 Big5（繁中）。兩者都可能解得出來，挑沒有壞字元、中文多的。
++    const gbk = decodeStrict(bytes, 'gb18030');
++    const big5 = decodeStrict(bytes, 'big5');
++    const score = (value: string | null): number => {
++        if (!value) return -Infinity;
++        let total = 0;
++        for (const char of Array.from(value)) {
++            if (/\ufffd/u.test(char)) total -= 4;
++            else if (/[\u4e00-\u9fff]/u.test(char)) total += 2;
++            else if (char.codePointAt(0)! < 0x80) total += 0.2;
++        }
++        return total;
++    };
++    if (score(gbk) >= score(big5) && gbk) return gbk;
++    if (big5) return big5;
++    return new TextDecoder('latin1').decode(bytes);
++};
++
++const clean = (value: string): string => value.replace(/\u0000+$/u, '').replace(/^\u0000+/u, '').trim();
++
++const readSynchsafe = (bytes: Uint8Array, offset: number): number => (
++    ((bytes[offset] & 0x7f) << 21)
++    | ((bytes[offset + 1] & 0x7f) << 14)
++    | ((bytes[offset + 2] & 0x7f) << 7)
++    | (bytes[offset + 3] & 0x7f)
++);
++
++const readUint32BE = (bytes: Uint8Array, offset: number): number => (
++    ((bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0
++);
++
++const readUint32LE = (bytes: Uint8Array, offset: number): number => (
++    (bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0
++);
++
++const ascii = (bytes: Uint8Array, offset: number, length: number): string => {
++    let out = '';
++    for (let index = 0; index < length; index += 1) out += String.fromCharCode(bytes[offset + index] ?? 0);
++    return out;
++};
++
++/** ID3v2：逐個 frame 找 TIT2／TPE1／TALB，照 frame 開頭的編碼位元組解。 */
++const readId3Tags = (bytes: Uint8Array, out: RawTagStrings): void => {
++    const version = bytes[3];
++    const major = bytes[5];
++    const flags = bytes[5 + version];
++    let offset = 10;
++    const tagSize = readSynchsafe(bytes, 6);
++    const end = Math.min(bytes.length, offset + tagSize);
++    if ((flags & 0x80) !== 0) return; // 整段 unsynchronised 的少見，直接交給既有的修法。
++    while (offset + 10 <= end) {
++        const id = ascii(bytes, offset, 4);
++        if (!/^[A-Z0-9]{4}$/u.test(id)) break;
++        const rawSize = readUint32BE(bytes, offset + 4);
++        // v2.3 的 frame 長度是普通 32-bit，v2.4 才是 synchsafe；不合理就換另一種讀法。
++        let size = rawSize;
++        if (major === 4 || size > end - offset - 10) size = readSynchsafe(bytes, offset + 4);
++        const payloadStart = offset + 10;
++        if (size <= 0 || payloadStart + size > end) break;
++        const encoding = bytes[payloadStart];
++        const declared = encoding === 0 ? 'latin1' : encoding === 1 ? 'utf16' : encoding === 2 ? 'utf16be' : 'utf8';
++        const value = clean(decodeTextBytes(bytes.subarray(payloadStart + 1, payloadStart + size), declared));
++        if (value) {
++            if (id === 'TIT2' && !out.title) out.title = value;
++            else if (id === 'TPE1' && !out.artist) out.artist = value;
++            else if (id === 'TALB' && !out.album) out.album = value;
++        }
++        offset = payloadStart + size;
++    }
++};
++
++/** FLAC：metadata block type 4 = VORBIS_COMMENT，內容一律 UTF-8。 */
++const readFlacTags = (bytes: Uint8Array, out: RawTagStrings): void => {
++    let offset = 4;
++    while (offset + 4 <= bytes.length) {
++        const header = bytes[offset];
++        const type = header & 0x7f;
++        const length = ((bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0;
++        const bodyStart = offset + 4;
++        if (bodyStart + length > bytes.length) break;
++        if (type === 4) {
++            let cursor = bodyStart;
++            const vendorLength = readUint32LE(bytes, cursor);
++            cursor += 4 + vendorLength;
++            const count = readUint32LE(bytes, cursor);
++            cursor += 4;
++            for (let index = 0; index < count && cursor + 4 <= bodyStart + length; index += 1) {
++                const commentLength = readUint32LE(bytes, cursor);
++                cursor += 4;
++                const comment = decodeTextBytes(bytes.subarray(cursor, cursor + commentLength), 'utf8');
++                cursor += commentLength;
++                const equals = comment.indexOf('=');
++                if (equals <= 0) continue;
++                const key = comment.slice(0, equals).toUpperCase();
++                const value = clean(comment.slice(equals + 1));
++                if (key === 'TITLE' && !out.title) out.title = value;
++                else if (key === 'ARTIST' && !out.artist) out.artist = value;
++                else if (key === 'ALBUM' && !out.album) out.album = value;
++            }
++            return;
++        }
++        if ((header & 0x80) !== 0) return;
++        offset = bodyStart + length;
++    }
++};
++
++/** MP4／M4A：在 moov/udta/meta/ilst 裡找 ©nam／©ART／©alb 的 data box。 */
++const readMp4Tags = (bytes: Uint8Array, out: RawTagStrings): void => {
++    const wanted: Array<[string, keyof RawTagStrings]> = [
++        ['\u00a9nam', 'title'],
++        ['\u00a9ART', 'artist'],
++        ['\u00a9alb', 'album'],
++    ];
++    for (const [name, key] of wanted) {
++        const needle = [0xa9, name.charCodeAt(1), name.charCodeAt(2), name.charCodeAt(3)];
++        for (let index = 8; index + 16 < bytes.length; index += 1) {
++            if (bytes[index] !== needle[0] || bytes[index + 1] !== needle[1]
++                || bytes[index + 2] !== needle[2] || bytes[index + 3] !== needle[3]) continue;
++            // 緊接著應該是 data box。
++            const dataBoxStart = index + 4;
++            if (ascii(bytes, dataBoxStart + 4, 4) !== 'data') continue;
++            const dataSize = readUint32BE(bytes, dataBoxStart);
++            const payloadStart = dataBoxStart + 16;
++            const payloadEnd = Math.min(bytes.length, dataBoxStart + Math.max(0, dataSize));
++            if (payloadStart >= payloadEnd) continue;
++            const value = clean(decodeTextBytes(bytes.subarray(payloadStart, payloadEnd), 'utf8'));
++            if (value && !out[key]) out[key] = value;
++            break;
++        }
++    }
++};
++
++/** 解析一份檔頭位元組；不是認得的容器就回 null。 */
++export const parseRawTags = (bytes: Uint8Array, fileName: string): RawTagStrings | null => {
++    const out: RawTagStrings = {};
++    const lower = fileName.toLowerCase();
++    try {
++        if (bytes.length >= 10 && ascii(bytes, 0, 3) === 'ID3') readId3Tags(bytes, out);
++        else if (ascii(bytes, 0, 4) === 'fLaC') readFlacTags(bytes, out);
++        else if (lower.endsWith('.m4a') || lower.endsWith('.mp4') || lower.endsWith('.alac')) readMp4Tags(bytes, out);
++        else return null;
++    } catch {
++        return null;
++    }
++    return Object.keys(out).length > 0 ? out : null;
++};
++
++/**
++ * 從原始位元組重讀一首連結歌曲的標籤。
++ * 只在原生探針回來的字串含有 �（資訊已被丟掉）時才值得多讀一次檔案。
++ */
++export const readLinkedSongRawTags = async (filePath: string, fileName: string): Promise<RawTagStrings | null> => {
++    const head = await fetchNativeRange(filePath, TAG_HEAD_BYTES, 0);
++    if (!head) return null;
++    return parseRawTags(new Uint8Array(head), fileName);
++};
++
++/** 一段文字是不是「已經壞掉、救不回來」（含 U+FFFD）。 */
++export const hasLostChars = (value: string | null | undefined): boolean => Boolean(value && /\ufffd/u.test(value));
++
++/** 用原始位元組修掉的欄位（只覆蓋壞掉的那一個，正常欄位不動）。 */
++const patchFromRawTags = (song: LocalSong, tags: RawTagStrings): LocalSong | null => {
++    const meta = song.importedMetadata;
++    const artistLost = hasLostChars(meta.artistNames.join(''));
++    const albumLost = hasLostChars(meta.albumName);
++    if (!hasLostChars(song.title) && !artistLost && !albumLost) return null;
++    const next: LocalSong = { ...song, importedMetadata: { ...meta } };
++    if (hasLostChars(song.title) && tags.title) next.title = tags.title;
++    if (artistLost && tags.artist) next.importedMetadata.artistNames = [tags.artist];
++    if (albumLost && tags.album) next.importedMetadata.albumName = tags.album;
++    return next;
++};
++
++export const backfillLinkedSongLostTags = async (): Promise<void> => {
++    try {
++        const songs = await getLocalSongs();
++        const targets = songs
++            .filter(song => Boolean(song.linkedFilePath)
++                && (hasLostChars(song.title)
++                    || hasLostChars(song.importedMetadata.artistNames.join(''))
++                    || hasLostChars(song.importedMetadata.albumName)))
++            .slice(0, 25);
++        if (targets.length === 0) return;
++        const patched: LocalSong[] = [];
++        for (const song of targets) {
++            const tags = await readLinkedSongRawTags(song.linkedFilePath as string, song.fileName);
++            if (!tags) continue;
++            const fixed = patchFromRawTags(song, tags);
++            if (fixed) patched.push(fixed);
++        }
++        if (patched.length === 0) return;
++        await saveLocalSongs(patched);
++        window.dispatchEvent(new CustomEvent('folia-local-music-updated'));
++        console.info(`[RawTags] repaired ${patched.length} linked song(s) from raw tag bytes`);
++    } catch (error) {
++        console.warn('[RawTags] backfill failed', error);
++    }
++};
 diff --git a/src/services/nativeLinkedStorage.ts b/src/services/nativeLinkedStorage.ts
 new file mode 100644
 index 0000000..345d36f
@@ -6550,7 +6855,7 @@ index 0000000..345d36f
 +    }
 +};
 diff --git a/src/services/repositories/localSongRepository.ts b/src/services/repositories/localSongRepository.ts
-index 595b81c..bf977f7 100644
+index 595b81c..d3fa0af 100644
 --- a/src/services/repositories/localSongRepository.ts
 +++ b/src/services/repositories/localSongRepository.ts
 @@ -3,12 +3,15 @@ import { isBlob } from '../../utils/blobGuards';
@@ -6588,6 +6893,31 @@ index 595b81c..bf977f7 100644
    const sanitizedSongs = normalized.filter(item => item.changed).map(item => item.value);
    if (sanitizedSongs.length > 0) {
      void putLocalSongs(sanitizedSongs).catch(error => {
+@@ -60,9 +72,21 @@ const migrateStoredLocalSongs = (storedSongs: LocalSong[]): LocalSong[] => {
+   return migration.value;
+ };
+ 
+-export const readLocalSongs = async (): Promise<LocalSong[]> => (
+-  migrateStoredLocalSongs(await appDatabase.local_music.toArray())
+-);
++let rawTagBackfillStarted = false;
++/** 標題含 � 的連結歌：背景回檔案讀原始標籤（每批 25 首，跑一次就好）。 */
++const scheduleRawTagBackfill = (): void => {
++  if (rawTagBackfillStarted) return;
++  rawTagBackfillStarted = true;
++  void import('../localSongRawTags')
++    .then(module => module.backfillLinkedSongLostTags())
++    .catch(error => console.warn('[RawTags] backfill import failed', error));
++};
++
++export const readLocalSongs = async (): Promise<LocalSong[]> => {
++  const songs = migrateStoredLocalSongs(await appDatabase.local_music.toArray());
++  scheduleRawTagBackfill();
++  return songs;
++};
+ 
+ // 按主键读一条记录，读时迁移与 readLocalSongs 一致；播放和匹配路径只关心一首歌时用它，不读整张表。
+ export const readLocalSong = async (id: string): Promise<LocalSong | undefined> => {
 diff --git a/src/services/uiZoomRuntime.ts b/src/services/uiZoomRuntime.ts
 index dce29d6..284324b 100644
 --- a/src/services/uiZoomRuntime.ts
@@ -7578,6 +7908,87 @@ index 0000000..4b966b1
 +            0xB8, 0xC3, 0xCB, 0xC0, 0xB5, 0xC4, 0xCE, 0xC2, 0xC8, 0xE1,
 +        ]);
 +        expect(decodeLyricBytes(gbk)).toBe('[00:00.00]该死的温柔');
++    });
++});
+diff --git a/test/unit/localSongRawTags.test.ts b/test/unit/localSongRawTags.test.ts
+new file mode 100644
+index 0000000..39b48d7
+--- /dev/null
++++ b/test/unit/localSongRawTags.test.ts
+@@ -0,0 +1,75 @@
++import { describe, expect, it } from 'vitest';
++import { parseRawTags } from '@/services/localSongRawTags';
++
++// test/unit/localSongRawTags.test.ts
++// 原生探針把標籤解成 � 之後只能回頭讀原始位元組：這裡驗 ID3v2 的三種編碼寫法與 FLAC 的 Vorbis comment。
++
++const frame = (id: string, payload: number[]): number[] => {
++    const size = payload.length;
++    return [
++        ...Array.from(id).map(char => char.charCodeAt(0)),
++        (size >>> 24) & 0xff, (size >>> 16) & 0xff, (size >>> 8) & 0xff, size & 0xff,
++        0, 0,
++        ...payload,
++    ];
++};
++
++const tag = (frames: number[], major: number): Uint8Array => {
++    const size = frames.length;
++    return Uint8Array.from([
++        0x49, 0x44, 0x33, major, 0, 0,
++        (size >>> 21) & 0x7f, (size >>> 14) & 0x7f, (size >>> 7) & 0x7f, size & 0x7f,
++        ...frames,
++    ]);
++};
++
++const gbk = (text: string): number[] => Array.from(new TextEncoder().encode(text));
++
++describe('parseRawTags', () => {
++    it('reads UTF-8 ID3v2.4 frames', () => {
++        const bytes = tag([
++            ...frame('TIT2', [3, ...gbk('晴天')]),
++            ...frame('TPE1', [3, ...gbk('周杰伦')]),
++            ...frame('TALB', [3, ...gbk('叶惠美')]),
++        ], 4);
++        expect(parseRawTags(bytes, 'a.mp3')).toEqual({ title: '晴天', artist: '周杰伦', album: '叶惠美' });
++    });
++
++    it('reads UTF-16 with BOM', () => {
++        const utf16 = (text: string): number[] => [0xff, 0xfe, ...Array.from(text).flatMap(char => {
++            const code = char.charCodeAt(0);
++            return [code & 0xff, (code >>> 8) & 0xff];
++        })];
++        const bytes = tag([...frame('TIT2', [1, ...utf16('夜曲')])], 3);
++        expect(parseRawTags(bytes, 'b.mp3')?.title).toBe('夜曲');
++    });
++
++    it('falls back to GB18030 when the tag claims latin-1 but holds GBK bytes', () => {
++        // ffmpeg 與老車機常見：ID3v2.3 標籤寫 encoding=0，實際位元組是 GBK。
++        const bytes = tag([...frame('TIT2', [0, ...gbk('夜空中最亮的星')])], 3);
++        expect(parseRawTags(bytes, 'c.mp3')?.title).toBe('夜空中最亮的星');
++    });
++
++    it('reads FLAC Vorbis comments', () => {
++        const comment = (key: string, value: string): number[] => {
++            const text = Array.from(new TextEncoder().encode(`${key}=${value}`));
++            return [text.length & 0xff, (text.length >>> 8) & 0xff, 0, 0, ...text];
++        };
++        const body = [
++            0, 0, 0, 0, // vendor 長度 0
++            2, 0, 0, 0, // 兩條 comment
++            ...comment('TITLE', '夜曲'),
++            ...comment('ARTIST', '周杰伦'),
++        ];
++        const bytes = Uint8Array.from([
++            0x66, 0x4c, 0x61, 0x43, // fLaC
++            0x84, (body.length >>> 16) & 0xff, (body.length >>> 8) & 0xff, body.length & 0xff,
++            ...body,
++        ]);
++        expect(parseRawTags(bytes, 'd.flac')).toEqual({ title: '夜曲', artist: '周杰伦' });
++    });
++
++    it('ignores unknown containers', () => {
++        expect(parseRawTags(Uint8Array.from([1, 2, 3, 4]), 'e.wav')).toBeNull();
 +    });
 +});
 diff --git a/test/unit/settings/settingsNavModel.test.ts b/test/unit/settings/settingsNavModel.test.ts
