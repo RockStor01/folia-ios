@@ -76,6 +76,7 @@ public class FoliaNativeStorage {
     };
     private static final int MAX_SCAN_FILES = 20000;
     private static final int MAX_SCAN_DEPTH = 12;
+    // 觸發 CI 重跑（上一輪 Maven 429 是暫時性的）。
 
     private final Activity activity;
     private final Context context;
