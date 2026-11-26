@@ -96,6 +96,23 @@ public class FoliaNativeStorage {
     private long reportedAtMs = 0;
     private Handler tickerHandler;
     private Runnable ticker;
+    /**
+     * v0.9.11：被別的 App 搶走音訊焦點時要不要自動暫停。
+     * 預設「不要」——很多車機的電台／DSP 服務會一直搶焦點，一搶我們就暫停，使用者看到的就是
+     * 「點播放立刻變暫停，怎麼點怎麼暫停」。Aurora 的做法是不理焦點，只在硬體鍵上反應。
+     */
+    private boolean pauseOnFocusLoss = false;
+    /** 最近一次由頁面回報「開始播放」的時刻：用來吞掉車機回送來的假 onPause。 */
+    private long lastReportedPlayingAtMs = 0;
+    /** 最近的媒體事件（焦點、按鍵、被吞掉的回音），診斷面板直接吐出來。 */
+    private final java.util.Deque<String> mediaLog = new java.util.concurrent.ConcurrentLinkedDeque<>();
+    private void logMediaEvent(String text) {
+        try {
+            mediaLog.addFirst((System.currentTimeMillis() / 1000 % 100000) + "s " + text);
+            while (mediaLog.size() > 40) mediaLog.removeLast();
+        } catch (Throwable ignored) {
+        }
+    }
     private final Map<String, String> transcodeJobs = new ConcurrentHashMap<>();
     /** 方控的按鍵走 Activity 的 dispatchKeyEvent，MainActivity 靠這個把手把按鍵丟回來。 */
     private static FoliaNativeStorage instance;
@@ -156,16 +173,31 @@ public class FoliaNativeStorage {
             mediaSession.setCallback(new MediaSession.Callback() {
                 @Override
                 public void onPlay() {
+                    logMediaEvent("session onPlay");
                     dispatchMediaKey("play");
                 }
 
                 @Override
                 public void onPause() {
+                    // 有些車機會在我們剛回報「開始播放」後，立刻把 session 的 PAUSED 回送一次；
+                    // 那不是使用者按的鍵，吞掉，否則一點播放就被自己停掉。
+                    long sincePlay = SystemClock.elapsedRealtime() - lastReportedPlayingAtMs;
+                    if (sincePlay >= 0 && sincePlay < 900) {
+                        logMediaEvent("session echo pause ignored (" + sincePlay + "ms)");
+                        return;
+                    }
+                    logMediaEvent("session onPause");
                     dispatchMediaKey("pause");
                 }
 
                 @Override
                 public void onStop() {
+                    long sincePlay = SystemClock.elapsedRealtime() - lastReportedPlayingAtMs;
+                    if (sincePlay >= 0 && sincePlay < 900) {
+                        logMediaEvent("session echo stop->pause ignored (" + sincePlay + "ms)");
+                        return;
+                    }
+                    logMediaEvent("session onStop");
                     dispatchMediaKey("pause");
                 }
 
@@ -222,6 +254,19 @@ public class FoliaNativeStorage {
     }
 
     /** 舊介面（boolean）；位置由 reportPlaybackState 提供。 */
+    /** 設定頁的「被其他聲音搶走時暫停」開關；預設關。 */
+    @JavascriptInterface
+    public void setPauseOnFocusLoss(boolean enabled) {
+        pauseOnFocusLoss = enabled;
+        logMediaEvent("pauseOnFocusLoss=" + enabled);
+    }
+
+    /** 最近的媒體事件（焦點／按鍵／回音），給診斷面板看。 */
+    @JavascriptInterface
+    public String mediaEventLog() {
+        return String.join("\n", mediaLog);
+    }
+
     @JavascriptInterface
     public void setPlaybackState(boolean isPlaying) {
         reportPlaybackState(isPlaying, currentPositionMs(), reportedDurationMs);
@@ -236,6 +281,7 @@ public class FoliaNativeStorage {
         reportedPositionMs = Math.max(0, Math.round(positionMs));
         reportedDurationMs = Math.max(0, Math.round(durationMs));
         reportedAtMs = SystemClock.elapsedRealtime();
+        if (isPlaying && !playing) lastReportedPlayingAtMs = reportedAtMs;
         playing = isPlaying;
         updateAudioFocus(isPlaying);
         startTicker(isPlaying);
@@ -295,7 +341,10 @@ public class FoliaNativeStorage {
                 AudioManager.OnAudioFocusChangeListener listener = new AudioManager.OnAudioFocusChangeListener() {
                     @Override
                     public void onAudioFocusChange(int change) {
-                        // 被別的 App（導航播報、電話）搶走焦點時照樣暫停，跟 Aurora 一樣讓位。
+                        // 預設只記錄不動作：車機的電台／DSP 服務常常反覆搶焦點，一搶就暫停等於
+                        // 播放鍵壞掉。設定裡把「被搶焦點時暫停」打開才真的暫停。
+                        logMediaEvent("focus change " + change);
+                        if (!pauseOnFocusLoss) return;
                         if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
                             dispatchMediaKey("pause");
                         }
@@ -552,6 +601,8 @@ public class FoliaNativeStorage {
             json.put("readPermission", context.checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED);
             json.put("externalStorageState", Environment.getExternalStorageState());
             json.put("port", port);
+            json.put("pauseOnFocusLoss", pauseOnFocusLoss);
+            json.put("mediaLog", mediaEventLog());
 
             JSONArray appDirs = new JSONArray();
             try {

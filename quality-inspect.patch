@@ -21,7 +21,7 @@ index 39ec48c..114cb4d 100644
      <script src="/runtime-config.js"></script>
    <script type="importmap">
 diff --git a/package.json b/package.json
-index 6976461..cf92c50 100644
+index 6976461..0ce8f8e 100644
 --- a/package.json
 +++ b/package.json
 @@ -8,7 +8,7 @@
@@ -29,7 +29,7 @@ index 6976461..cf92c50 100644
    },
    "private": true,
 -  "version": "0.8.0",
-+  "version": "0.9.10",
++  "version": "0.9.11",
    "license": "AGPL-3.0",
    "type": "module",
    "main": "electron/main.cjs",
@@ -955,12 +955,12 @@ index 5de4bf3..af66827 100644
      );
  };
 diff --git a/src/components/modal/newFeaturesRelease.ts b/src/components/modal/newFeaturesRelease.ts
-index e49a39c..a9559cd 100644
+index e49a39c..3dcabba 100644
 --- a/src/components/modal/newFeaturesRelease.ts
 +++ b/src/components/modal/newFeaturesRelease.ts
 @@ -1,4 +1,4 @@
 -import { ListMusic, MessageSquareText, Puzzle, SlidersVertical, Sparkles, Store } from 'lucide-react';
-+import { FileAudio, KeyRound, Languages, ListChecks, Music2, RefreshCw, ShieldCheck, Type } from 'lucide-react';
++import { FileAudio, KeyRound, Languages, ListChecks, Music2, Play, RefreshCw, ShieldCheck, Type } from 'lucide-react';
  import type { LucideIcon } from 'lucide-react';
  
  // src/components/modal/newFeaturesRelease.ts
@@ -973,13 +973,13 @@ index e49a39c..a9559cd 100644
      /** 重大更新：介绍上方显示「<代号> Update · 重大更新」标签；代号不翻译，文案在 help.majorUpdateLabel。
       *  servicePack：同一重大更新的热修复版，标签改成「<代号> Update SP<n> · 重大更新」，文案在 help.servicePackLabel。 */
      majorUpdate?: { codename: string; servicePack?: number };
-@@ -18,14 +20,10 @@ type NewFeaturesRelease = {
+@@ -18,14 +20,9 @@ type NewFeaturesRelease = {
  
  // Defines the current release's cards; their localized text lives under i18nKey in every locale.
  export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
 -    i18nKey: 'releaseNotes.v0_8_0',
 -    majorUpdate: { codename: 'Severance' },
-+    i18nKey: 'releaseNotes.v0_9_10',
++    i18nKey: 'releaseNotes.v0_9_11',
      features: [
 -        { id: 'sourceMods', icon: Puzzle },
 -        { id: 'modMarket', icon: Store },
@@ -987,10 +987,9 @@ index e49a39c..a9559cd 100644
 -        { id: 'moments', icon: MessageSquareText },
 -        { id: 'stemMixer', icon: SlidersVertical },
 -        { id: 'moreDetails', icon: Sparkles },
-+        { id: 'seamlessUpdate', icon: RefreshCw },
-+        { id: 'fileLyrics', icon: Music2 },
++        { id: 'playPauseFix', icon: Play },
      ],
-+    fixes: ['sameKey', 'monotonic', 'debugRelease', 'oneTime'],
++    fixes: ['focus', 'echo', 'toggle', 'log'],
  };
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
@@ -1145,6 +1144,45 @@ index e98c8a4..4f02916 100644
              <Group def={MOTION} foot={t('options.reduceMotionSectionDesc')}>
                  <Row option={O.followSystem} hint={t('options.reduceMotionFollowSystemDesc')}>
                      <Toggle checked={motion.followSystem} onChange={motion.setFollowSystem} />
+diff --git a/src/components/modal/settings/pages/PlaybackPage.tsx b/src/components/modal/settings/pages/PlaybackPage.tsx
+index 54fee9c..1630faa 100644
+--- a/src/components/modal/settings/pages/PlaybackPage.tsx
++++ b/src/components/modal/settings/pages/PlaybackPage.tsx
+@@ -41,6 +41,7 @@ const O = {
+     shuffleRoundNoRepeat: option(BEHAVIOR, 'shuffleRoundNoRepeat', 'options.shuffleRoundNoRepeat'),
+     preventSleep: option(BEHAVIOR, 'preventDisplaySleepDuringPlayback', 'options.preventDisplaySleepDuringPlayback', { electronOnly: true }),
+     voiceInputPause: option(BEHAVIOR, 'voiceInputPause', 'options.voiceInputPause', { electronOnly: true, available: () => runsOnWindows() }),
++    focusPause: option(BEHAVIOR, 'focusPause', 'options.focusPause', { available: () => typeof window !== 'undefined' && Boolean(window.FoliaNativeStorage) }),
+ };
+ 
+ export const OPTIONS: SettingsOptionDef[] = [...HIFI_OPTIONS, ...Object.values(O)];
+@@ -76,12 +77,14 @@ const PlaybackPage: React.FC = () => {
+         mediaCache: state.enableMediaCache,
+         fade: state.playbackFadeEnabled,
+         transcode: state.enableTranscodeFallback,
++        focusPause: state.pauseOnAudioFocusLoss,
+         queueBehavior: state.queueAddBehavior,
+         autoSkipUnplayable: state.autoSkipUnplayable,
+         shuffleRoundNoRepeat: state.shuffleRoundNoRepeat,
+         setMediaCache: state.handleToggleMediaCache,
+         setFade: state.handleTogglePlaybackFade,
+         setTranscode: state.handleToggleTranscodeFallback,
++        setFocusPause: state.handleTogglePauseOnAudioFocusLoss,
+         setQueueBehavior: state.handleSetQueueAddBehavior,
+         setAutoSkipUnplayable: state.handleToggleAutoSkipUnplayable,
+         setShuffleRoundNoRepeat: state.handleToggleShuffleRoundNoRepeat,
+@@ -234,6 +237,11 @@ const PlaybackPage: React.FC = () => {
+                 <Row option={O.shuffleRoundNoRepeat} note={t('options.shuffleRoundNoRepeatDesc')}>
+                     <Toggle checked={audio.shuffleRoundNoRepeat} onChange={audio.setShuffleRoundNoRepeat} />
+                 </Row>
++                {typeof window !== 'undefined' && Boolean(window.FoliaNativeStorage) && (
++                    <Row option={O.focusPause} note={t('options.focusPauseDesc')}>
++                        <Toggle checked={audio.focusPause} onChange={audio.setFocusPause} />
++                    </Row>
++                )}
+                 {isElectron && (
+                     <Row option={O.preventSleep} hint={t('options.preventDisplaySleepDuringPlaybackDesc')}>
+                         <Toggle checked={preventSleep} onChange={setPreventSleep} />
 diff --git a/src/components/modal/settings/pages/QualityPage.tsx b/src/components/modal/settings/pages/QualityPage.tsx
 new file mode 100644
 index 0000000..4047bc3
@@ -1202,7 +1240,7 @@ index 92620c2..04852d7 100644
      general,
      interaction,
 diff --git a/src/components/modal/userGuideContent.ts b/src/components/modal/userGuideContent.ts
-index a8b5aa7..a991a08 100644
+index a8b5aa7..da21d4f 100644
 --- a/src/components/modal/userGuideContent.ts
 +++ b/src/components/modal/userGuideContent.ts
 @@ -13,7 +13,7 @@ export type UserGuideShortcut = {
@@ -1210,7 +1248,7 @@ index a8b5aa7..a991a08 100644
  
  export const USER_GUIDE_PAGE_COUNT = 7;
 -export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.8.0';
-+export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.9.10';
++export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.9.11';
  
  export type HelpTabShortcut = {
      id: string;
@@ -1382,10 +1420,10 @@ index 0000000..7b6e632
 +};
 diff --git a/src/hooks/useNativeMediaKeys.ts b/src/hooks/useNativeMediaKeys.ts
 new file mode 100644
-index 0000000..634ec3a
+index 0000000..52a2f47
 --- /dev/null
 +++ b/src/hooks/useNativeMediaKeys.ts
-@@ -0,0 +1,88 @@
+@@ -0,0 +1,96 @@
 +import type React from 'react';
 +// src/hooks/useNativeMediaKeys.ts
 +// 車機方控（方向盤按鍵）在 WebView 裡接不到的原因：WebView 不向系統註冊 MediaSession，
@@ -1401,7 +1439,8 @@ index 0000000..634ec3a
 +// 另外每秒把 position 回報一次，車機的媒體面板才不會把按鍵路由回內建播放器。
 +
 +import { useEffect, useRef } from 'react';
-+import { reportNativePlayback } from '../services/nativeLinkedStorage';
++import { reportNativePlayback, setNativePauseOnFocusLoss } from '../services/nativeLinkedStorage';
++import { useAudioSettingsStore } from '../stores/useAudioSettingsStore';
 +
 +interface NativeMediaKeyOptions {
 +    playRef: React.RefObject<() => Promise<void>>;
@@ -1456,6 +1495,13 @@ index 0000000..634ec3a
 +            delete (window as unknown as Record<string, unknown>).__foliaNativeMediaKey;
 +        };
 +    }, [audioRef, nextRef, pauseRef, playRef, prevRef]);
++
++    // v0.9.11：把「被搶焦點時要不要暫停」的設定下发给原生層。預設關——車機的電台/DSP 反覆搶
++    // 焦點時，一搶就暫停會讓播放鍵看起來壞掉（點播放立刻變暫停、怎麼點怎麼暫停）。
++    const pauseOnFocusLoss = useAudioSettingsStore(state => state.pauseOnAudioFocusLoss);
++    useEffect(() => {
++        setNativePauseOnFocusLoss(pauseOnFocusLoss);
++    }, [pauseOnFocusLoss]);
 +
 +    useEffect(() => {
 +        reportNativePlayback(playerState === 'playing', audioRef?.current?.currentTime ?? 0, audioRef?.current?.duration ?? 0);
@@ -1706,7 +1752,7 @@ index 2f367df..361d5da 100644
              enabled
              && window.electron?.requestTranscodeFallback
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..25e0ec7 100644
+index 86f3b6d..8ff7b4f 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -1900,10 +1946,33 @@ index 86f3b6d..25e0ec7 100644
      "minimizeToTray": "Minimize to tray",
      "closeToTray": "Close window to tray",
      "closeToTrayDesc": "The close button hides the window to the tray instead of quitting",
-@@ -4513,6 +4504,156 @@ export default {
+@@ -4201,7 +4192,9 @@ export default {
+     "invalidJsonFormat": "Invalid JSON format",
+     "pasteJsonHere": "Paste JSON here...",
+     "settingsHeadingSound": "Sound & devices",
++    "focusPause": "Pause when another app takes audio focus",
+     "transcodeFallback": "Convert unsupported audio automatically",
++    "focusPauseDesc": "Car head units, radios, DSP services and navigation grab audio focus over and over; pausing each time makes the play button look broken (tap play, it pauses, every time). Off by default. On: any other sound pauses playback, yielding to navigation.",
+     "transcodeFallbackDesc": "Converts tracks that cannot be decoded with FFmpeg. The file is not changed.",
+     "playbackFade": "Fade on pause and resume",
+     "playbackFadeDesc": "Fades out before pausing and back in on resume.",
+@@ -4513,6 +4506,169 @@ export default {
      "noDescription": "No description available",
    },
    "releaseNotes": {
++    "v0_9_11": {
++      "intro": "0.9.11 fixes \"tap play and it pauses, every time\": the native layer used to pause whenever another app took audio focus, and now ignores focus by default and drops the fake pause a head unit echoes back.",
++      "playPauseFix": {
++        "title": "The play button no longer turns itself into pause",
++        "description": "Two causes. Head-unit radio and DSP services grab audio focus over and over, and 0.9.8 paused on every focus loss so navigation could take over — so each tap on play was followed by a pause. The other is that some units echo the session's PAUSED right after we report playback started, stopping us with our own state. This build ignores focus changes by default and swallows session pause echoes for 900 ms after playback starts; to still yield to navigation, turn on Settings → Playback → Playback behavior → Pause when another app takes audio focus.",
++      },
++      "fixes": {
++        "focus": "No longer pauses when audio focus is taken, unless the setting is on.",
++        "echo": "A session PAUSED/STOP within 900 ms of starting playback is treated as an echo and ignored.",
++        "toggle": "Settings → Playback → Playback behavior → Pause when another app takes audio focus (Android build only, off by default).",
++        "log": "Diagnostics now include mediaLog: the last 40 focus changes, key presses and dropped echoes."
++      }
++    },
 +    "v0_9_10": {
 +      "intro": "Starting with 0.9.10, Android updates install over the old app. It used to be impossible because every CI run generated a fresh debug keystore, and a changed signature makes Android refuse the update.",
 +      "seamlessUpdate": {
@@ -2057,7 +2126,7 @@ index 86f3b6d..25e0ec7 100644
      "v0_7_0": {
        "intro": "Here are the new features and improvements in version 0.7.0.",
        "temperaVisualExpansion": {
-@@ -5228,6 +5369,10 @@ export default {
+@@ -5228,6 +5384,10 @@ export default {
      "capsuleOpensPalette": "Click to open the command palette",
    },
    "localMusic": {
@@ -2068,7 +2137,7 @@ index 86f3b6d..25e0ec7 100644
      "foldersAndPlaylists": "Folders",
      "albums": "Albums",
      "artists": "Artists",
-@@ -5242,8 +5387,34 @@ export default {
+@@ -5242,8 +5402,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -2103,7 +2172,7 @@ index 86f3b6d..25e0ec7 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6224,13 @@ export default {
+@@ -6053,8 +6239,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -2119,13 +2188,36 @@ index 86f3b6d..25e0ec7 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/in.ts b/src/i18n/locales/in.ts
-index fac0d47..0e58b10 100644
+index fac0d47..8ec28ba 100644
 --- a/src/i18n/locales/in.ts
 +++ b/src/i18n/locales/in.ts
-@@ -4513,6 +4513,73 @@ export default {
+@@ -4201,7 +4201,9 @@ export default {
+     "invalidJsonFormat": "Format JSON tidak valid",
+     "pasteJsonHere": "Tempel JSON di sini...",
+     "settingsHeadingSound": "Suara & perangkat",
++    "focusPause": "Jeda saat aplikasi lain mengambil fokus audio",
+     "transcodeFallback": "Konversi audio yang tidak didukung secara otomatis",
++    "focusPauseDesc": "Head unit, radio, layanan DSP dan navigasi sering mengambil fokus audio berulang; menjeda setiap kali membuat tombol putar tampak rusak. Nonaktif secara bawaan. Aktif: suara lain menjeda pemutaran.",
+     "transcodeFallbackDesc": "Mengonversi trek yang tidak dapat didekode dengan FFmpeg. Berkas tidak diubah.",
+     "playbackFade": "Fade saat jeda dan lanjut",
+     "playbackFadeDesc": "Fade keluar sebelum jeda dan masuk kembali saat lanjut.",
+@@ -4513,6 +4515,86 @@ export default {
      "noDescription": "Tidak ada deskripsi tersedia"
    },
    "releaseNotes": {
++    "v0_9_11": {
++      "intro": "0.9.11 memperbaiki \"tekan putar malah jeda, terus begitu\": lapisan native dulu menjeda setiap kali aplikasi lain mengambil fokus audio; kini fokus diabaikan secara bawaan dan gema jeda dari head unit dibuang.",
++      "playPauseFix": {
++        "title": "Tombol putar tidak lagi berubah sendiri jadi jeda",
++        "description": "Dua penyebab. Radio dan layanan DSP head unit berulang kali mengambil fokus audio, dan 0.9.8 menjeda pada setiap kehilangan fokus agar navigasi bisa menang — jadi setiap tekan putar langsung diikuti jeda. Penyebab lain: sebagian unit menggemakan status PAUSED sesi tepat setelah kita melaporkan pemutaran dimulai. Build ini mengabaikan perubahan fokus secara bawaan dan membuang gema jeda 900 ms setelah pemutaran mulai; untuk tetap memberi jalan ke navigasi, aktifkan Pengaturan → Pemutaran → Perilaku pemutaran.",
++      },
++      "fixes": {
++        "focus": "Tidak lagi menjeda saat fokus audio diambil, kecuali pengaturan diaktifkan.",
++        "echo": "PAUSED/STOP dari sesi dalam 900 ms setelah mulai diputar dianggap gema dan diabaikan.",
++        "toggle": "Pengaturan → Pemutaran → Perilaku pemutaran → jeda saat aplikasi lain mengambil fokus audio (hanya build Android, bawaan mati).",
++        "log": "Diagnostik kini memuat mediaLog: 40 kejadian fokus, tombol, dan gema terakhir."
++      }
++    },
 +    "v0_9_10": {
 +      "intro": "Mulai 0.9.10, pembaruan Android bisa dipasang menimpa aplikasi lama. Sebelumnya tidak bisa karena setiap CI membuat debug keystore baru, dan tanda tangan yang berubah membuat Android menolak pembaruan.",
 +      "seamlessUpdate": {
@@ -2196,8 +2288,22 @@ index fac0d47..0e58b10 100644
      "v0_7_0": {
        "intro": "Berikut fitur baru dan peningkatan di versi 0.7.0.",
        "temperaVisualExpansion": {
+diff --git a/src/i18n/locales/vi.ts b/src/i18n/locales/vi.ts
+index 23ebf79..79ff79a 100644
+--- a/src/i18n/locales/vi.ts
++++ b/src/i18n/locales/vi.ts
+@@ -4201,7 +4201,9 @@ export default {
+     "invalidJsonFormat": "Định dạng JSON không hợp lệ",
+     "pasteJsonHere": "Dán JSON vào đây...",
+     "settingsHeadingSound": "Âm thanh & Thiết bị",
++    "focusPause": "Tạm dừng khi ứng dụng khác lấy tiêu điểm âm thanh",
+     "transcodeFallback": "Tự động chuyển đổi âm thanh không hỗ trợ",
++    "focusPauseDesc": "Head unit, radio, DSP và dẫn đường thường xuyên lấy tiêu điểm âm thanh; tạm dừng mỗi lần như vậy khiến nút phát trông như hỏng. Mặc định tắt. Bật: âm thanh khác sẽ tạm dừng phát.",
+     "transcodeFallbackDesc": "Trong ứng dụng Electron, dùng FFmpeg để khôi phục bài hát nội bộ và Navidrome mà Chromium không giải mã được. Tệp gốc không bị thay đổi.",
+     "playbackFade": "Làm mờ khi tạm dừng và tiếp tục",
+     "playbackFadeDesc": "Giảm âm dần trước khi tạm dừng và tăng dần khi tiếp tục thay vì ngắt âm đột ngột. Bỏ qua nếu âm thanh không đi qua bộ xử lý âm thanh.",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..7265cd2 100644
+index 0067e9a..5126fcd 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -2329,10 +2435,33 @@ index 0067e9a..7265cd2 100644
      "minimizeToTray": "最小化到托盘",
      "closeToTray": "关闭窗口时隐藏到托盘",
      "closeToTrayDesc": "点关闭按钮时不退出，隐藏到托盘继续播放",
-@@ -4513,6 +4575,156 @@ export default {
+@@ -4201,7 +4263,9 @@ export default {
+     "invalidJsonFormat": "无效的 JSON 格式",
+     "pasteJsonHere": "在此粘贴 JSON...",
+     "settingsHeadingSound": "声音与设备",
++    "focusPause": "被其他声音抢走时暂停",
+     "transcodeFallback": "自动转换无法播放的音频",
++    "focusPauseDesc": "车机上的电台、DSP 或导航常会反复抢音频焦点，一抢就暂停会让播放键看起来坏掉：点了播放立刻变暂停，怎么点怎么暂停。默认不开；打开后其他声音一来就自动暂停，跟导航播报让位。",
+     "transcodeFallbackDesc": "遇到无法解码的歌曲时用 FFmpeg 转换，不修改原文件。",
+     "playbackFade": "暂停/播放淡入淡出",
+     "playbackFadeDesc": "暂停前淡出，恢复时淡入。",
+@@ -4513,6 +4577,169 @@ export default {
      "noDescription": "暂无详细介绍",
    },
    "releaseNotes": {
++    "v0_9_11": {
++      "intro": "0.9.11 修「點播放就變暫停、怎麼點怎麼暫停」：原生層以前一被別的 App 搶走音訊焦點就自動暫停，現在預設不理焦點，並吞掉車機回送來的假暫停。",
++      "playPauseFix": {
++        "title": "播放鍵不再自己變暫停",
++        "description": "原因有兩個。車機的電台／DSP 服務會反覆搶音訊焦點，0.9.8 為了讓導航播報能讓位，收到焦點被搶就暫停——結果點一次播放就被搶一次、停一次。另一個是有些車機會在我們剛回報「開始播放」後把 session 的 PAUSED 回送一次，等於自己把自己停掉。這一版預設不理焦點變化，並在開始播放後 900 毫秒內忽略 session 回音的暫停；真的想讓位給導航，到 設定 → 播放控制 → 播放行為 把「被其他聲音搶走時暫停」打開。",
++      },
++      "fixes": {
++        "focus": "預設不再因音訊焦點被搶而暫停，只在設定打開時才讓位。",
++        "echo": "開始播放後 900ms 內收到 session 的 PAUSED／STOP 當成回音忽略，不再自己停自己。",
++        "toggle": "設定 → 播放控制 → 播放行為 → 「被其他声音抢走时暂停」（只在車機版出現，預設關）。",
++        "log": "診斷面板多吐 mediaLog：最近 40 筆焦點變化、按鍵、被吞掉的回音，方便看車機到底送了什麼。"
++      }
++    },
 +    "v0_9_10": {
 +      "intro": "0.9.10 起，安卓版的更新可以直接覆盖安装，不用再先移除旧 App。之前做不到是因为每次 CI 都用临时生成的 debug 金钥签名，签名一变，系统就拒绝更新。",
 +      "seamlessUpdate": {
@@ -2486,7 +2615,7 @@ index 0067e9a..7265cd2 100644
      "v0_7_0": {
        "intro": "以下是 0.7.0 的新功能与改进",
        "temperaVisualExpansion": {
-@@ -5228,6 +5440,10 @@ export default {
+@@ -5228,6 +5455,10 @@ export default {
      "capsuleOpensPalette": "点一下打开命令面板",
    },
    "localMusic": {
@@ -2497,7 +2626,7 @@ index 0067e9a..7265cd2 100644
      "foldersAndPlaylists": "文件夹",
      "albums": "专辑",
      "artists": "艺术家",
-@@ -5242,8 +5458,34 @@ export default {
+@@ -5242,8 +5473,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -2532,7 +2661,7 @@ index 0067e9a..7265cd2 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6293,13 @@ export default {
+@@ -6051,8 +6308,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -5706,10 +5835,10 @@ index 0000000..72a4528
 +};
 diff --git a/src/services/nativeLinkedStorage.ts b/src/services/nativeLinkedStorage.ts
 new file mode 100644
-index 0000000..1dc5beb
+index 0000000..345d36f
 --- /dev/null
 +++ b/src/services/nativeLinkedStorage.ts
-@@ -0,0 +1,299 @@
+@@ -0,0 +1,322 @@
 +// src/services/nativeLinkedStorage.ts
 +// 「連結模式」的 JS 側：把 Android 原生層（FoliaNativeStorage.java）的介面收斂成幾個型別安全的函式。
 +//
@@ -5765,6 +5894,8 @@ index 0000000..1dc5beb
 +    startWavTranscode?: (filePath: string) => string;
 +    wavTranscodeStatus?: (jobId: string) => string;
 +    listLyrics?: (dirPath: string) => string;
++    setPauseOnFocusLoss?: (enabled: boolean) => void;
++    mediaEventLog?: () => string;
 +    diagnose?: () => string;
 +    hasPermission: () => boolean;
 +    requestPermission: () => void;
@@ -5783,6 +5914,27 @@ index 0000000..1dc5beb
 +const bridge = (): NativeBridge | undefined => (
 +    typeof window === 'undefined' ? undefined : window.FoliaNativeStorage
 +);
++
++/**
++ * 「被其他聲音搶走音訊焦點時要不要自動暫停」（v0.9.11）。預設關：
++ * 車機的電台／DSP 服務很常反覆搶焦點，一搶就暫停會讓播放鍵看起來壞掉。
++ */
++export const setNativePauseOnFocusLoss = (enabled: boolean): void => {
++    try {
++        bridge()?.setPauseOnFocusLoss?.(enabled);
++    } catch {
++        // 非車機環境沒有這個方法。
++    }
++};
++
++/** 最近的原生媒體事件（焦點變化、按鍵、被吞掉的 session 回音），診斷用。 */
++export const readNativeMediaEventLog = (): string => {
++    try {
++        return bridge()?.mediaEventLog?.() ?? '';
++    } catch {
++        return '';
++    }
++};
 +
 +export const isLinkedStorageSupported = (): boolean => Boolean(bridge());
 +
@@ -6111,10 +6263,36 @@ index dce29d6..284324b 100644
      useDesktopSettingsStore.subscribe(state => apply(state.uiZoomEnabled, state.uiZoomStep));
  };
 diff --git a/src/stores/useAudioSettingsStore.ts b/src/stores/useAudioSettingsStore.ts
-index 4ba30ac..92ded6e 100644
+index 4ba30ac..2fb8660 100644
 --- a/src/stores/useAudioSettingsStore.ts
 +++ b/src/stores/useAudioSettingsStore.ts
-@@ -359,7 +359,11 @@ export const useAudioSettingsStore = create<AudioSettingsState>((set, get) => ({
+@@ -38,6 +38,8 @@ export const MEDIA_CACHE_LIMIT_GB_KEY = 'folia_media_cache_limit_gb';
+ export const AUTO_PLAY_ON_LAUNCH_KEY = 'folia_auto_play_on_launch';
+ 
+ export const ENABLE_TRANSCODE_FALLBACK_KEY = 'folia_enable_transcode_fallback';
++/** 被其他 App 搶走音訊焦點時要不要自動暫停。預設關（v0.9.11），見原生層的註解。 */
++export const PAUSE_ON_FOCUS_LOSS_KEY = 'folia_pause_on_audio_focus_loss';
+ 
+ /** Whether finished plays of online NetEase tracks are reported to the signed-in account. */
+ export const NETEASE_SCROBBLE_KEY = 'folia_netease_scrobble';
+@@ -239,6 +241,8 @@ export type AudioSettingsState = {
+     autoPlayOnLaunch: boolean;
+     /** Electron-only recovery for local and Navidrome formats Chromium cannot decode. */
+     enableTranscodeFallback: boolean;
++    /** 被其他 App 搶走音訊焦點時是否自動暫停（車機原生層用）。 */
++    pauseOnAudioFocusLoss: boolean;
+     /** Report finished plays of online NetEase tracks to the signed-in account. Off by default. */
+     /**
+      * Whether finished plays are reported to the account, by source id (off where not set). Read it with
+@@ -273,6 +277,7 @@ export type AudioSettingsState = {
+     handleSetQueueAddBehavior: (behavior: QueueAddBehavior) => void;
+     handleToggleAutoPlayOnLaunch: (enable: boolean) => void;
+     handleToggleTranscodeFallback: (enable: boolean) => void;
++    handleTogglePauseOnAudioFocusLoss: (enable: boolean) => void;
+     handleSetPlaybackReport: (providerId: string, enable: boolean) => void;
+     handleTogglePlaybackFade: (enable: boolean) => void;
+     handleToggleAutoSkipUnplayable: (enable: boolean) => void;
+@@ -359,11 +364,16 @@ export const useAudioSettingsStore = create<AudioSettingsState>((set, get) => ({
      autoPlayOnLaunch: getStoredBoolean(AUTO_PLAY_ON_LAUNCH_KEY, false),
      enableTranscodeFallback: getStoredBoolean(
          ENABLE_TRANSCODE_FALLBACK_KEY,
@@ -6127,6 +6305,30 @@ index 4ba30ac..92ded6e 100644
      ),
      // Off unless asked for: it writes to the listener's music account, so it is never a default.
      // The source with an old key (LEGACY_PLAYBACK_REPORT_KEYS) is read at start; any other when first asked for.
+     playbackReportEnabled: { netease: getStoredBoolean(NETEASE_SCROBBLE_KEY, false) },
++    pauseOnAudioFocusLoss: getStoredBoolean(PAUSE_ON_FOCUS_LOSS_KEY, false),
+     playbackFadeEnabled: getStoredBoolean(PLAYBACK_FADE_KEY, true),
+     // Off unless asked for: skipping a song the listener picked is not something to do by default.
+     autoSkipUnplayable: getStoredBoolean(AUTO_SKIP_UNPLAYABLE_KEY, false),
+@@ -416,6 +426,10 @@ export const useAudioSettingsStore = create<AudioSettingsState>((set, get) => ({
+         setStoredBoolean(ENABLE_TRANSCODE_FALLBACK_KEY, enable);
+         set({ enableTranscodeFallback: enable });
+     },
++    handleTogglePauseOnAudioFocusLoss: (enable) => {
++        setStoredBoolean(PAUSE_ON_FOCUS_LOSS_KEY, enable);
++        set({ pauseOnAudioFocusLoss: enable });
++    },
+     handleSetPlaybackReport: (providerId, enable) => {
+         writeStoredPlaybackReport(providerId, enable);
+         set(state => ({ playbackReportEnabled: { ...state.playbackReportEnabled, [providerId]: enable } }));
+@@ -558,6 +572,7 @@ export const selectAudioSettingsSnapshot = (state: AudioSettingsState) => ({
+     queueAddBehavior: state.queueAddBehavior,
+     autoPlayOnLaunch: state.autoPlayOnLaunch,
+     enableTranscodeFallback: state.enableTranscodeFallback,
++    pauseOnAudioFocusLoss: state.pauseOnAudioFocusLoss,
+     playbackReportEnabled: state.playbackReportEnabled,
+     playbackFadeEnabled: state.playbackFadeEnabled,
+     autoSkipUnplayable: state.autoSkipUnplayable,
 diff --git a/src/types.ts b/src/types.ts
 index 7dcb74b..041c411 100644
 --- a/src/types.ts
@@ -6850,6 +7052,18 @@ index 0000000..4b966b1
 +        expect(decodeLyricBytes(gbk)).toBe('[00:00.00]该死的温柔');
 +    });
 +});
+diff --git a/test/unit/stores/__snapshots__/storeContract.test.ts.snap b/test/unit/stores/__snapshots__/storeContract.test.ts.snap
+index 89340da..b05172a 100644
+--- a/test/unit/stores/__snapshots__/storeContract.test.ts.snap
++++ b/test/unit/stores/__snapshots__/storeContract.test.ts.snap
+@@ -48,6 +48,7 @@ exports[`store contract > keeps every localStorage key the stores read or write
+   "folia_media_cache_limit_gb",
+   "folia_navidrome_last_section",
+   "folia_netease_scrobble",
++  "folia_pause_on_audio_focus_loss",
+   "folia_playback_fade_enabled",
+   "folia_playback_source",
+   "folia_ponder_seen",
 diff --git a/test/unit/textEncodingRepair.test.ts b/test/unit/textEncodingRepair.test.ts
 new file mode 100644
 index 0000000..659414d
