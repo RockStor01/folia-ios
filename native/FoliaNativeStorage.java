@@ -679,6 +679,33 @@ public class FoliaNativeStorage {
         return result.toString();
     }
 
+    /** 同一個資料夾裡的字幕／歌詞檔（.lrc / .vtt）：JS 之後用 /f/ 網址自己抓內容、自己解碼。 */
+    @JavascriptInterface
+    public String listLyrics(String dirPath) {
+        JSONArray files = new JSONArray();
+        try {
+            File dir = new File(dirPath);
+            if (!dir.isDirectory() || !dir.canRead()) return files.toString();
+            File[] children = dir.listFiles();
+            if (children == null) return files.toString();
+            Arrays.sort(children);
+            for (File child : children) {
+                String name = child.getName().toLowerCase(Locale.ROOT);
+                if (!child.isFile()) continue;
+                if (name.endsWith(".lrc") || name.endsWith(".vtt")) {
+                    JSONObject entry = new JSONObject();
+                    entry.put("name", child.getName());
+                    entry.put("path", child.getAbsolutePath());
+                    entry.put("size", child.length());
+                    files.put(entry);
+                }
+            }
+        } catch (Throwable error) {
+            android.util.Log.w("FoliaNativeStorage", "listLyrics failed: " + error);
+        }
+        return files.toString();
+    }
+
     /** 遞迴掃一個資料夾的音檔（原生端很快，2200 首通常幾秒）。 */
     @JavascriptInterface
     public String scan(String dirPath) {

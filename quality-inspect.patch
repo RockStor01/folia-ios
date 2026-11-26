@@ -21,7 +21,7 @@ index 39ec48c..114cb4d 100644
      <script src="/runtime-config.js"></script>
    <script type="importmap">
 diff --git a/package.json b/package.json
-index 6976461..5fb4da8 100644
+index 6976461..fdf4958 100644
 --- a/package.json
 +++ b/package.json
 @@ -8,7 +8,7 @@
@@ -29,7 +29,7 @@ index 6976461..5fb4da8 100644
    },
    "private": true,
 -  "version": "0.8.0",
-+  "version": "0.9.8",
++  "version": "0.9.9",
    "license": "AGPL-3.0",
    "type": "module",
    "main": "electron/main.cjs",
@@ -110,6 +110,66 @@ index 5a41159..f6c1be0 100644
                  />
                  <SongNoteMarks duration={duration} onSeek={onSeek} disabled={disabled} />
                  <FoliumProgressLayers ctx={foliumCtx} />
+diff --git a/src/components/app/playback/restore/restorePlaybackSource.ts b/src/components/app/playback/restore/restorePlaybackSource.ts
+index d674656..9adcd2f 100644
+--- a/src/components/app/playback/restore/restorePlaybackSource.ts
++++ b/src/components/app/playback/restore/restorePlaybackSource.ts
+@@ -26,6 +26,7 @@ import { getLocalCoverAssetUrl } from '../../../../services/localCoverAssetUrl';
+ import { isPureMusicLyricText } from '../../../../utils/lyrics/pureMusic';
+ import { migrateLyricDataRenderHints } from '../../../../utils/lyrics/renderHints';
+ import { readCachedPlaybackLyrics } from '../../../../services/onlineMusic/cachedPlaybackLyrics';
++import { ensureLinkedSongLyrics } from '../../../../services/localSongFileLyrics';
+ import { resolveLocalSongLyrics } from '../../../../utils/lyrics/localSongLyrics';
+ import { loadOnlineLyricsState, resolveOnlineLyrics } from '../../../../utils/onlineLyricsState';
+ import type { AudioQualityPreference, MediaId } from '../../../../types/onlineMusic';
+@@ -333,8 +334,10 @@ const restoreSourceForSong = async (
+             setAudioSrc(audio.blobUrl);
+         }
+ 
++        // 連結模式的歌：歌詞在檔案裡，續播時一起補上（下次開機就不用再讀）。
++        const lyricsRecord = await ensureLinkedSongLyrics(songToRestore) ?? songToRestore;
+         const resolvedLyrics = await resolveLocalSongLyrics(
+-            songToRestore,
++            lyricsRecord,
+             useLyricSettingsStore.getState().localLyricsPriority,
+         );
+         if (overtaken()) return 'stale';
+diff --git a/src/components/app/playback/start/useLibraryPlaybackController.ts b/src/components/app/playback/start/useLibraryPlaybackController.ts
+index ed3feda..a2464ef 100644
+--- a/src/components/app/playback/start/useLibraryPlaybackController.ts
++++ b/src/components/app/playback/start/useLibraryPlaybackController.ts
+@@ -72,6 +72,7 @@ import { useLibraryStore } from '../../../../stores/useLibraryStore';
+ import { setIsPanelOpen } from '../../../../stores/useAppViewStore';
+ import { currentTime } from '../../../../stores/motionSignals';
+ import { resolveLocalSongLyrics } from '../../../../utils/lyrics/localSongLyrics';
++import { ensureLinkedSongLyrics } from '../../../../services/localSongFileLyrics';
+ import { detectLyricFileIssues } from '../../../../utils/lyrics/lyricFileIssues';
+ import { createLikePresses } from '../../../../utils/likePresses';
+ 
+@@ -518,7 +519,13 @@ export function useLibraryPlaybackController({
+         return { updatedLocalSong, matchedSongResult };
+     }, [patchLocalSongsInState, setStatusMsg]);
+ 
+-    const resolveLocalMetadataUI = useCallback(async (localData: LocalSong, matchedSong: SongResult | null) => {
++    const resolveLocalMetadataUI = useCallback(async (localDataInput: LocalSong, matchedSong: SongResult | null) => {
++        // 連結模式的歌歌詞來自檔案本身（.lrc 或內嵌標籤）：第一次播放這首時順手讀進來，
++        // 寫回資料庫再繼續，歌詞頁才不會永遠空著。已經有歌詞的直接回 null，等於零成本。
++        const hydrated = await ensureLinkedSongLyrics(localDataInput);
++        const localData = hydrated ?? localDataInput;
++        if (hydrated) patchLocalSongsInState([hydrated]);
++
+         const localCoverUrl = getLocalCoverAssetUrl(localData.localCoverAssetId, 1024);
+         const preferOnlineCover = localData.useOnlineCover === true;
+         const coverUrl = preferOnlineCover
+@@ -539,7 +546,7 @@ export function useLibraryPlaybackController({
+         }), catalog);
+ 
+         return { lyrics: resolvedLyrics.lyrics, lyricsSource: resolvedLyrics.source, coverUrl, unifiedSong, catalog };
+-    }, []);
++    }, [patchLocalSongsInState]);
+ 
+     const loadCurrentSongLyricPreview = useCallback(async (): Promise<LyricData | null> => {
+         if (!currentSong) {
 diff --git a/src/components/audioQuality/OverviewChart.tsx b/src/components/audioQuality/OverviewChart.tsx
 new file mode 100644
 index 0000000..29b78f9
@@ -895,12 +955,12 @@ index 5de4bf3..af66827 100644
      );
  };
 diff --git a/src/components/modal/newFeaturesRelease.ts b/src/components/modal/newFeaturesRelease.ts
-index e49a39c..004fd6c 100644
+index e49a39c..e0d9b39 100644
 --- a/src/components/modal/newFeaturesRelease.ts
 +++ b/src/components/modal/newFeaturesRelease.ts
 @@ -1,4 +1,4 @@
 -import { ListMusic, MessageSquareText, Puzzle, SlidersVertical, Sparkles, Store } from 'lucide-react';
-+import { FileAudio, KeyRound, Languages, ListChecks, ShieldCheck, Type } from 'lucide-react';
++import { FileAudio, KeyRound, Languages, ListChecks, Music2, ShieldCheck, Type } from 'lucide-react';
  import type { LucideIcon } from 'lucide-react';
  
  // src/components/modal/newFeaturesRelease.ts
@@ -913,13 +973,13 @@ index e49a39c..004fd6c 100644
      /** 重大更新：介绍上方显示「<代号> Update · 重大更新」标签；代号不翻译，文案在 help.majorUpdateLabel。
       *  servicePack：同一重大更新的热修复版，标签改成「<代号> Update SP<n> · 重大更新」，文案在 help.servicePackLabel。 */
      majorUpdate?: { codename: string; servicePack?: number };
-@@ -18,14 +20,10 @@ type NewFeaturesRelease = {
+@@ -18,14 +20,9 @@ type NewFeaturesRelease = {
  
  // Defines the current release's cards; their localized text lives under i18nKey in every locale.
  export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
 -    i18nKey: 'releaseNotes.v0_8_0',
 -    majorUpdate: { codename: 'Severance' },
-+    i18nKey: 'releaseNotes.v0_9_8',
++    i18nKey: 'releaseNotes.v0_9_9',
      features: [
 -        { id: 'sourceMods', icon: Puzzle },
 -        { id: 'modMarket', icon: Store },
@@ -927,10 +987,9 @@ index e49a39c..004fd6c 100644
 -        { id: 'moments', icon: MessageSquareText },
 -        { id: 'stemMixer', icon: SlidersVertical },
 -        { id: 'moreDetails', icon: Sparkles },
-+        { id: 'steeringWheel', icon: KeyRound },
-+        { id: 'formatFallback', icon: FileAudio },
++        { id: 'fileLyrics', icon: Music2 },
      ],
-+    fixes: ['audioFocus', 'positionReport', 'mimeSniff', 'cacheLimit'],
++    fixes: ['encoding', 'id3size', 'lazy', 'cache'],
  };
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
@@ -1142,7 +1201,7 @@ index 92620c2..04852d7 100644
      general,
      interaction,
 diff --git a/src/components/modal/userGuideContent.ts b/src/components/modal/userGuideContent.ts
-index a8b5aa7..9f221d6 100644
+index a8b5aa7..b036d75 100644
 --- a/src/components/modal/userGuideContent.ts
 +++ b/src/components/modal/userGuideContent.ts
 @@ -13,7 +13,7 @@ export type UserGuideShortcut = {
@@ -1150,7 +1209,7 @@ index a8b5aa7..9f221d6 100644
  
  export const USER_GUIDE_PAGE_COUNT = 7;
 -export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.8.0';
-+export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.9.8';
++export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.9.9';
  
  export type HelpTabShortcut = {
      id: string;
@@ -1646,7 +1705,7 @@ index 2f367df..361d5da 100644
              enabled
              && window.electron?.requestTranscodeFallback
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..8683241 100644
+index 86f3b6d..4c684ae 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -1840,10 +1899,23 @@ index 86f3b6d..8683241 100644
      "minimizeToTray": "Minimize to tray",
      "closeToTray": "Close window to tray",
      "closeToTrayDesc": "The close button hides the window to the tray instead of quitting",
-@@ -4513,6 +4504,126 @@ export default {
+@@ -4513,6 +4504,139 @@ export default {
      "noDescription": "No description available",
    },
    "releaseNotes": {
++    "v0_9_9": {
++      "intro": "0.9.9 brings lyrics to local songs on the car unit: the lyric page now reads them from the files — a .lrc next to the track, or lyrics embedded in the audio (ID3 USLT, FLAC LYRICS, M4A ©lyr). This is how Aurora shows lyrics.",
++      "fileLyrics": {
++        "title": "Lyrics read straight from the file (like Aurora)",
++        "description": "Linked-mode tracks stay where they are, so the lyric page used to be empty: WebView cannot scan folders and the native probe only returned title and cover. Now, when a local song plays, the native layer lists .lrc/.vtt files in its folder and serves their bytes, and the page decodes (UTF-8 → GBK → Big5) and parses them; without a sidecar it reads embedded lyrics (MP3 ID3 USLT, FLAC/Ogg Vorbis LYRICS, M4A ©lyr). The result is saved back, so the next play needs no reading.",
++      },
++      "fixes": {
++        "encoding": "Old .lrc files are often GBK/Big5 with no declaration; decoding tries UTF-8, GBK then Big5 so the page is never mojibake.",
++        "id3size": "ID3v2.3 stores a plain 32-bit size while v2.4 uses synchsafe; both are handled (v2.3 is what old rips use).",
++        "lazy": "Only the first 2 MB of that one track is read, never a per-song pass at import, so a 2000-song library does not slow down.",
++        "cache": "Lyrics are written back and the library is refreshed, so the playing track updates without reopening it."
++      }
++    },
 +    "v0_9_8": {
 +      "intro": "0.9.8 fixes the steering-wheel pause key (working only the first time) and songs that would not play: media keys are now held the way Aurora does it, and formats WebView cannot decode are handed to the car unit's own decoder.",
 +      "steeringWheel": {
@@ -1967,7 +2039,7 @@ index 86f3b6d..8683241 100644
      "v0_7_0": {
        "intro": "Here are the new features and improvements in version 0.7.0.",
        "temperaVisualExpansion": {
-@@ -5228,6 +5339,10 @@ export default {
+@@ -5228,6 +5352,10 @@ export default {
      "capsuleOpensPalette": "Click to open the command palette",
    },
    "localMusic": {
@@ -1978,7 +2050,7 @@ index 86f3b6d..8683241 100644
      "foldersAndPlaylists": "Folders",
      "albums": "Albums",
      "artists": "Artists",
-@@ -5242,8 +5357,34 @@ export default {
+@@ -5242,8 +5370,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -2013,7 +2085,7 @@ index 86f3b6d..8683241 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6194,13 @@ export default {
+@@ -6053,8 +6207,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -2029,13 +2101,26 @@ index 86f3b6d..8683241 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/in.ts b/src/i18n/locales/in.ts
-index fac0d47..b4235f9 100644
+index fac0d47..5d93228 100644
 --- a/src/i18n/locales/in.ts
 +++ b/src/i18n/locales/in.ts
-@@ -4513,6 +4513,43 @@ export default {
+@@ -4513,6 +4513,56 @@ export default {
      "noDescription": "Tidak ada deskripsi tersedia"
    },
    "releaseNotes": {
++    "v0_9_9": {
++      "intro": "0.9.9 menghadirkan lirik untuk lagu lokal di head unit: halaman lirik kini membacanya dari berkas — .lrc di samping lagu, atau lirik tertanam (ID3 USLT, FLAC LYRICS, M4A ©lyr). Beginilah Aurora menampilkan lirik.",
++      "fileLyrics": {
++        "title": "Lirik dibaca langsung dari berkas (seperti Aurora)",
++        "description": "Lagu mode tertaut tetap di tempatnya, jadi halaman lirik dulu kosong: WebView tidak bisa memindai folder dan probe native hanya mengembalikan judul serta sampul. Sekarang saat lagu lokal diputar, lapisan native mendaftar .lrc/.vtt di foldernya dan menyajikan isinya, lalu halaman mendekode (UTF-8 → GBK → Big5) dan mengurainya; tanpa sidecar ia membaca lirik tertanam (MP3 ID3 USLT, FLAC/Ogg Vorbis LYRICS, M4A ©lyr). Hasilnya disimpan, jadi pemutaran berikutnya tidak perlu membaca lagi.",
++      },
++      "fixes": {
++        "encoding": "Berkas .lrc lama sering GBK/Big5 tanpa deklarasi; dekode mencoba UTF-8, GBK lalu Big5 sehingga tidak muncul mojibake.",
++        "id3size": "ID3v2.3 memakai ukuran 32-bit biasa, v2.4 synchsafe; keduanya didukung (v2.3 yang dipakai rip lama).",
++        "lazy": "Hanya 2 MB pertama lagu itu yang dibaca, bukan pemindaian per lagu saat impor, jadi pustaka 2000 lagu tetap cepat.",
++        "cache": "Lirik ditulis kembali dan pustaka disegarkan, jadi lagu yang sedang diputar langsung diperbarui."
++      }
++    },
 +    "v0_9_8": {
 +      "intro": "0.9.8 memperbaiki tombol jeda di setir (hanya berfungsi sekali) dan lagu yang tidak mau diputar: tombol media kini dipegang seperti Aurora, dan format yang tidak bisa didekode WebView diserahkan ke dekoder head unit.",
 +      "steeringWheel": {
@@ -2077,7 +2162,7 @@ index fac0d47..b4235f9 100644
        "intro": "Berikut fitur baru dan peningkatan di versi 0.7.0.",
        "temperaVisualExpansion": {
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..b38b69e 100644
+index 0067e9a..d50532f 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -2209,10 +2294,23 @@ index 0067e9a..b38b69e 100644
      "minimizeToTray": "最小化到托盘",
      "closeToTray": "关闭窗口时隐藏到托盘",
      "closeToTrayDesc": "点关闭按钮时不退出，隐藏到托盘继续播放",
-@@ -4513,6 +4575,126 @@ export default {
+@@ -4513,6 +4575,139 @@ export default {
      "noDescription": "暂无详细介绍",
    },
    "releaseNotes": {
++    "v0_9_9": {
++      "intro": "0.9.9 补上「车机本地歌没有歌词」：歌词页从文件本身读——同文件夹的 .lrc，或音档内嵌的歌词（ID3 USLT、FLAC LYRICS、M4A ©lyr）。Aurora 就是这么显示歌词的。",
++      "fileLyrics": {
++        "title": "歌词直接从文件读（照 Aurora）",
++        "description": "连结模式的歌都留在原地，以前歌词页一律空白：WebView 不能自己扫文件夹，原生探针也只回标题和封面。现在播放一首本地歌时，原生列出同文件夹的 .lrc／.vtt 并串内容给页面，页面自己解码（UTF-8 → GBK → Big5）、自己解析；没有外挂字幕就改读音档内嵌歌词（MP3 的 ID3 USLT、FLAC／Ogg 的 Vorbis LYRICS、M4A 的 ©lyr）。读到的歌词会写回曲库，同一首下次不用再读。",
++      },
++      "fixes": {
++        "encoding": "老盘的 .lrc 常是 GBK／Big5 却不宣告编码，解码依序试 UTF-8、GBK、Big5，不再出现一页乱码。",
++        "id3size": "ID3v2.3 的标签长度是普通 32-bit、v2.4 才是 synchsafe；两种都认（v2.3 是老盘最常用的）。",
++        "lazy": "只读该首的文件前 2 MB，不在汇入时逐首扫；整库 2000 首不会因此变慢。",
++        "cache": "歌词写回后广播曲库更新，正在播放的这首歌不用重开就能显示。"
++      }
++    },
 +    "v0_9_8": {
 +      "intro": "0.9.8 修方控（方向盘暂停键只有第一次有用）和「有些歌点开没声音」：音量键之外的那几颗媒体键改按 Aurora 的方式接管，WebView 解不开的格式交给车机自己的解码器。",
 +      "steeringWheel": {
@@ -2336,7 +2434,7 @@ index 0067e9a..b38b69e 100644
      "v0_7_0": {
        "intro": "以下是 0.7.0 的新功能与改进",
        "temperaVisualExpansion": {
-@@ -5228,6 +5410,10 @@ export default {
+@@ -5228,6 +5423,10 @@ export default {
      "capsuleOpensPalette": "点一下打开命令面板",
    },
    "localMusic": {
@@ -2347,7 +2445,7 @@ index 0067e9a..b38b69e 100644
      "foldersAndPlaylists": "文件夹",
      "albums": "专辑",
      "artists": "艺术家",
-@@ -5242,8 +5428,34 @@ export default {
+@@ -5242,8 +5441,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -2382,7 +2480,7 @@ index 0067e9a..b38b69e 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6263,13 @@ export default {
+@@ -6051,8 +6276,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -5214,12 +5312,352 @@ index 26a0181..16e3879 100644
      ]);
      await dropDeletedSongsFromPlaylists(uniqueSongIds);
      await Promise.all(Array.from(affectedRoots).map(cleanupDirHandleIfUnused));
+diff --git a/src/services/localSongFileLyrics.ts b/src/services/localSongFileLyrics.ts
+new file mode 100644
+index 0000000..72a4528
+--- /dev/null
++++ b/src/services/localSongFileLyrics.ts
+@@ -0,0 +1,334 @@
++import type { LocalSong } from '../types';
++import { LOCAL_MUSIC_UPDATED_EVENT } from './localMusicService';
++import { putLocalSong } from './repositories/localSongRepository';
++import {
++    fetchNativeRange,
++    isLinkedStorageSupported,
++    nativeAudioUrl,
++    listNativeLyrics,
++} from './nativeLinkedStorage';
++
++// src/services/localSongFileLyrics.ts
++// 「連結模式」的歌詞：檔案旁邊的 .lrc／.vtt，或音檔內嵌的歌詞（ID3 USLT、FLAC Vorbis
++// LYRICS、M4A ©lyr）。
++//
++// 為什麼要有這支：Aurora 這類播放器顯示歌詞靠的是檔案本身，而車機上的歌全部留在原地
++// （不抄進 App），WebView 又不可能自己去掃資料夾，所以之前這些歌在歌詞頁一律空白。
++// 這裡把「列同資料夾的歌詞檔」交給原生（listLyrics），內容與解碼都留在 JS：
++// 可以先在瀏覽器與單元測試裡驗證，出問題也只看得到一種解析路徑。
++
++const LYRIC_PREFERENCE = ['lrc', 'vtt'] as const;
++
++export interface FileLyricsPayload {
++    /** 同資料夾的歌詞檔內容。 */
++    localLyrics?: { content: string; format?: 'vtt' };
++    /** 音檔內嵌的歌詞。 */
++    embeddedLyrics?: string;
++    /** 是從哪裡拿到的，只給除錯訊息用。 */
++    origin?: string;
++}
++
++const decodeWith = (bytes: Uint8Array, label: string): string | null => {
++    try {
++        return new TextDecoder(label, { fatal: true }).decode(bytes);
++    } catch {
++        return null;
++    }
++};
++
++/**
++ * 歌詞檔的編碼跟 ID3 一樣會騙人：老盤的 .lrc 常是 GBK／Big5 卻沒有宣告。
++ * 依序試 UTF-8 → GBK → Big5，最後才退回寬鬆的 UTF-8。
++ */
++export const decodeLyricBytes = (bytes: Uint8Array): string => {
++    const strictUtf8 = decodeWith(bytes, 'utf-8');
++    if (strictUtf8) return strictUtf8;
++    const gbk = decodeWith(bytes, 'gbk');
++    if (gbk) return gbk;
++    const big5 = decodeWith(bytes, 'big5');
++    if (big5) return big5;
++    try {
++        return new TextDecoder('utf-8').decode(bytes);
++    } catch {
++        return '';
++    }
++};
++
++const readSynchsafe = (bytes: Uint8Array, offset: number): number => (
++    ((bytes[offset] & 0x7F) << 21)
++    | ((bytes[offset + 1] & 0x7F) << 14)
++    | ((bytes[offset + 2] & 0x7F) << 7)
++    | (bytes[offset + 3] & 0x7F)
++);
++
++const readUint32 = (bytes: Uint8Array, offset: number): number => (
++    ((bytes[offset] & 0xFF) * 0x1000000)
++    + ((bytes[offset + 1] & 0xFF) << 16)
++    + ((bytes[offset + 2] & 0xFF) << 8)
++    + (bytes[offset + 3] & 0xFF)
++);
++
++const readUint32LE = (bytes: Uint8Array, offset: number): number => (
++    (bytes[offset] & 0xFF)
++    + ((bytes[offset + 1] & 0xFF) << 8)
++    + ((bytes[offset + 2] & 0xFF) << 16)
++    + ((bytes[offset + 3] & 0xFF) * 0x1000000)
++);
++
++const decodeId3Text = (bytes: Uint8Array): string => {
++    // 0 = ISO-8859-1（實務上常是 GBK／Big5），1 = UTF-16（帶 BOM），2 = UTF-16BE，3 = UTF-8。
++    const encoding = bytes[0];
++    const body = bytes.subarray(1);
++    if (encoding === 3) return decodeWith(body, 'utf-8') ?? decodeLyricBytes(body);
++    if (encoding === 1 || encoding === 2) {
++        const label = encoding === 1 ? 'utf-16' : 'utf-16be';
++        return decodeWith(body, label) ?? decodeWith(body, 'utf-16le') ?? '';
++    }
++    const latin = decodeWith(body, 'latin1') ?? '';
++    // 西歐字元以外就當成 CJK 編碼處理：純英文歌詞走這條也得到同樣結果。
++    if (!/[^\x00-\xFF]/.test(latin)) {
++        const text = decodeLyricBytes(body);
++        return text;
++    }
++    return latin;
++};
++
++/** 從 ID3v2 標籤裡找 USLT（未同步歌詞）。 */
++const extractId3Uslt = (bytes: Uint8Array): string | null => {
++    if (bytes.length < 10) return null;
++    const version = bytes[3];
++    // v2.3（老盤最常見）的長度是普通 32-bit big-endian，v2.4 才是 synchsafe。
++    const tagSize = version >= 4 ? readSynchsafe(bytes, 6) : readUint32(bytes, 6);
++    const tagEnd = Math.min(bytes.length, 10 + tagSize);
++    let offset = 10;
++    if ((bytes[5] & 0x40) !== 0) offset += 4; // extended header
++    while (offset + 10 <= tagEnd) {
++        const id = String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
++        if (!/^[\x20-\x7E]{4}$/.test(id)) break;
++        const size = version >= 4 ? readSynchsafe(bytes, offset + 4) : readUint32(bytes, offset + 4);
++        const dataStart = offset + 10;
++        const dataEnd = Math.min(tagEnd, dataStart + size);
++        if (size <= 0 || dataEnd <= dataStart) break;
++        if (id === 'USLT') {
++            const body = bytes.subarray(dataStart, dataEnd);
++            // encoding(1) + language(3) + content descriptor（以終止符結束）+ 歌詞本體
++            const enc = body[0];
++            const terminatorLength = (enc === 1 || enc === 2) ? 2 : 1;
++            let cursor = 4;
++            while (cursor + terminatorLength <= body.length) {
++                const isTerminator = terminatorLength === 2
++                    ? body[cursor] === 0 && body[cursor + 1] === 0
++                    : body[cursor] === 0;
++                cursor += isTerminator ? terminatorLength : 1;
++                if (isTerminator) break;
++            }
++            const text = decodeId3Text(new Uint8Array([enc, ...body.subarray(cursor)]));
++            const trimmed = text.trim();
++            if (trimmed) return trimmed;
++        }
++        offset = dataStart + size;
++    }
++    return null;
++};
++
++/** FLAC：VORBIS_COMMENT 裡的 LYRICS／UNSYNCEDLYRICS。 */
++const extractFlacLyrics = (bytes: Uint8Array): string | null => {
++    if (bytes.length < 8) return null;
++    let offset = 4; // "fLaC"
++    while (offset + 4 <= bytes.length) {
++        const header = bytes[offset];
++        const isLast = (header & 0x80) !== 0;
++        const type = header & 0x7F;
++        const size = (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
++        const start = offset + 4;
++        const end = Math.min(bytes.length, start + size);
++        if (type === 4) {
++            const vendorLength = readUint32LE(bytes, start);
++            let cursor = start + 4 + vendorLength;
++            if (cursor + 4 > end) return null;
++            const count = readUint32LE(bytes, cursor);
++            cursor += 4;
++            for (let index = 0; index < count && cursor + 4 <= end; index += 1) {
++                const length = readUint32LE(bytes, cursor);
++                cursor += 4;
++                if (cursor + length > end) break;
++                const entry = decodeWith(bytes.subarray(cursor, cursor + length), 'utf-8')
++                    ?? decodeLyricBytes(bytes.subarray(cursor, cursor + length));
++                const equals = entry.indexOf('=');
++                if (equals > 0) {
++                    const key = entry.slice(0, equals).trim().toUpperCase();
++                    if (key === 'LYRICS' || key === 'UNSYNCEDLYRICS' || key === 'UNSYNCED LYRICS') {
++                        const value = entry.slice(equals + 1).replace(/\\n/g, '\n').trim();
++                        if (value) return value;
++                    }
++                }
++                cursor += length;
++            }
++            return null;
++        }
++        if (isLast) break;
++        offset = start + size;
++    }
++    return null;
++};
++
++/** M4A：©lyr 這顆資料 atom（內容是 UTF-8）。 */
++const extractM4aLyrics = (bytes: Uint8Array): string | null => {
++    const marker = [0xA9, 0x6C, 0x79, 0x72]; // '©lyr'
++    for (let index = 0; index + 32 < bytes.length; index += 1) {
++        if (bytes[index] !== marker[0] || bytes[index + 1] !== marker[1]
++            || bytes[index + 2] !== marker[2] || bytes[index + 3] !== marker[3]) continue;
++        // 之後找最近的一個 'data' box，payload 就是歌詞。
++        for (let scan = index + 4; scan + 16 < bytes.length; scan += 4) {
++            if (bytes[scan] !== 0x64 || bytes[scan + 1] !== 0x61 || bytes[scan + 2] !== 0x74 || bytes[scan + 3] !== 0x61) continue;
++            const size = readUint32(bytes, scan - 4);
++            const payloadStart = scan + 12; // 'data' + version/flags(4) + type(4)
++            const payloadEnd = Math.min(bytes.length, scan - 4 + size);
++            if (payloadEnd > payloadStart) {
++                const text = decodeWith(bytes.subarray(payloadStart, payloadEnd), 'utf-8') ?? decodeLyricBytes(bytes.subarray(payloadStart, payloadEnd));
++                const trimmed = text.trim();
++                if (trimmed) return trimmed;
++            }
++            break;
++        }
++    }
++    return null;
++};
++
++/** 依副檔名挑解析器；認不得就回 null（不是錯誤，只是沒有內嵌歌詞）。 */
++export const extractEmbeddedLyrics = (bytes: Uint8Array, fileName: string): string | null => {
++    const lower = fileName.toLowerCase();
++    try {
++        if (lower.endsWith('.mp3') || bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
++            return extractId3Uslt(bytes);
++        }
++        if (lower.endsWith('.flac') || (bytes[0] === 0x66 && bytes[1] === 0x4C && bytes[2] === 0x61 && bytes[3] === 0x43)) {
++            return extractFlacLyrics(bytes);
++        }
++        if (lower.endsWith('.m4a') || lower.endsWith('.mp4') || lower.endsWith('.alac')) {
++            return extractM4aLyrics(bytes);
++        }
++    } catch (error) {
++        console.warn('[FileLyrics] embedded parse failed', error);
++    }
++    return null;
++};
++
++const dirOf = (path: string): string => {
++    const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
++    return slash >= 0 ? path.slice(0, slash) : path;
++};
++
++const stripExtension = (name: string): string => name.replace(/\.([a-z0-9]{1,6})$/i, '');
++
++const baseNameOf = (filePath: string): string => {
++    const slash = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
++    return filePath.slice(slash + 1);
++};
++
++/** 同資料夾歌詞檔的比對順序：track.lrc > track.mp3.lrc > track.vtt，大小寫不分。 */
++const pickSidecar = (
++    directory: string,
++    audioName: string,
++): { name: string; path: string; format?: 'vtt' } | null => {
++    const entries = listNativeLyrics(directory);
++    if (entries.length === 0) return null;
++    const base = stripExtension(audioName).toLowerCase();
++    for (const extension of LYRIC_PREFERENCE) {
++        const candidates = [
++            `${base}.${extension}`,
++            `${audioName.toLowerCase()}.${extension}`,
++        ];
++        for (const candidate of candidates) {
++            const hit = entries.find(entry => entry.name.toLowerCase() === candidate);
++            if (hit) return { name: hit.name, path: hit.path, format: extension === 'vtt' ? 'vtt' : undefined };
++        }
++    }
++    return null;
++};
++
++const fetchText = async (url: string): Promise<Uint8Array | null> => {
++    try {
++        const response = await fetch(url);
++        if (!response.ok) return null;
++        return new Uint8Array(await response.arrayBuffer());
++    } catch (error) {
++        console.warn('[FileLyrics] fetch failed', error);
++        return null;
++    }
++};
++
++/** 讀一首連結歌曲的歌詞：先找旁邊的檔案，再試音檔內嵌。 */
++export const readLinkedSongLyrics = async (song: LocalSong): Promise<FileLyricsPayload | null> => {
++    if (!isLinkedStorageSupported() || !song.linkedFilePath) return null;
++    const path = song.linkedFilePath;
++    const audioName = song.fileName || baseNameOf(path);
++
++    const sidecar = pickSidecar(dirOf(path), audioName);
++    if (sidecar) {
++        const url = nativeAudioUrl(sidecar.path);
++        if (url) {
++            const bytes = await fetchText(url);
++            if (bytes) {
++                const content = decodeLyricBytes(bytes).trim();
++                if (content) {
++                    return {
++                        localLyrics: { content, format: sidecar.format },
++                        origin: `sidecar:${sidecar.name}`,
++                    };
++                }
++            }
++        }
++    }
++
++    // 內嵌歌詞在檔案前段（ID3 標籤總在最前面），讀 2 MB 就夠，不必整首拉進來。
++    const head = await fetchNativeRange(path, Math.min(Math.max(song.fileSize || 0, 64 * 1024), 2 * 1024 * 1024), 0);
++    if (!head) return null;
++    const embedded = extractEmbeddedLyrics(new Uint8Array(head), audioName);
++    if (embedded) {
++        return { embeddedLyrics: embedded, origin: 'embedded' };
++    }
++    return null;
++};
++
++/**
++ * 把讀到的歌詞寫回這首歌並通知曲庫刷新；已經有歌詞（或已匹配線上歌詞）就直接回 null。
++ * 只給連結模式的歌用：其他歌本來就在匯入時解析過。
++ */
++export const ensureLinkedSongLyrics = async (song: LocalSong): Promise<LocalSong | null> => {
++    if (!song.linkedFilePath) return null;
++    const hasLyrics = Boolean(
++        (song.hasLocalLyrics && song.localLyricsContent)
++        || (song.hasEmbeddedLyrics && song.embeddedLyricsContent)
++        || song.matchedLyrics
++        || song.markedPureMusic,
++    );
++    if (hasLyrics) return null;
++
++    const payload = await readLinkedSongLyrics(song);
++    if (!payload) return null;
++
++    const updated: LocalSong = payload.localLyrics
++        ? {
++            ...song,
++            hasLocalLyrics: true,
++            localLyricsContent: payload.localLyrics.content,
++            localLyricsFormat: payload.localLyrics.format,
++            localLyricsOrigin: 'sidecar',
++        }
++        : {
++            ...song,
++            hasEmbeddedLyrics: true,
++            embeddedLyricsContent: payload.embeddedLyrics,
++        };
++
++    try {
++        await putLocalSong(updated);
++        window.dispatchEvent(new CustomEvent(LOCAL_MUSIC_UPDATED_EVENT));
++    } catch (error) {
++        console.warn('[FileLyrics] save failed', error);
++        return null;
++    }
++    console.info(`[FileLyrics] hydrated ${song.fileName} from ${payload.origin}`);
++    return updated;
++};
 diff --git a/src/services/nativeLinkedStorage.ts b/src/services/nativeLinkedStorage.ts
 new file mode 100644
-index 0000000..1f0f8b0
+index 0000000..1dc5beb
 --- /dev/null
 +++ b/src/services/nativeLinkedStorage.ts
-@@ -0,0 +1,281 @@
+@@ -0,0 +1,299 @@
 +// src/services/nativeLinkedStorage.ts
 +// 「連結模式」的 JS 側：把 Android 原生層（FoliaNativeStorage.java）的介面收斂成幾個型別安全的函式。
 +//
@@ -5274,6 +5712,7 @@ index 0000000..1f0f8b0
 +    canTranscode?: () => boolean;
 +    startWavTranscode?: (filePath: string) => string;
 +    wavTranscodeStatus?: (jobId: string) => string;
++    listLyrics?: (dirPath: string) => string;
 +    diagnose?: () => string;
 +    hasPermission: () => boolean;
 +    requestPermission: () => void;
@@ -5412,6 +5851,23 @@ index 0000000..1f0f8b0
 +        return raw ? parse<NativeWavTranscodeStatus>(raw, { state: 'missing' }) : null;
 +    } catch {
 +        return null;
++    }
++};
++
++export interface NativeLyricFile {
++    name: string;
++    path: string;
++    size?: number;
++}
++
++/** 同一個資料夾裡的 .lrc／.vtt（給連結模式的歌詞用；內容之後用 /f/ 網址抓）。 */
++export const listNativeLyrics = (dirPath: string): NativeLyricFile[] => {
++    try {
++        const raw = bridge()?.listLyrics?.(dirPath);
++        return raw ? parse<NativeLyricFile[]>(raw, []) : [];
++    } catch (error) {
++        console.warn('[LinkedStorage] listLyrics failed', error);
++        return [];
 +    }
 +};
 +
@@ -6097,6 +6553,131 @@ index 64ef098..d4357bc 100644
  
  export type UiZoomStep = typeof UI_ZOOM_STEPS[number];
  
+diff --git a/test/unit/localSongFileLyrics.test.ts b/test/unit/localSongFileLyrics.test.ts
+new file mode 100644
+index 0000000..4b966b1
+--- /dev/null
++++ b/test/unit/localSongFileLyrics.test.ts
+@@ -0,0 +1,119 @@
++import { describe, expect, it } from 'vitest';
++import { decodeLyricBytes, extractEmbeddedLyrics } from '../../src/services/localSongFileLyrics';
++
++// 這支只測「檔案裡的字」這一半：連結模式的歌詞要嘛是同資料夾的 .lrc，要嘛是音檔內嵌的
++// USLT／Vorbis LYRICS／©lyr。原生只負責列檔案與串 bytes，解析全在 JS，所以這裡可以逐位元組驗。
++
++const utf16 = (text: string): number[] => {
++    const out: number[] = [0xFF, 0xFE];
++    for (const char of text) {
++        const code = char.codePointAt(0)!;
++        out.push(code & 0xFF, (code >> 8) & 0xFF);
++    }
++    return out;
++};
++
++// ID3v2.3 的長度是普通 32-bit big-endian（v2.4 才是 synchsafe），這裡照真實檔案的寫法造。
++const id3Tag = (frames: number[]): Uint8Array => {
++    const size = frames.length;
++    return new Uint8Array([
++        0x49, 0x44, 0x33, 0x03, 0x00, 0x00, // ID3v2.3
++        (size >> 24) & 0xFF, (size >> 16) & 0xFF, (size >> 8) & 0xFF, size & 0xFF,
++        ...frames,
++    ]);
++};
++
++const id3Frame = (id: string, body: number[]): number[] => [
++    ...[...id].map(char => char.charCodeAt(0)),
++    (body.length >> 24) & 0xFF, (body.length >> 16) & 0xFF, (body.length >> 8) & 0xFF, body.length & 0xFF,
++    0x00, 0x00,
++    ...body,
++];
++
++describe('extractEmbeddedLyrics', () => {
++    it('讀 MP3 的 ID3v2.4 USLT（synchsafe 長度）', () => {
++        const lyrics = '[00:00.00]v24 的歌詞';
++        const body = [0x03, ...'eng'.split('').map(c => c.charCodeAt(0)), 0x00, ...Array.from(new TextEncoder().encode(lyrics))];
++        const frame = id3Frame('USLT', body);
++        const size = frame.length;
++        const tag = new Uint8Array([
++            0x49, 0x44, 0x33, 0x04, 0x00, 0x00,
++            (size >> 21) & 0x7F, (size >> 14) & 0x7F, (size >> 7) & 0x7F, size & 0x7F,
++            ...frame,
++        ]);
++        expect(extractEmbeddedLyrics(tag, 'song.mp3')).toBe(lyrics);
++    });
++
++    it('讀 MP3 的 ID3 USLT（UTF-16）', () => {
++        const frame = id3Frame('USLT', [0x01, ...'eng'.split('').map(c => c.charCodeAt(0)), 0x00, 0x00, ...utf16('[00:01.00]第一句\n[00:05.00]第二句')]);
++        const bytes = id3Tag(frame);
++        const text = extractEmbeddedLyrics(bytes, 'song.mp3');
++        expect(text).toBe('[00:01.00]第一句\n[00:05.00]第二句');
++    });
++
++    it('讀 MP3 的 ID3 USLT（UTF-8，有描述欄位）', () => {
++        const body = [0x03, ...'chi'.split('').map(c => c.charCodeAt(0)), ...'描述'.split('').flatMap(c => [0xE6, 0x8F, 0x8F]), 0x00];
++        const lyrics = [...'[00:00.00]測試歌詞'].map(char => {
++            const bytes: number[] = [];
++            const encoded = new TextEncoder().encode(char);
++            encoded.forEach(byte => bytes.push(byte));
++            return bytes;
++        }).flat();
++        const frame = id3Frame('USLT', [...body, ...lyrics]);
++        const text = extractEmbeddedLyrics(id3Tag(frame), 'song.mp3');
++        expect(text).toBe('[00:00.00]測試歌詞');
++    });
++
++    it('讀 FLAC 的 Vorbis LYRICS 註解', () => {
++        const comment = new TextEncoder().encode('LYRICS=[00:02.00]從檔案裡來的歌詞');
++        const vendor = 'reference libFLAC';
++        const body: number[] = [
++            vendor.length & 0xFF, (vendor.length >> 8) & 0xFF, (vendor.length >> 16) & 0xFF, 0,
++            ...[...vendor].map(c => c.charCodeAt(0)),
++            1, 0, 0, 0, // comment count（little-endian）
++            comment.length & 0xFF, (comment.length >> 8) & 0xFF, (comment.length >> 16) & 0xFF, (comment.length >>> 24) & 0xFF,
++            ...Array.from(comment),
++        ];
++        const blockSize = body.length;
++        const bytes = new Uint8Array([
++            0x66, 0x4C, 0x61, 0x43, // fLaC
++            0x84, (blockSize >> 16) & 0xFF, (blockSize >> 8) & 0xFF, blockSize & 0xFF, // last block, type 4
++            ...body,
++        ]);
++        expect(extractEmbeddedLyrics(bytes, 'song.flac')).toBe('[00:02.00]從檔案裡來的歌詞');
++    });
++
++    it('讀 M4A 的 ©lyr', () => {
++        const text = new TextEncoder().encode('m4a lyric line');
++        const dataSize = 8 + 8 + text.length;
++        const bytes = new Uint8Array([
++            0x00, 0x00, 0x00, 0x00, // 前面一點填充
++            0xA9, 0x6C, 0x79, 0x72, // ©lyr
++            0x00, 0x00, 0x00, 0x08, // 這個 box 的長度（不影響解析）
++            0x00, 0x00, 0x00, (dataSize & 0xFF),
++            0x64, 0x61, 0x74, 0x61, // data
++            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
++            ...Array.from(text),
++        ]);
++        expect(extractEmbeddedLyrics(bytes, 'song.m4a')).toBe('m4a lyric line');
++    });
++
++    it('沒有歌詞的檔案回 null', () => {
++        expect(extractEmbeddedLyrics(new Uint8Array([0x00, 0x01, 0x02, 0x03]), 'song.mp3')).toBeNull();
++    });
++});
++
++describe('decodeLyricBytes', () => {
++    it('UTF-8 原樣解出', () => {
++        expect(decodeLyricBytes(new TextEncoder().encode('[00:00.00]繁體歌詞'))).toBe('[00:00.00]繁體歌詞');
++    });
++
++    it('GBK 的 .lrc 不會變亂碼', () => {
++        // 「[00:00.00]该死的温柔」用 GBK 編碼的位元組（老盤常見，檔案本身沒有宣告編碼）
++        const gbk = new Uint8Array([
++            0x5B, 0x30, 0x30, 0x3A, 0x30, 0x30, 0x2E, 0x30, 0x30, 0x5D,
++            0xB8, 0xC3, 0xCB, 0xC0, 0xB5, 0xC4, 0xCE, 0xC2, 0xC8, 0xE1,
++        ]);
++        expect(decodeLyricBytes(gbk)).toBe('[00:00.00]该死的温柔');
++    });
++});
 diff --git a/test/unit/textEncodingRepair.test.ts b/test/unit/textEncodingRepair.test.ts
 new file mode 100644
 index 0000000..659414d
