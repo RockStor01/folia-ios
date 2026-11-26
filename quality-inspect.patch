@@ -21,7 +21,7 @@ index 39ec48c..114cb4d 100644
      <script src="/runtime-config.js"></script>
    <script type="importmap">
 diff --git a/package.json b/package.json
-index 6976461..b7cbad6 100644
+index 6976461..5fb4da8 100644
 --- a/package.json
 +++ b/package.json
 @@ -8,7 +8,7 @@
@@ -29,12 +29,12 @@ index 6976461..b7cbad6 100644
    },
    "private": true,
 -  "version": "0.8.0",
-+  "version": "0.9.7",
++  "version": "0.9.8",
    "license": "AGPL-3.0",
    "type": "module",
    "main": "electron/main.cjs",
 diff --git a/src/App.tsx b/src/App.tsx
-index 7cf3c35..ad901de 100644
+index 7cf3c35..3604d5a 100644
 --- a/src/App.tsx
 +++ b/src/App.tsx
 @@ -35,6 +35,7 @@ import ReleaseNotesDialog from './components/modal/ReleaseNotesDialog';
@@ -65,7 +65,7 @@ index 7cf3c35..ad901de 100644
      // Player State
      useEffect(() => {
          (window as any).__folia_current_time = currentTime;
-@@ -1434,6 +1441,14 @@ export default function App() {
+@@ -1434,6 +1441,16 @@ export default function App() {
          isNowPlayingControlDisabledRef,
      };
      useMediaSessionBridge(mediaSessionOptions);
@@ -76,6 +76,8 @@ index 7cf3c35..ad901de 100644
 +        prevRef: mediaSessionPrevRef,
 +        nextRef: mediaSessionNextRef,
 +        playerState: displayPlayerState,
++        // 方控的「現在是在播還是停」直接讀元素，混音換歌的空檔 store 會落後。
++        audioRef,
 +    });
      // Linux: on the HiFi route the system media controls come from main's MPRIS, fed the same.
      useHifiMpris(mediaSessionOptions);
@@ -893,12 +895,12 @@ index 5de4bf3..af66827 100644
      );
  };
 diff --git a/src/components/modal/newFeaturesRelease.ts b/src/components/modal/newFeaturesRelease.ts
-index e49a39c..f2f09ba 100644
+index e49a39c..004fd6c 100644
 --- a/src/components/modal/newFeaturesRelease.ts
 +++ b/src/components/modal/newFeaturesRelease.ts
 @@ -1,4 +1,4 @@
 -import { ListMusic, MessageSquareText, Puzzle, SlidersVertical, Sparkles, Store } from 'lucide-react';
-+import { Languages, ListChecks, ShieldCheck, Type } from 'lucide-react';
++import { FileAudio, KeyRound, Languages, ListChecks, ShieldCheck, Type } from 'lucide-react';
  import type { LucideIcon } from 'lucide-react';
  
  // src/components/modal/newFeaturesRelease.ts
@@ -911,13 +913,13 @@ index e49a39c..f2f09ba 100644
      /** 重大更新：介绍上方显示「<代号> Update · 重大更新」标签；代号不翻译，文案在 help.majorUpdateLabel。
       *  servicePack：同一重大更新的热修复版，标签改成「<代号> Update SP<n> · 重大更新」，文案在 help.servicePackLabel。 */
      majorUpdate?: { codename: string; servicePack?: number };
-@@ -18,14 +20,11 @@ type NewFeaturesRelease = {
+@@ -18,14 +20,10 @@ type NewFeaturesRelease = {
  
  // Defines the current release's cards; their localized text lives under i18nKey in every locale.
  export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
 -    i18nKey: 'releaseNotes.v0_8_0',
 -    majorUpdate: { codename: 'Severance' },
-+    i18nKey: 'releaseNotes.v0_9_7',
++    i18nKey: 'releaseNotes.v0_9_8',
      features: [
 -        { id: 'sourceMods', icon: Puzzle },
 -        { id: 'modMarket', icon: Store },
@@ -925,11 +927,10 @@ index e49a39c..f2f09ba 100644
 -        { id: 'moments', icon: MessageSquareText },
 -        { id: 'stemMixer', icon: SlidersVertical },
 -        { id: 'moreDetails', icon: Sparkles },
-+        { id: 'mixedTitle', icon: Type },
-+        { id: 'singleChar', icon: Languages },
-+        { id: 'noOverFix', icon: ShieldCheck },
++        { id: 'steeringWheel', icon: KeyRound },
++        { id: 'formatFallback', icon: FileAudio },
      ],
-+    fixes: ['existingLibrary', 'filenameFallback', 'unitTests'],
++    fixes: ['audioFocus', 'positionReport', 'mimeSniff', 'cacheLimit'],
  };
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
@@ -1141,7 +1142,7 @@ index 92620c2..04852d7 100644
      general,
      interaction,
 diff --git a/src/components/modal/userGuideContent.ts b/src/components/modal/userGuideContent.ts
-index a8b5aa7..8dee1f3 100644
+index a8b5aa7..9f221d6 100644
 --- a/src/components/modal/userGuideContent.ts
 +++ b/src/components/modal/userGuideContent.ts
 @@ -13,7 +13,7 @@ export type UserGuideShortcut = {
@@ -1149,7 +1150,7 @@ index a8b5aa7..8dee1f3 100644
  
  export const USER_GUIDE_PAGE_COUNT = 7;
 -export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.8.0';
-+export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.9.7';
++export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.9.8';
  
  export type HelpTabShortcut = {
      id: string;
@@ -1321,10 +1322,10 @@ index 0000000..7b6e632
 +};
 diff --git a/src/hooks/useNativeMediaKeys.ts b/src/hooks/useNativeMediaKeys.ts
 new file mode 100644
-index 0000000..5b079ca
+index 0000000..634ec3a
 --- /dev/null
 +++ b/src/hooks/useNativeMediaKeys.ts
-@@ -0,0 +1,66 @@
+@@ -0,0 +1,88 @@
 +import type React from 'react';
 +// src/hooks/useNativeMediaKeys.ts
 +// 車機方控（方向盤按鍵）在 WebView 裡接不到的原因：WebView 不向系統註冊 MediaSession，
@@ -1332,10 +1333,15 @@ index 0000000..5b079ca
 +// 因此建了一個真的 MediaSession + dispatchKeyEvent 攔截，把按鍵用 evaluateJavascript 丟進來。
 +//
 +// 這裡就是那個接收端：把 'playPause' / 'pause' / 'next' / 'prev' 對到播放器既有的控制函式，
-+// 並把目前的播放狀態回報給原生層（否則系統無法判斷 PLAY_PAUSE 該播還是該停）。
++// 並把目前的播放狀態與位置回報給原生層（否則系統無法判斷 PLAY_PAUSE 該播還是該停）。
++//
++// v0.9.8：判斷「現在是在播還是停」改成直接讀音訊元素的真實狀態。
++// 之前讀的是 store 裡的 displayPlayerState，混音（automix）換歌的那一小段它可能是 IDLE，
++// 於是一按 PLAY_PAUSE 就被當成「要播放」，再按還是「要播放」——方控看起來就整顆失效。
++// 另外每秒把 position 回報一次，車機的媒體面板才不會把按鍵路由回內建播放器。
 +
 +import { useEffect, useRef } from 'react';
-+import { setNativePlaybackState } from '../services/nativeLinkedStorage';
++import { reportNativePlayback } from '../services/nativeLinkedStorage';
 +
 +interface NativeMediaKeyOptions {
 +    playRef: React.RefObject<() => Promise<void>>;
@@ -1343,6 +1349,8 @@ index 0000000..5b079ca
 +    prevRef: React.RefObject<() => void>;
 +    nextRef: React.RefObject<() => Promise<void> | void>;
 +    playerState: string;
++    /** 音訊元素的真實狀態；有它就不再依賴（可能落後的）store 狀態。 */
++    audioRef?: React.RefObject<HTMLAudioElement | null>;
 +}
 +
 +type MediaKey = 'playPause' | 'play' | 'pause' | 'next' | 'prev';
@@ -1359,17 +1367,21 @@ index 0000000..5b079ca
 +    }
 +};
 +
-+export const useNativeMediaKeys = ({ playRef, pauseRef, prevRef, nextRef, playerState }: NativeMediaKeyOptions): void => {
++export const useNativeMediaKeys = ({ playRef, pauseRef, prevRef, nextRef, playerState, audioRef }: NativeMediaKeyOptions): void => {
 +    const stateRef = useRef(playerState);
 +    stateRef.current = playerState;
 +
 +    useEffect(() => {
-+        const isPlaying = () => stateRef.current === 'playing';
++        const isPlayingNow = () => {
++            const element = audioRef?.current;
++            if (element) return !element.paused && !element.ended;
++            return stateRef.current === 'playing';
++        };
 +        const handler = (key: MediaKey) => {
 +            // 方控多數只給一顆 PLAY_PAUSE，所以依目前狀態自己決定方向；
 +            // 明確的 play / pause 還是照傳進來的走（有些車機是兩顆鍵）。
 +            if (key === 'playPause') {
-+                if (isPlaying()) start(pauseRef.current);
++                if (isPlayingNow()) start(pauseRef.current);
 +                else start(playRef.current);
 +                return;
 +            }
@@ -1383,11 +1395,22 @@ index 0000000..5b079ca
 +        return () => {
 +            delete (window as unknown as Record<string, unknown>).__foliaNativeMediaKey;
 +        };
-+    }, [nextRef, pauseRef, playRef, prevRef]);
++    }, [audioRef, nextRef, pauseRef, playRef, prevRef]);
 +
 +    useEffect(() => {
-+        setNativePlaybackState(playerState === 'playing');
-+    }, [playerState]);
++        reportNativePlayback(playerState === 'playing', audioRef?.current?.currentTime ?? 0, audioRef?.current?.duration ?? 0);
++    }, [audioRef, playerState]);
++
++    // 播放中每秒上報一次位置：車機的媒體面板據此畫進度，也據此認為 session 還活著。
++    useEffect(() => {
++        const timer = window.setInterval(() => {
++            const element = audioRef?.current;
++            const isPlaying = element ? !element.paused && !element.ended : stateRef.current === 'playing';
++            if (!isPlaying) return;
++            reportNativePlayback(true, element?.currentTime ?? 0, element?.duration ?? 0);
++        }, 1000);
++        return () => window.clearInterval(timer);
++    }, [audioRef]);
 +};
 +
 +export default useNativeMediaKeys;
@@ -1508,8 +1531,122 @@ index 0000000..c69bf5d
 +
 +    return rows;
 +};
+diff --git a/src/hooks/useTranscodeFallback.ts b/src/hooks/useTranscodeFallback.ts
+index 2f367df..361d5da 100644
+--- a/src/hooks/useTranscodeFallback.ts
++++ b/src/hooks/useTranscodeFallback.ts
+@@ -6,6 +6,7 @@ import type { PlaybackRecoveryTarget } from '../types/playbackRecovery';
+ import { classifyMediaElementFailure } from '../services/playbackRecovery/mediaFailureClassifier';
+ import { cancelPlayableTranscode, startPlayableTranscode } from '../services/playbackRecovery/playableSourceService';
+ import { registerPlaybackRepresentation } from '../services/playbackRecovery/representationRegistry';
++import { canNativeTranscode, pollNativeWavTranscode, startNativeWavTranscode } from '../services/nativeLinkedStorage';
+ import { useAudioSettingsStore } from '../stores/useAudioSettingsStore';
+ import { setStatusMessage } from '../stores/useStatusMessageStore';
+ import { usePlaybackStore } from '../stores/usePlaybackStore';
+@@ -51,6 +52,8 @@ export function useTranscodeFallback({
+     // effect re-arms the warm deck with the same URL on every timeupdate, so a track FFmpeg cannot
+     // decode would otherwise respawn a failing job several times a second for the whole arm window.
+     const failedRepresentationsRef = useRef(new Set<string>());
++    // 原生轉出來的 WAV 網址：它自己解不開時就別再轉一次，直接照原本的失敗路徑跳歌。
++    const nativeWavSourcesRef = useRef(new Set<string>());
+ 
+     useEffect(() => {
+         generationRef.current += 1;
+@@ -75,6 +78,92 @@ export function useTranscodeFallback({
+         }
+ 
+         const song = target.song;
++        if (!song) return false;
++
++        // 車機（Android APK）沒有 electron 的 FFmpeg：改用原生 MediaCodec 把系統解得開、
++        // WebView 卻解不開的格式（ALAC／APE／WMA／DSF／DFF／TTA…）轉成 WAV，換掉 src 就好。
++        // 這就是「效仿 Aurora」的那一段：能不能播取決於車機自己的解碼器，而不是 WebView 的。
++        const linkedPath = isLocalPlaybackSong(song)
++            ? localSongs.find(entry => entry.id === song.localRef.songId)?.linkedFilePath
++            : undefined;
++        const canUseNative = Boolean(
++            enabled
++            && !window.electron?.requestTranscodeFallback
++            && canNativeTranscode()
++            && classification.eligibleForTranscode
++            && linkedPath
++            && failedSource
++            && !nativeWavSourcesRef.current.has(failedSource)
++        );
++        if (canUseNative && linkedPath) {
++            const failureKey = `${getPlaybackSongKey(song)}:${song.playbackSourceRevision ?? ''}:${failedSource}`;
++            if (failedRepresentationsRef.current.has(failureKey)) return false;
++            if (activeRequestsRef.current.has(`native:${failedSource}`)) return true;
++
++            const generation = generationRef.current;
++            const resumeAt = Math.max(0, element.currentTime || currentTime.get());
++            const wantsPlayback = target.role === 'active' && (
++                (!element.paused && !element.ended)
++                || usePlaybackStore.getState().playerState === PlayerState.PLAYING
++                || shouldAutoPlayRef.current
++            );
++
++            setStatusMessage({ type: 'info', text: i18n.t('status.transcodeFallbackStarting') });
++            void (async () => {
++                const bindingKey = `native:${failedSource}`;
++                activeRequestsRef.current.set(bindingKey, 'pending');
++                try {
++                    const started = startNativeWavTranscode(linkedPath);
++                    if (!started) throw new Error('native transcode unavailable');
++                    let status = started;
++                    if (status.state === 'running' && status.jobId) {
++                        const jobId = status.jobId;
++                        const deadline = Date.now() + 8 * 60 * 1000;
++                        while (Date.now() < deadline) {
++                            await new Promise(resolve => setTimeout(resolve, 500));
++                            if (generationRef.current !== generation) return;
++                            const polled = pollNativeWavTranscode(jobId);
++                            if (!polled) break;
++                            status = polled;
++                            if (polled.state !== 'running') break;
++                        }
++                    }
++                    if (generationRef.current !== generation) return;
++                    if (status.state !== 'done' || !status.url) throw new Error(status.error || 'native transcode failed');
++
++                    nativeWavSourcesRef.current.add(status.url);
++                    if (target.role === 'active') {
++                        const latestTime = currentTime.get();
++                        pendingResumeTimeRef.current = Number.isFinite(latestTime) ? Math.max(0, latestTime) : resumeAt;
++                        shouldAutoPlayRef.current = wantsPlayback
++                            && usePlaybackStore.getState().playerState !== PlayerState.PAUSED;
++                    } else if (target.role === 'tail') {
++                        // 不該發生：tail 在前面就 return 了。
++                    }
++                    if (!replaceRecoverySource(element, failedSource, status.url)) return;
++                    setStatusMessage({ type: 'success', text: i18n.t('status.transcodeFallbackReady') });
++                } catch (error) {
++                    if (generationRef.current !== generation) return;
++                    if (failedRepresentationsRef.current.size >= MAX_REMEMBERED_FAILURES) {
++                        failedRepresentationsRef.current.clear();
++                    }
++                    failedRepresentationsRef.current.add(failureKey);
++                    console.warn('[TranscodeFallback] native-failed', {
++                        deck: target.deck,
++                        message: (error as { message?: string }).message,
++                    });
++                    setStatusMessage({ type: 'error', text: i18n.t('status.transcodeFallbackFailed') });
++                    if (target.role === 'warm') clearFailedWarmSource(element, failedSource);
++                    else skipAfterPlaybackFailure();
++                } finally {
++                    if (activeRequestsRef.current.get(bindingKey) === 'pending') {
++                        activeRequestsRef.current.delete(bindingKey);
++                    }
++                }
++            })();
++            return true;
++        }
++
+         const canRecover = Boolean(
+             enabled
+             && window.electron?.requestTranscodeFallback
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..8f6f214 100644
+index 86f3b6d..8683241 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -1703,10 +1840,27 @@ index 86f3b6d..8f6f214 100644
      "minimizeToTray": "Minimize to tray",
      "closeToTray": "Close window to tray",
      "closeToTrayDesc": "The close button hides the window to the tray instead of quitting",
-@@ -4513,6 +4504,109 @@ export default {
+@@ -4513,6 +4504,126 @@ export default {
      "noDescription": "No description available",
    },
    "releaseNotes": {
++    "v0_9_8": {
++      "intro": "0.9.8 fixes the steering-wheel pause key (working only the first time) and songs that would not play: media keys are now held the way Aurora does it, and formats WebView cannot decode are handed to the car unit's own decoder.",
++      "steeringWheel": {
++        "title": "The wheel's pause key no longer works only once",
++        "description": "The app only owned keys while it was in the foreground, so after a pause the head unit routed them back to its built-in player; on top of that the MediaSession and Activity entry points each delivered the press and cancelled each other. Now audio focus is taken while playing and released on pause, the playback position is refreshed every second so the session stays live, duplicate deliveries are dropped, and tapping the media panel can bring the app back.",
++      },
++      "formatFallback": {
++        "title": "Undecodable formats go to the car's decoder (Aurora's approach)",
++        "description": "ALAC in m4a, APE, WMA, DSF/DFF and TTA never decoded in WebView. On a decode/unsupported error the native layer now decodes with MediaExtractor + MediaCodec into a 16-bit stereo WAV in the cache and swaps the source to it, so the UI, lyrics, spectrum and wheel keys all keep working. If the car can decode it, it plays — exactly the rule Aurora follows.",
++      },
++      "fixes": {
++        "audioFocus": "AUDIOFOCUS_GAIN is requested while playing and released on pause; navigation prompts and calls pause playback, same as Aurora.",
++        "positionReport": "The page reports its position every second, so the head unit's progress bar and playing state no longer sit at zero.",
++        "mimeSniff": "Unknown formats no longer pretend to be audio/mpeg (which made WebView try an MP3 parse first); octet-stream fails immediately so the transcode can take over.",
++        "cacheLimit": "Converted WAVs are kept for two weeks only (about 50 MB per five-minute song) so storage is not eaten up."
++      }
++    },
 +    "v0_9_7": {
 +      "intro": "0.9.7 replaces the mojibake heuristic: instead of demanding that a string be 90% Chinese, it compares which decoding looks most like real text. Mixed Chinese/English titles, single-character labels and album names containing English are now repaired.",
 +      "mixedTitle": {
@@ -1813,7 +1967,7 @@ index 86f3b6d..8f6f214 100644
      "v0_7_0": {
        "intro": "Here are the new features and improvements in version 0.7.0.",
        "temperaVisualExpansion": {
-@@ -5228,6 +5322,10 @@ export default {
+@@ -5228,6 +5339,10 @@ export default {
      "capsuleOpensPalette": "Click to open the command palette",
    },
    "localMusic": {
@@ -1824,7 +1978,7 @@ index 86f3b6d..8f6f214 100644
      "foldersAndPlaylists": "Folders",
      "albums": "Albums",
      "artists": "Artists",
-@@ -5242,8 +5340,34 @@ export default {
+@@ -5242,8 +5357,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -1859,7 +2013,7 @@ index 86f3b6d..8f6f214 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6177,13 @@ export default {
+@@ -6053,8 +6194,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -1875,13 +2029,30 @@ index 86f3b6d..8f6f214 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/in.ts b/src/i18n/locales/in.ts
-index fac0d47..40e51f2 100644
+index fac0d47..b4235f9 100644
 --- a/src/i18n/locales/in.ts
 +++ b/src/i18n/locales/in.ts
-@@ -4513,6 +4513,26 @@ export default {
+@@ -4513,6 +4513,43 @@ export default {
      "noDescription": "Tidak ada deskripsi tersedia"
    },
    "releaseNotes": {
++    "v0_9_8": {
++      "intro": "0.9.8 memperbaiki tombol jeda di setir (hanya berfungsi sekali) dan lagu yang tidak mau diputar: tombol media kini dipegang seperti Aurora, dan format yang tidak bisa didekode WebView diserahkan ke dekoder head unit.",
++      "steeringWheel": {
++        "title": "Tombol jeda di setir tidak lagi hanya sekali",
++        "description": "Sebelumnya aplikasi hanya memegang tombol saat di depan, jadi setelah dijeda head unit mengembalikan tombol ke pemutarnya sendiri; selain itu MediaSession dan Activity masing-masing mengirim tekanan yang sama sehingga saling membatalkan. Sekarang fokus audio diminta saat memutar dan dilepas saat jeda, posisi diperbarui tiap detik agar sesi tetap hidup, kiriman ganda dibuang, dan mengetuk panel media bisa membuka aplikasi.",
++      },
++      "formatFallback": {
++        "title": "Format yang gagal didekode diserahkan ke dekoder head unit (cara Aurora)",
++        "description": "ALAC di m4a, APE, WMA, DSF/DFF dan TTA memang tidak bisa didekode WebView. Saat muncul error dekode/tidak didukung, lapisan native mendekode dengan MediaExtractor + MediaCodec menjadi WAV stereo 16-bit di cache lalu menukar sumbernya, sehingga UI, lirik, spektrum dan tombol setir tetap jalan.",
++      },
++      "fixes": {
++        "audioFocus": "AUDIOFOCUS_GAIN diminta saat memutar dan dilepas saat jeda; suara navigasi atau telepon menjeda pemutaran seperti Aurora.",
++        "positionReport": "Halaman melaporkan posisi tiap detik, jadi bilah progres dan status di panel head unit tidak lagi diam di nol.",
++        "mimeSniff": "Format tak dikenal tidak lagi menyamar sebagai audio/mpeg; octet-stream langsung gagal supaya transkode bisa mengambil alih.",
++        "cacheLimit": "WAV hasil konversi hanya disimpan dua minggu (sekitar 50 MB per lagu lima menit)."
++      }
++    },
 +    "v0_9_7": {
 +      "intro": "0.9.7 mengganti patokan perbaikan teks rusak: tidak lagi menuntut “sembilan puluh persen berbahasa Mandarin”, tetapi membandingkan decoding mana yang paling mirip teks asli. Judul campuran Mandarin/Inggris, label satu karakter, dan nama album berbahasa Inggris kini ikut diperbaiki.",
 +      "mixedTitle": {
@@ -1906,7 +2077,7 @@ index fac0d47..40e51f2 100644
        "intro": "Berikut fitur baru dan peningkatan di versi 0.7.0.",
        "temperaVisualExpansion": {
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..8c7bc0e 100644
+index 0067e9a..b38b69e 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -2038,10 +2209,27 @@ index 0067e9a..8c7bc0e 100644
      "minimizeToTray": "最小化到托盘",
      "closeToTray": "关闭窗口时隐藏到托盘",
      "closeToTrayDesc": "点关闭按钮时不退出，隐藏到托盘继续播放",
-@@ -4513,6 +4575,109 @@ export default {
+@@ -4513,6 +4575,126 @@ export default {
      "noDescription": "暂无详细介绍",
    },
    "releaseNotes": {
++    "v0_9_8": {
++      "intro": "0.9.8 修方控（方向盘暂停键只有第一次有用）和「有些歌点开没声音」：音量键之外的那几颗媒体键改按 Aurora 的方式接管，WebView 解不开的格式交给车机自己的解码器。",
++      "steeringWheel": {
++        "title": "方向盘那颗暂停键不再只用一次",
++        "description": "以前只抓住「App 在前台」这一个入口，一暂停，车机就把按键路由回它内置的播放器，而且 MediaSession 与 Activity 两个入口各收一次、互相抵消。现在播放时向系统要音频焦点、暂停时释放，每秒更新一次播放位置让 session 保持活动，两个入口去重，从媒体面板点回 App 也能把界面叫起来。",
++      },
++      "formatFallback": {
++        "title": "解不开的格式交给车机解码器（照 Aurora 的做法）",
++        "description": "ALAC 的 m4a、APE、WMA、DSF／DFF、TTA 这些 WebView 本来就解不开。现在一旦报「解码失败／格式不支持」，原生层用 MediaExtractor + MediaCodec 把它转成 16-bit 立体声 WAV 放到缓存，再把音源换成这个 WAV，界面、歌词、频谱、方控全部照旧。车机能解就能播，和 Aurora 一样取决于车机的解码器。",
++      },
++      "fixes": {
++        "audioFocus": "播放时申请 AUDIOFOCUS_GAIN，被导航播报或来电抢走焦点时自动暂停，跟 Aurora 一致。",
++        "positionReport": "网页每秒回报播放位置，车机媒体面板的进度条和「正在播放」状态不再停在 0。",
++        "mimeSniff": "未知格式不再冒充 audio/mpeg（那会让 WebView 先当 MP3 慢慢试），改成 octet-stream 立刻报不支持，转码才能及时接手。",
++        "cacheLimit": "转好的 WAV 只留最近两周（一首五分钟约 50 MB），避免把车机空间吃光。"
++      }
++    },
 +    "v0_9_7": {
 +      "intro": "0.9.7 把亂碼修復的判準換掉：不再要求「九成以上是中文」，改成比「哪個解碼更像人話」。中英混排的歌名、單字標籤、含英文的專輯名都能修回來了。",
 +      "mixedTitle": {
@@ -2148,7 +2336,7 @@ index 0067e9a..8c7bc0e 100644
      "v0_7_0": {
        "intro": "以下是 0.7.0 的新功能与改进",
        "temperaVisualExpansion": {
-@@ -5228,6 +5393,10 @@ export default {
+@@ -5228,6 +5410,10 @@ export default {
      "capsuleOpensPalette": "点一下打开命令面板",
    },
    "localMusic": {
@@ -2159,7 +2347,7 @@ index 0067e9a..8c7bc0e 100644
      "foldersAndPlaylists": "文件夹",
      "albums": "专辑",
      "artists": "艺术家",
-@@ -5242,8 +5411,34 @@ export default {
+@@ -5242,8 +5428,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -2194,7 +2382,7 @@ index 0067e9a..8c7bc0e 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6246,13 @@ export default {
+@@ -6051,8 +6263,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -5028,10 +5216,10 @@ index 26a0181..16e3879 100644
      await Promise.all(Array.from(affectedRoots).map(cleanupDirHandleIfUnused));
 diff --git a/src/services/nativeLinkedStorage.ts b/src/services/nativeLinkedStorage.ts
 new file mode 100644
-index 0000000..b6ebc81
+index 0000000..1f0f8b0
 --- /dev/null
 +++ b/src/services/nativeLinkedStorage.ts
-@@ -0,0 +1,224 @@
+@@ -0,0 +1,281 @@
 +// src/services/nativeLinkedStorage.ts
 +// 「連結模式」的 JS 側：把 Android 原生層（FoliaNativeStorage.java）的介面收斂成幾個型別安全的函式。
 +//
@@ -5082,6 +5270,10 @@ index 0000000..b6ebc81
 +    ping: () => string;
 +    serverPort: () => number;
 +    setPlaybackState?: (isPlaying: boolean) => void;
++    reportPlaybackState?: (isPlaying: boolean, positionMs: number, durationMs: number) => void;
++    canTranscode?: () => boolean;
++    startWavTranscode?: (filePath: string) => string;
++    wavTranscodeStatus?: (jobId: string) => string;
 +    diagnose?: () => string;
 +    hasPermission: () => boolean;
 +    requestPermission: () => void;
@@ -5167,6 +5359,59 @@ index 0000000..b6ebc81
 +        bridge()?.setPlaybackState?.(isPlaying);
 +    } catch {
 +        // 非車機環境沒有這個方法，靜靜跳過。
++    }
++};
++
++/**
++ * 帶播放位置的版本（v0.9.8）：車機面板的進度、以及「這個 session 還活著」都靠它。
++ * 原生層每秒會自己把位置往前走，暫停時才停。
++ */
++export const reportNativePlayback = (isPlaying: boolean, positionMs: number, durationMs: number): void => {
++    try {
++        const native = bridge();
++        if (native?.reportPlaybackState) {
++            native.reportPlaybackState(isPlaying, Math.max(0, positionMs || 0), Math.max(0, durationMs || 0));
++            return;
++        }
++        native?.setPlaybackState?.(isPlaying);
++    } catch {
++        // 非車機環境沒有這個方法，靜靜跳過。
++    }
++};
++
++export interface NativeWavTranscodeStatus {
++    state: 'running' | 'done' | 'failed' | 'missing';
++    jobId?: string;
++    progress?: number;
++    url?: string;
++    error?: string;
++}
++
++/** 原生層能不能把系統解碼器解得的格式（ALAC／APE／WMA／DSF 等）轉成 WAV 給 WebView 播。 */
++export const canNativeTranscode = (): boolean => {
++    try {
++        return Boolean(bridge()?.canTranscode?.());
++    } catch {
++        return false;
++    }
++};
++
++export const startNativeWavTranscode = (filePath: string): NativeWavTranscodeStatus | null => {
++    try {
++        const raw = bridge()?.startWavTranscode?.(filePath);
++        return raw ? parse<NativeWavTranscodeStatus>(raw, { state: 'failed' }) : null;
++    } catch (error) {
++        console.warn('[LinkedStorage] startWavTranscode failed', error);
++        return null;
++    }
++};
++
++export const pollNativeWavTranscode = (jobId: string): NativeWavTranscodeStatus | null => {
++    try {
++        const raw = bridge()?.wavTranscodeStatus?.(jobId);
++        return raw ? parse<NativeWavTranscodeStatus>(raw, { state: 'missing' }) : null;
++    } catch {
++        return null;
 +    }
 +};
 +
@@ -5357,6 +5602,23 @@ index dce29d6..284324b 100644
      apply(initial.uiZoomEnabled, initial.uiZoomStep);
      useDesktopSettingsStore.subscribe(state => apply(state.uiZoomEnabled, state.uiZoomStep));
  };
+diff --git a/src/stores/useAudioSettingsStore.ts b/src/stores/useAudioSettingsStore.ts
+index 4ba30ac..92ded6e 100644
+--- a/src/stores/useAudioSettingsStore.ts
++++ b/src/stores/useAudioSettingsStore.ts
+@@ -359,7 +359,11 @@ export const useAudioSettingsStore = create<AudioSettingsState>((set, get) => ({
+     autoPlayOnLaunch: getStoredBoolean(AUTO_PLAY_ON_LAUNCH_KEY, false),
+     enableTranscodeFallback: getStoredBoolean(
+         ENABLE_TRANSCODE_FALLBACK_KEY,
+-        typeof window !== 'undefined' && Boolean(window.electron?.requestTranscodeFallback),
++        typeof window !== 'undefined' && Boolean(
++            // 桌面版有 FFmpeg；車機版走原生 MediaCodec（v0.9.8），兩邊都預設開。
++            window.electron?.requestTranscodeFallback
++            || window.FoliaNativeStorage?.canTranscode?.(),
++        ),
+     ),
+     // Off unless asked for: it writes to the listener's music account, so it is never a default.
+     // The source with an old key (LEGACY_PLAYBACK_REPORT_KEYS) is read at start; any other when first asked for.
 diff --git a/src/types.ts b/src/types.ts
 index 7dcb74b..041c411 100644
 --- a/src/types.ts

@@ -1,15 +1,25 @@
 package top.izuna.foliamajor;
 
 import android.app.Activity;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
+import android.media.MediaCodec;
+import android.media.MediaExtractor;
+import android.media.MediaFormat;
 import android.media.MediaMetadataRetriever;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.view.KeyEvent;
 import android.webkit.JavascriptInterface;
@@ -38,6 +48,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 車機用的「連結模式」原生層。
@@ -72,6 +84,19 @@ public class FoliaNativeStorage {
     private WebView webView;
     private MediaSession mediaSession;
     private boolean playing = false;
+    private AudioManager audioManager;
+    private AudioFocusRequest audioFocusRequest;
+    private boolean hasAudioFocus = false;
+    /** 同一顆鍵會被 MediaSession 與 Activity 各投遞一次，350 ms 內只認第一次，否則一按就會連跳兩下。 */
+    private long lastKeyAtMs = 0;
+    private String lastKeyAction = "";
+    /** 播放位置由 JS 回報，原生每秒往前走一格，車機的媒體面板才會一直有「在播」的樣子。 */
+    private long reportedPositionMs = 0;
+    private long reportedDurationMs = 0;
+    private long reportedAtMs = 0;
+    private Handler tickerHandler;
+    private Runnable ticker;
+    private final Map<String, String> transcodeJobs = new ConcurrentHashMap<>();
     /** 方控的按鍵走 Activity 的 dispatchKeyEvent，MainActivity 靠這個把手把按鍵丟回來。 */
     private static FoliaNativeStorage instance;
 
@@ -108,7 +133,6 @@ public class FoliaNativeStorage {
         }
         return json.toString();
     }
-
     /**
      * 方控（方向盤按鍵）與系統媒體鍵的接收點。
      *
@@ -116,38 +140,80 @@ public class FoliaNativeStorage {
      * navigator.mediaSession。這裡建一個真正的 MediaSession 當作「目前在播的 App」，再把按鍵轉給 JS。
      * 老車機有些不走 MediaSession、直接把 KeyEvent 丟給前景 Activity，所以 MainActivity 也接了
      * dispatchKeyEvent 一起轉。
+     *
+     * 跟 Aurora 對齊的地方（v0.9.8）：
+     *   1. 播放時向系統要 audio focus、暫停時放掉。車機只把媒體鍵交給「有焦點、而且有在播」的
+     *      session；沒有焦點時按鍵會被丟回車機內建的播放器，看起來就是「只有第一次能用」。
+     *   2. 播放中每秒更新 PlaybackState 的 position / speed，面板才一直認為這個 session 還活著。
+     *   3. MediaSession callback 與 Activity dispatchKeyEvent 兩個投遞點去重，一次按鍵只算一次。
+     *   4. setSessionActivity：從車機的媒體面板點回 App 時真的能把 Activity 叫起來。
      */
     private void startMediaSession() {
         if (Build.VERSION.SDK_INT < 21 || mediaSession != null) return;
         try {
+            audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
             mediaSession = new MediaSession(context, "FoliaPlayback");
             mediaSession.setCallback(new MediaSession.Callback() {
                 @Override
                 public void onPlay() {
-                    forwardMediaKey("playPause");
+                    dispatchMediaKey("play");
                 }
 
                 @Override
                 public void onPause() {
-                    forwardMediaKey("pause");
+                    dispatchMediaKey("pause");
                 }
 
                 @Override
                 public void onStop() {
-                    forwardMediaKey("pause");
+                    dispatchMediaKey("pause");
                 }
 
                 @Override
                 public void onSkipToNext() {
-                    forwardMediaKey("next");
+                    dispatchMediaKey("next");
                 }
 
                 @Override
                 public void onSkipToPrevious() {
-                    forwardMediaKey("prev");
+                    dispatchMediaKey("prev");
+                }
+
+                /**
+                 * 有些車機不走 callback，直接把 MEDIA_BUTTON intent 丟進來；不覆寫這個方法的話
+                 * PLAY_PAUSE 會落到預設實作而被吃掉。
+                 */
+                @Override
+                public boolean onMediaButtonEvent(Intent mediaButtonIntent) {
+                    if (mediaButtonIntent != null) {
+                        KeyEvent event = mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT);
+                        if (event != null && event.getAction() == KeyEvent.ACTION_DOWN
+                                && handleMediaKeyCode(event.getKeyCode())) {
+                            return true;
+                        }
+                    }
+                    return super.onMediaButtonEvent(mediaButtonIntent);
                 }
             });
             mediaSession.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
+            try {
+                mediaSession.setPlaybackToLocal(new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build());
+            } catch (Throwable ignored) {
+                // API 21 以前的建構子差異；拿不到也不影響按鍵轉發。
+            }
+            try {
+                Intent launch = new Intent(context, MainActivity.class);
+                launch.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+                PendingIntent pending = PendingIntent.getActivity(
+                        context, 0, launch,
+                        Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE : PendingIntent.FLAG_UPDATE_CURRENT);
+                mediaSession.setSessionActivity(pending);
+            } catch (Throwable ignored) {
+                // 沒有 sessionActivity 只是面板點不回 App，按鍵照樣能用。
+            }
             mediaSession.setActive(true);
             applyPlaybackState(false);
         } catch (Throwable error) {
@@ -155,11 +221,35 @@ public class FoliaNativeStorage {
         }
     }
 
-    /** JS 每次開始／暫停都要回報，MediaSession 才能把 PLAY_PAUSE 判斷成對的動作。 */
+    /** 舊介面（boolean）；位置由 reportPlaybackState 提供。 */
     @JavascriptInterface
     public void setPlaybackState(boolean isPlaying) {
+        reportPlaybackState(isPlaying, currentPositionMs(), reportedDurationMs);
+    }
+
+    /**
+     * 新的上報點：頁面每次開始／暫停／換歌都回報一次播放狀態與位置，
+     * 原生拿它更新 MediaSession 的 PlaybackState（車機面板的進度條就是讀這個）。
+     */
+    @JavascriptInterface
+    public void reportPlaybackState(boolean isPlaying, double positionMs, double durationMs) {
+        reportedPositionMs = Math.max(0, Math.round(positionMs));
+        reportedDurationMs = Math.max(0, Math.round(durationMs));
+        reportedAtMs = SystemClock.elapsedRealtime();
         playing = isPlaying;
-        if (Build.VERSION.SDK_INT >= 21) applyPlaybackState(isPlaying);
+        updateAudioFocus(isPlaying);
+        startTicker(isPlaying);
+        applyPlaybackState(isPlaying);
+    }
+
+    private long currentPositionMs() {
+        if (playing && reportedAtMs > 0) {
+            long drift = SystemClock.elapsedRealtime() - reportedAtMs;
+            long estimate = reportedPositionMs + Math.min(drift, 5000);
+            if (reportedDurationMs > 0) return Math.min(estimate, reportedDurationMs);
+            return estimate;
+        }
+        return reportedPositionMs;
     }
 
     private void applyPlaybackState(boolean isPlaying) {
@@ -167,37 +257,116 @@ public class FoliaNativeStorage {
         try {
             long actions = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
                     | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_STOP
-                    | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS;
+                    | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS
+                    | PlaybackState.ACTION_SEEK_TO;
             mediaSession.setPlaybackState(new PlaybackState.Builder()
                     .setActions(actions)
-                    .setState(isPlaying ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED, 0, isPlaying ? 1f : 0f)
+                    .setState(isPlaying ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
+                            currentPositionMs(), isPlaying ? 1f : 0f)
                     .build());
         } catch (Throwable error) {
             android.util.Log.w("FoliaNativeStorage", "setPlaybackState failed: " + error);
         }
     }
 
+    /** 播放中每秒把 position 往前推一格：車機面板看到 session 還在動，就不會把按鍵路由走。 */
+    private void startTicker(final boolean isPlaying) {
+        if (tickerHandler == null) tickerHandler = new Handler(Looper.getMainLooper());
+        if (ticker != null) {
+            tickerHandler.removeCallbacks(ticker);
+            ticker = null;
+        }
+        if (!isPlaying) return;
+        ticker = new Runnable() {
+            @Override
+            public void run() {
+                if (!playing) return;
+                applyPlaybackState(true);
+                if (tickerHandler != null) tickerHandler.postDelayed(this, 1000);
+            }
+        };
+        tickerHandler.postDelayed(ticker, 1000);
+    }
+
+    private void updateAudioFocus(boolean wantFocus) {
+        if (audioManager == null) return;
+        try {
+            if (wantFocus && !hasAudioFocus) {
+                AudioManager.OnAudioFocusChangeListener listener = new AudioManager.OnAudioFocusChangeListener() {
+                    @Override
+                    public void onAudioFocusChange(int change) {
+                        // 被別的 App（導航播報、電話）搶走焦點時照樣暫停，跟 Aurora 一樣讓位。
+                        if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                            dispatchMediaKey("pause");
+                        }
+                    }
+                };
+                if (Build.VERSION.SDK_INT >= 26) {
+                    if (audioFocusRequest == null) {
+                        audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                                .setAudioAttributes(new AudioAttributes.Builder()
+                                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                                        .build())
+                                .setOnAudioFocusChangeListener(listener)
+                                .setWillPauseWhenDucked(false)
+                                .build();
+                    }
+                    hasAudioFocus = audioManager.requestAudioFocus(audioFocusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+                } else {
+                    hasAudioFocus = audioManager.requestAudioFocus(listener, AudioManager.STREAM_MUSIC,
+                            AudioManager.AUDIOFOCUS_GAIN) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+                }
+            } else if (!wantFocus && hasAudioFocus) {
+                if (Build.VERSION.SDK_INT >= 26 && audioFocusRequest != null) {
+                    audioManager.abandonAudioFocusRequest(audioFocusRequest);
+                } else if (Build.VERSION.SDK_INT < 26) {
+                    audioManager.abandonAudioFocus(null);
+                }
+                hasAudioFocus = false;
+            }
+        } catch (Throwable error) {
+            android.util.Log.w("FoliaNativeStorage", "audio focus failed: " + error);
+        }
+    }
+
+    /** 同一顆鍵去重後再轉給頁面；回 true 代表這是一次有效的新按鍵。 */
+    private boolean dispatchMediaKey(String action) {
+        long now = SystemClock.elapsedRealtime();
+        if (action.equals(lastKeyAction) && now - lastKeyAtMs < 350) {
+            return false;
+        }
+        lastKeyAction = action;
+        lastKeyAtMs = now;
+        forwardMediaKey(action);
+        return true;
+    }
+
     /** MainActivity 的 dispatchKeyEvent 轉過來；認得的鍵回 true。 */
     public static boolean handleHardwareKey(int keyCode) {
         FoliaNativeStorage storage = instance;
         if (storage == null) return false;
+        return storage.handleMediaKeyCode(keyCode);
+    }
+
+    private boolean handleMediaKeyCode(int keyCode) {
         switch (keyCode) {
             case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
             case KeyEvent.KEYCODE_HEADSETHOOK:
-                storage.forwardMediaKey("playPause");
+                dispatchMediaKey("playPause");
                 return true;
             case KeyEvent.KEYCODE_MEDIA_PLAY:
-                storage.forwardMediaKey("play");
+                dispatchMediaKey("play");
                 return true;
             case KeyEvent.KEYCODE_MEDIA_PAUSE:
             case KeyEvent.KEYCODE_MEDIA_STOP:
-                storage.forwardMediaKey("pause");
+                dispatchMediaKey("pause");
                 return true;
             case KeyEvent.KEYCODE_MEDIA_NEXT:
-                storage.forwardMediaKey("next");
+                dispatchMediaKey("next");
                 return true;
             case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
-                storage.forwardMediaKey("prev");
+                dispatchMediaKey("prev");
                 return true;
             default:
                 return false;
@@ -653,7 +822,14 @@ public class FoliaNativeStorage {
         if (lower.endsWith(".aac")) return "audio/aac";
         if (lower.endsWith(".wma")) return "audio/x-ms-wma";
         if (lower.endsWith(".aif") || lower.endsWith(".aiff")) return "audio/aiff";
-        return "audio/mpeg";
+        if (lower.endsWith(".dsf")) return "application/octet-stream";
+        if (lower.endsWith(".dff")) return "application/octet-stream";
+        if (lower.endsWith(".ape")) return "application/octet-stream";
+        if (lower.endsWith(".wv")) return "application/octet-stream";
+        if (lower.endsWith(".tta")) return "application/octet-stream";
+        // 其餘未知格式不要冒充 audio/mpeg：Chromium 會先當成 MP3 慢慢試，延遲才報錯；
+        // 給 octet-stream 它會立刻回「不支援」，v0.9.8 的原生轉碼才來得及接手。
+        return "application/octet-stream";
     }
 
     private static void putIfPresent(JSONObject json, String key, String value) throws Exception {
@@ -691,6 +867,343 @@ public class FoliaNativeStorage {
 
     private static String coverHttpPath(String coverPath) {
         return "/c/" + Base64Url.encode(coverPath);
+    }
+
+    // ---------------------------------------------------------------- 不支援的格式：原生解成 WAV
+
+    /**
+     * 為什麼要有這段：WebView 的解碼器只認 mp3 / aac / flac / vorbis / opus / wav 這一組，
+     * ALAC 的 m4a、APE、WMA、DSF／DFF、TTA 一律 decode error（有些甚至因為我們把未知格式的
+     * Content-Type 當成 audio/mpeg，還沒進解碼器就失敗）。車機的系統解碼器（Aurora 用的那顆）
+     * 反而解得開，於是：
+     *
+     *   1. 頁面的 <audio> 報 decode / unsupported 時，請原生用 MediaExtractor + MediaCodec 解碼，
+     *      寫成 16-bit PCM 立體聲 WAV 放進 App 快取；
+     *   2. 回一個 http://127.0.0.1:<port>/f/<base64> 的網址，頁面把 src 換過去就好。
+     *
+     * 這樣播放器、歌詞、頻譜、方控全部照舊，只有「這一首的音檔來源」換成了 WAV。
+     */
+    private File wavCacheDir() {
+        File dir = new File(context.getCacheDir(), "folia-wav");
+        if (!dir.exists() && !dir.mkdirs()) {
+            android.util.Log.w("FoliaNativeStorage", "cannot create wav cache dir");
+        }
+        return dir;
+    }
+
+    @JavascriptInterface
+    public boolean canTranscode() {
+        return Build.VERSION.SDK_INT >= 16;
+    }
+
+    /** 請原生把這個檔案解成 WAV；立刻回傳 job 狀態，解碼在背景執行緒跑。 */
+    @JavascriptInterface
+    public String startWavTranscode(String filePath) {
+        JSONObject result = new JSONObject();
+        try {
+            File source = new File(filePath);
+            if (!source.isFile() || !source.canRead()) {
+                result.put("state", "failed");
+                result.put("error", "file not readable");
+                return result.toString();
+            }
+            String key = sha1(filePath + "|" + source.length() + "|" + source.lastModified());
+            File target = new File(wavCacheDir(), key + ".wav");
+            String url = "http://127.0.0.1:" + port + "/f/" + Base64Url.encode(target.getAbsolutePath());
+            if (target.isFile() && target.length() > 44) {
+                result.put("state", "done");
+                result.put("url", url);
+                return result.toString();
+            }
+            if (transcodeJobs.containsKey(key)) {
+                String running = transcodeJobs.get(key);
+                if (running != null) return running;
+            }
+            result.put("state", "running");
+            result.put("jobId", key);
+            result.put("progress", 0);
+            transcodeJobs.put(key, result.toString());
+            final File src = source;
+            final File out = target;
+            Thread worker = new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    runWavTranscode(key, src, out);
+                }
+            });
+            worker.setDaemon(true);
+            worker.start();
+            return result.toString();
+        } catch (Throwable error) {
+            android.util.Log.w("FoliaNativeStorage", "startWavTranscode failed: " + error);
+            try {
+                result.put("state", "failed");
+                result.put("error", String.valueOf(error));
+            } catch (Exception ignored) {
+                // 到這裡已經是錯誤路徑，回甚麼都不影響呼叫端。
+            }
+            return result.toString();
+        }
+    }
+
+    /** 輪詢：{"state":"running|done|failed","progress":0-100,"url":...,"error":...} */
+    @JavascriptInterface
+    public String wavTranscodeStatus(String jobId) {
+        String raw = transcodeJobs.get(jobId);
+        if (raw != null) return raw;
+        JSONObject missing = new JSONObject();
+        try {
+            missing.put("state", "missing");
+        } catch (Exception ignored) {
+            // 不會發生。
+        }
+        return missing.toString();
+    }
+
+    private void publishJob(String jobId, String state, int progress, String url, String error) {
+        JSONObject json = new JSONObject();
+        try {
+            json.put("state", state);
+            json.put("progress", progress);
+            if (url != null) json.put("url", url);
+            if (error != null) json.put("error", error);
+        } catch (Exception ignored) {
+            // 同上，JSONObject 的 put 不會失敗。
+        }
+        transcodeJobs.put(jobId, json.toString());
+    }
+
+    /**
+     * 實際解碼：MediaExtractor 抽音軌 → MediaCodec 解 → 一律寫成 16-bit 立體聲 WAV。
+     * 單聲道複製成左右兩軌，5.1 取前兩軌（FL/FR），這樣 Chromium 一定吃得下。
+     */
+    private void runWavTranscode(String jobId, File source, File target) {
+        MediaExtractor extractor = null;
+        MediaCodec codec = null;
+        RandomAccessFile raf = null;
+        try {
+            extractor = new MediaExtractor();
+            extractor.setDataSource(source.getAbsolutePath());
+            int trackIndex = -1;
+            MediaFormat format = null;
+            for (int i = 0; i < extractor.getTrackCount(); i++) {
+                MediaFormat candidate = extractor.getTrackFormat(i);
+                String mime = candidate.getString(MediaFormat.KEY_MIME);
+                if (mime != null && mime.startsWith("audio/")) {
+                    trackIndex = i;
+                    format = candidate;
+                    break;
+                }
+            }
+            if (trackIndex < 0 || format == null) throw new IOException("no audio track");
+            extractor.selectTrack(trackIndex);
+            String mime = format.getString(MediaFormat.KEY_MIME);
+            long durationUs = format.containsKey(MediaFormat.KEY_DURATION) ? format.getLong(MediaFormat.KEY_DURATION) : 0;
+
+            codec = MediaCodec.createDecoderByType(mime);
+            codec.configure(format, null, null, 0);
+            codec.start();
+
+            int sampleRate = format.containsKey(MediaFormat.KEY_SAMPLE_RATE) ? format.getInteger(MediaFormat.KEY_SAMPLE_RATE) : 44100;
+            int sourceChannels = format.containsKey(MediaFormat.KEY_CHANNEL_COUNT) ? format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) : 2;
+            boolean pcmFloat = false;
+
+            raf = new RandomAccessFile(target, "rw");
+            raf.setLength(0);
+            raf.write(new byte[44]);
+            long dataBytes = 0;
+            int lastProgress = -1;
+
+            MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+            boolean inputDone = false;
+            boolean outputDone = false;
+            while (!outputDone) {
+                if (!inputDone) {
+                    int inIndex = codec.dequeueInputBuffer(10000);
+                    if (inIndex >= 0) {
+                        java.nio.ByteBuffer input = codec.getInputBuffer(inIndex);
+                        if (input == null) throw new IOException("no input buffer");
+                        input.clear();
+                        int sampleSize = extractor.readSampleData(input, 0);
+                        if (sampleSize < 0) {
+                            codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                            inputDone = true;
+                        } else {
+                            codec.queueInputBuffer(inIndex, 0, sampleSize, extractor.getSampleTime(), 0);
+                            extractor.advance();
+                        }
+                    }
+                }
+
+                int outIndex = codec.dequeueOutputBuffer(info, 10000);
+                if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    MediaFormat outputFormat = codec.getOutputFormat();
+                    if (outputFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                        sampleRate = outputFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE);
+                    }
+                    if (outputFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
+                        sourceChannels = outputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
+                    }
+                    if (outputFormat.containsKey(MediaFormat.KEY_PCM_ENCODING)
+                            && outputFormat.getInteger(MediaFormat.KEY_PCM_ENCODING) == 4) {
+                        pcmFloat = true;
+                    }
+                } else if (outIndex >= 0) {
+                    java.nio.ByteBuffer output = codec.getOutputBuffer(outIndex);
+                    if (output != null && info.size > 0 && (info.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
+                        output.position(info.offset);
+                        output.limit(info.offset + info.size);
+                        byte[] stereo = pcmFloat
+                                ? toStereo16Float(output, sourceChannels)
+                                : toStereo16(output, sourceChannels);
+                        raf.write(stereo);
+                        dataBytes += stereo.length;
+                    }
+                    codec.releaseOutputBuffer(outIndex, false);
+                    if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) outputDone = true;
+                } else if (outIndex == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
+                    // 舊 API 的一次性通知，緩衝區照 getOutputBuffer 拿，不必處理。
+                }
+
+                int progress = durationUs > 0
+                        ? (int) Math.min(99, Math.max(0, info.presentationTimeUs * 100 / durationUs))
+                        : (dataBytes > 0 ? Math.min(99, (int) (dataBytes / (1024 * 1024))) : 0);
+                if (progress != lastProgress) {
+                    lastProgress = progress;
+                    publishJob(jobId, "running", progress, null, null);
+                }
+            }
+
+            // 收尾：把 44 bytes 的 WAV 表頭補回去（長度要在解完才知道）。
+            byte[] header = wavHeader(sampleRate, 2, dataBytes);
+            raf.seek(0);
+            raf.write(header);
+            raf.close();
+            raf = null;
+
+            publishJob(jobId, "done", 100,
+                    "http://127.0.0.1:" + port + "/f/" + Base64Url.encode(target.getAbsolutePath()), null);
+            cleanupWavCache(target);
+        } catch (Throwable error) {
+            android.util.Log.w("FoliaNativeStorage", "wav transcode failed: " + error);
+            try {
+                if (raf != null) raf.close();
+            } catch (Throwable ignored) {
+                // 已經在錯誤路徑。
+            }
+            // 失敗的殘檔要刪掉，否則下次 startWavTranscode 會看到「檔案存在」直接回 done。
+            try {
+                if (target.isFile()) target.delete();
+            } catch (Throwable ignored) {
+                // 刪不掉就算了，下一次會用新的 key。
+            }
+            publishJob(jobId, "failed", 0, null, String.valueOf(error));
+        } finally {
+            try {
+                if (codec != null) {
+                    codec.stop();
+                    codec.release();
+                }
+            } catch (Throwable ignored) {
+                // 收尾失敗不影響結果。
+            }
+            try {
+                if (extractor != null) extractor.release();
+            } catch (Throwable ignored) {
+                // 同上。
+            }
+        }
+    }
+
+    /** 16-bit PCM：取第 0／1 軌當左右（單聲道複製一份）。 */
+    private static byte[] toStereo16(java.nio.ByteBuffer buffer, int channels) {
+        java.nio.ShortBuffer shorts = buffer.order(java.nio.ByteOrder.LITTLE_ENDIAN).asShortBuffer();
+        int frames = Math.max(0, shorts.remaining() / Math.max(1, channels));
+        byte[] out = new byte[frames * 4];
+        int write = 0;
+        for (int frame = 0; frame < frames; frame++) {
+            short left = shorts.get(frame * channels);
+            short right = channels >= 2 ? shorts.get(frame * channels + 1) : left;
+            out[write++] = (byte) (left & 0xFF);
+            out[write++] = (byte) ((left >> 8) & 0xFF);
+            out[write++] = (byte) (right & 0xFF);
+            out[write++] = (byte) ((right >> 8) & 0xFF);
+        }
+        return out;
+    }
+
+    /** 少數解碼器輸出 float PCM（-1..1），一樣轉成 16-bit。 */
+    private static byte[] toStereo16Float(java.nio.ByteBuffer buffer, int channels) {
+        java.nio.FloatBuffer floats = buffer.order(java.nio.ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
+        int frames = Math.max(0, floats.remaining() / Math.max(1, channels));
+        byte[] out = new byte[frames * 4];
+        int write = 0;
+        for (int frame = 0; frame < frames; frame++) {
+            float left = floats.get(frame * channels);
+            float right = channels >= 2 ? floats.get(frame * channels + 1) : left;
+            out[write++] = (byte) (Math.round(clamp16(left)) & 0xFF);
+            out[write++] = (byte) ((Math.round(clamp16(left)) >> 8) & 0xFF);
+            out[write++] = (byte) (Math.round(clamp16(right)) & 0xFF);
+            out[write++] = (byte) ((Math.round(clamp16(right)) >> 8) & 0xFF);
+        }
+        return out;
+    }
+
+    private static float clamp16(float value) {
+        float scaled = value * 32767f;
+        if (scaled > 32767f) return 32767f;
+        if (scaled < -32768f) return -32768f;
+        return scaled;
+    }
+
+    private static byte[] wavHeader(int sampleRate, int channels, long dataBytes) {
+        long byteRate = (long) sampleRate * channels * 2L;
+        byte[] header = new byte[44];
+        putAscii(header, 0, "RIFF");
+        putIntLe(header, 4, 36 + dataBytes);
+        putAscii(header, 8, "WAVEfmt ");
+        putIntLe(header, 16, 16);
+        putShortLe(header, 20, 1);
+        putShortLe(header, 22, channels);
+        putIntLe(header, 24, sampleRate);
+        putIntLe(header, 28, byteRate);
+        putShortLe(header, 32, channels * 2);
+        putShortLe(header, 34, 16);
+        putAscii(header, 36, "data");
+        putIntLe(header, 40, dataBytes);
+        return header;
+    }
+
+    private static void putAscii(byte[] target, int offset, String text) {
+        for (int i = 0; i < text.length(); i++) target[offset + i] = (byte) text.charAt(i);
+    }
+
+    private static void putIntLe(byte[] target, int offset, long value) {
+        target[offset] = (byte) (value & 0xFF);
+        target[offset + 1] = (byte) ((value >> 8) & 0xFF);
+        target[offset + 2] = (byte) ((value >> 16) & 0xFF);
+        target[offset + 3] = (byte) ((value >> 24) & 0xFF);
+    }
+
+    private static void putShortLe(byte[] target, int offset, int value) {
+        target[offset] = (byte) (value & 0xFF);
+        target[offset + 1] = (byte) ((value >> 8) & 0xFF);
+    }
+
+    /** 快取只留最近兩週的 WAV；一首五分鐘的歌大約 50 MB，不清會把車機的可用空間吃光。 */
+    private void cleanupWavCache(File keep) {
+        try {
+            File dir = wavCacheDir();
+            long cutoff = System.currentTimeMillis() - 14L * 24 * 3600 * 1000;
+            File[] files = dir.listFiles();
+            if (files == null) return;
+            for (File file : files) {
+                if (file.equals(keep)) continue;
+                if (file.getName().endsWith(".wav") && file.lastModified() < cutoff) file.delete();
+            }
+        } catch (Throwable error) {
+            android.util.Log.w("FoliaNativeStorage", "cleanupWavCache failed: " + error);
+        }
     }
 
     // ---------------------------------------------------------------- 本機 HTTP（Range 串流）
