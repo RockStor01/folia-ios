@@ -21,7 +21,7 @@ index 39ec48c..114cb4d 100644
      <script src="/runtime-config.js"></script>
    <script type="importmap">
 diff --git a/package.json b/package.json
-index 6976461..0ce8f8e 100644
+index 6976461..23d9564 100644
 --- a/package.json
 +++ b/package.json
 @@ -8,7 +8,7 @@
@@ -29,7 +29,7 @@ index 6976461..0ce8f8e 100644
    },
    "private": true,
 -  "version": "0.8.0",
-+  "version": "0.9.11",
++  "version": "0.9.12",
    "license": "AGPL-3.0",
    "type": "module",
    "main": "electron/main.cjs",
@@ -700,6 +700,49 @@ index 0000000..8b22e15
 +};
 +
 +export default SpectrumChart;
+diff --git a/src/components/command-palette/commands/hifiCommands.ts b/src/components/command-palette/commands/hifiCommands.ts
+index 0bae1a8..0ff0d37 100644
+--- a/src/components/command-palette/commands/hifiCommands.ts
++++ b/src/components/command-palette/commands/hifiCommands.ts
+@@ -33,7 +33,7 @@ export const hifiCommands: CommandPaletteCommand[] = [
+             }
+             // The full-volume warning is asked in the settings, never skipped from here.
+             if (!settings.isHifiVolumeConfirmed()) {
+-                settings.openSettings('options', 'playback', null, 'hifiEngine');
++                settings.openSettings('options', 'playback', null, 'audioOutputSettings');
+                 return;
+             }
+             settings.setHifiEnabled(true);
+@@ -50,7 +50,7 @@ export const hifiCommands: CommandPaletteCommand[] = [
+         'Playback engine settings',
+         'Open the playback engine settings: Web Audio or mpv, and mpv\'s output device, exclusive mode and DSD',
+         ['hifi', 'mpv', 'playback engine', 'web audio', 'bit perfect', 'dsd', 'dop', 'exclusive mode', 'audio device', '播放引擎', '原生直通', '独占模式', '输出设备', '直通设置'],
+-        'hifiEngine',
++        'audioOutputSettings',
+         { platform: ['electron'] },
+     ),
+     createToggleCommand(
+@@ -126,7 +126,7 @@ export const hifiCommands: CommandPaletteCommand[] = [
+                 setStatusMsg({ type: 'error', text: t(`hifi.errors.${result?.errorCode ?? 'INSTALL_FAILED'}`) });
+             });
+             // The progress bar and the cancel button are in the playback engine settings.
+-            context.settings.openSettings('options', 'playback', null, 'hifiEngine');
++            context.settings.openSettings('options', 'playback', null, 'audioOutputSettings');
+             return true;
+         },
+     }),
+diff --git a/src/components/command-palette/commands/settingsCommands.ts b/src/components/command-palette/commands/settingsCommands.ts
+index 7f8ac91..83bf1d5 100644
+--- a/src/components/command-palette/commands/settingsCommands.ts
++++ b/src/components/command-palette/commands/settingsCommands.ts
+@@ -402,7 +402,6 @@ export const settingsCommands: CommandPaletteCommand[] = [
+     createSettingsCommand('settings-desktop', 'Desktop settings', 'Open desktop app settings', ['desktop', 'electron', '桌面', '桌面端'], 'options', 'desktop', { platform: ['electron'] }),
+     createSettingsCommand('settings-sources', 'Sources settings', 'Open the online sources: enable each, use it only for matching, or disable it', ['sources', 'online sources', 'providers', 'platforms', 'disable source', 'matching only', '音源', '音源设置', '平台', '停用音源', '只用于匹配'], 'options', 'sources', { platform: ['electron'] }),
+     createSettingsCommand('settings-remote', 'Remote Control settings', 'Open the Remote Control window settings: its switches and lyric rows', ['remote control', 'remote window', 'mini player', 'remote lyrics', '遥控窗口', '遥控窗口设置', '妙控窗', '迷你播放器', '遥控歌词'], 'options', 'remote', { platform: ['electron'] }),
+-    createSettingsAnchorCommand('settings-update-channel', 'Update channel', 'Choose the desktop app release channel', ['release channel', 'realeco', 'limo', 'cielo', '更新通道', '发布通道'], 'updateCheck', { platform: ['electron'] }),
+     {
+         id: 'desktop-toggle-voice-input-pause',
+         platform: ['win'],
 diff --git a/src/components/local/LinkedFolderPicker.tsx b/src/components/local/LinkedFolderPicker.tsx
 new file mode 100644
 index 0000000..8719e05
@@ -955,12 +998,12 @@ index 5de4bf3..af66827 100644
      );
  };
 diff --git a/src/components/modal/newFeaturesRelease.ts b/src/components/modal/newFeaturesRelease.ts
-index e49a39c..3dcabba 100644
+index e49a39c..d95866f 100644
 --- a/src/components/modal/newFeaturesRelease.ts
 +++ b/src/components/modal/newFeaturesRelease.ts
 @@ -1,4 +1,4 @@
 -import { ListMusic, MessageSquareText, Puzzle, SlidersVertical, Sparkles, Store } from 'lucide-react';
-+import { FileAudio, KeyRound, Languages, ListChecks, Music2, Play, RefreshCw, ShieldCheck, Type } from 'lucide-react';
++import { FileAudio, KeyRound, Languages, ListChecks, MonitorOff, Music2, Play, RefreshCw, ShieldCheck, Type } from 'lucide-react';
  import type { LucideIcon } from 'lucide-react';
  
  // src/components/modal/newFeaturesRelease.ts
@@ -979,7 +1022,7 @@ index e49a39c..3dcabba 100644
  export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
 -    i18nKey: 'releaseNotes.v0_8_0',
 -    majorUpdate: { codename: 'Severance' },
-+    i18nKey: 'releaseNotes.v0_9_11',
++    i18nKey: 'releaseNotes.v0_9_12',
      features: [
 -        { id: 'sourceMods', icon: Puzzle },
 -        { id: 'modMarket', icon: Store },
@@ -987,9 +1030,9 @@ index e49a39c..3dcabba 100644
 -        { id: 'moments', icon: MessageSquareText },
 -        { id: 'stemMixer', icon: SlidersVertical },
 -        { id: 'moreDetails', icon: Sparkles },
-+        { id: 'playPauseFix', icon: Play },
++        { id: 'desktopCleanup', icon: MonitorOff },
      ],
-+    fixes: ['focus', 'echo', 'toggle', 'log'],
++    fixes: ['window', 'output', 'update', 'shortcuts', 'keep'],
  };
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
@@ -1019,7 +1062,7 @@ index 1ea56f3..629323e 100644
              { id: 'sources', icon: Cable, labelKey: 'options.settingsPageSources', electronOnly: true },
          ],
 diff --git a/src/components/modal/settings/pages/AppearancePage.tsx b/src/components/modal/settings/pages/AppearancePage.tsx
-index 1220f0a..07caf7a 100644
+index 1220f0a..7398e91 100644
 --- a/src/components/modal/settings/pages/AppearancePage.tsx
 +++ b/src/components/modal/settings/pages/AppearancePage.tsx
 @@ -4,11 +4,13 @@ import { useShallow } from 'zustand/react/shallow';
@@ -1101,6 +1144,157 @@ index 1220f0a..07caf7a 100644
              <Group def={THEME}>
                  <Row option={O.daylight} note={t('options.followSystemThemeDesc')}>
                      <Segmented<DaylightChoice>
+@@ -126,11 +166,7 @@ const AppearancePage: React.FC = () => {
+                     />
+                 </Row>
+                 <Reveal when={themeControls.aiApiKeyStatus === 'missing'}>
+-                    <Row sub notice={t('options.themeGenerationSourceAiUnavailable')}>
+-                        <Button onClick={() => openSettings('options', settingsAnchorSubview('electronSettings'), null, 'electronSettings')}>
+-                            {t('options.configureAiApiKey')}
+-                        </Button>
+-                    </Row>
++                    <Row sub notice={t('options.themeGenerationSourceAiUnavailable')} />
+                 </Reveal>
+                 <Row option={O.preferCustom} hint={t('options.preferCustomThemeDesc')}>
+                     <Toggle
+diff --git a/src/components/modal/settings/pages/GeneralPage.tsx b/src/components/modal/settings/pages/GeneralPage.tsx
+index 0bcd539..d22b438 100644
+--- a/src/components/modal/settings/pages/GeneralPage.tsx
++++ b/src/components/modal/settings/pages/GeneralPage.tsx
+@@ -1,15 +1,11 @@
+ import React from 'react';
+-import { RefreshCw } from 'lucide-react';
+ import { useTranslation } from 'react-i18next';
+ import { useShallow } from 'zustand/react/shallow';
+ import type { AppLanguagePreference } from '../../../../i18n/config';
+ import { useAudioSettingsStore } from '../../../../stores/useAudioSettingsStore';
+-import { usePlayerChromeSettingsStore } from '../../../../stores/usePlayerChromeSettingsStore';
+ import { selectPonderSettingsSnapshot, usePonderStore } from '../../../../stores/usePonderStore';
+ import { useSettingsModalStore } from '../../../../stores/useSettingsModalStore';
+-import { Button, Group, Reveal, Row, Segmented, Select, Toggle, option, type SettingsGroupDef, type SettingsOptionDef } from '../kit';
+-import { FoundUpdateRow } from './FoundUpdateRow';
+-import { ChinaDrivesRow } from './ChinaDrivesRow';
++import { Group, Row, Segmented, Select, Toggle, option, type SettingsGroupDef, type SettingsOptionDef } from '../kit';
+ import { useSettingsPage } from './settingsPageContext';
+ 
+ // src/components/modal/settings/pages/GeneralPage.tsx
+@@ -19,17 +15,11 @@ import { useSettingsPage } from './settingsPageContext';
+ 
+ const LANGUAGE: SettingsGroupDef = { id: 'languageSettings', titleKey: 'options.languageSettings' };
+ const LAUNCH: SettingsGroupDef = { id: 'labWindowAndTools', titleKey: 'options.settingsHeadingLaunch' };
+-const UPDATE: SettingsGroupDef = { id: 'updateCheck', titleKey: 'options.updateCheck', electronOnly: true };
+ const PONDER: SettingsGroupDef = { id: 'ponderHints', titleKey: 'options.ponderHints' };
+ 
+ const O = {
+     language: option(LANGUAGE, 'appLanguage', 'options.appLanguage'),
+     autoPlay: option(LAUNCH, 'autoPlayOnLaunch', 'options.autoPlayOnLaunch'),
+-    openPlayer: option(LAUNCH, 'openPlayerOnLaunch', 'options.openPlayerOnLaunch', { electronOnly: true }),
+-    titlebarButtons: option(LAUNCH, 'alwaysShowMainWindowTitlebar', 'options.alwaysShowMainWindowTitlebar'),
+-    updateCheck: option(UPDATE, 'enableUpdateCheck', 'options.enableUpdateCheck'),
+-    autoUpdate: option(UPDATE, 'enableAutoUpdate', 'options.enableAutoUpdate'),
+-    updateChannel: option(UPDATE, 'updateChannel', 'options.updateChannel'),
+     ponderHints: option(PONDER, 'ponderHintVisibility', 'options.ponderHints'),
+     ponderTouchButton: option(PONDER, 'ponderTouchButton', 'options.ponderTouchButton'),
+ };
+@@ -38,16 +28,11 @@ export const OPTIONS: SettingsOptionDef[] = Object.values(O);
+ 
+ const GeneralPage: React.FC = () => {
+     const { t, i18n } = useTranslation();
+-    const { isElectron, viewProps } = useSettingsPage();
+-    const { openPlayerOnLaunch, onToggleOpenPlayerOnLaunch } = viewProps.desktop.preferences;
+-    const update = viewProps.desktop.model;
+-    const { electronSettings, updateStatus } = update;
++    const { viewProps } = useSettingsPage();
+     const languagePreference = useSettingsModalStore(state => state.appLanguagePreference);
+     const setLanguagePreference = useSettingsModalStore(state => state.handleSetAppLanguagePreference);
+     const autoPlay = useAudioSettingsStore(state => state.autoPlayOnLaunch);
+     const setAutoPlay = useAudioSettingsStore(state => state.handleToggleAutoPlayOnLaunch);
+-    const titlebarButtons = usePlayerChromeSettingsStore(state => state.alwaysShowMainWindowTitlebar);
+-    const setTitlebarButtons = usePlayerChromeSettingsStore(state => state.handleToggleAlwaysShowMainWindowTitlebar);
+     const ponder = usePonderStore(useShallow(selectPonderSettingsSnapshot));
+ 
+     const resolvedLanguage = i18n.resolvedLanguage;
+@@ -61,9 +46,6 @@ const GeneralPage: React.FC = () => {
+                     ? t('options.appLanguageViVN')
+                     : t('options.appLanguageEnUS');
+ 
+-    const isInternalBuild = electronSettings.UPDATE_CHANNEL === 'internal';
+-    const autoUpdateSupported = Boolean(updateStatus?.autoUpdateSupported);
+-
+     return (
+         <>
+             <Group def={LANGUAGE} bare>
+@@ -90,70 +72,8 @@ const GeneralPage: React.FC = () => {
+                 <Row option={O.autoPlay} hint={t('options.autoPlayOnLaunchDesc')} note={t('options.autoPlayOnLaunchDescSub')}>
+                     <Toggle checked={autoPlay} onChange={setAutoPlay} />
+                 </Row>
+-                {isElectron && (
+-                    <Row option={O.openPlayer} note={t('options.openPlayerOnLaunchDesc')}>
+-                        <Toggle checked={openPlayerOnLaunch} onChange={onToggleOpenPlayerOnLaunch} />
+-                    </Row>
+-                )}
+-                <Row option={O.titlebarButtons} hint={t('options.alwaysShowMainWindowTitlebarDesc')}>
+-                    <Toggle checked={titlebarButtons} onChange={setTitlebarButtons} />
+-                </Row>
+             </Group>
+ 
+-            {isElectron && (
+-                <Group
+-                    def={UPDATE}
+-                    // The state of the check; pressing it checks again.
+-                    action={(
+-                        <Button
+-                            variant="quiet"
+-                            icon={RefreshCw}
+-                            onClick={() => void update.onCheckForUpdates()}
+-                            disabled={!electronSettings.ENABLE_UPDATE_CHECK || !updateStatus?.updateCheckSupported || updateStatus?.status === 'checking'}
+-                        >
+-                            {update.updateBadgeLabel}
+-                        </Button>
+-                    )}
+-                    foot={t(autoUpdateSupported ? 'options.autoUpdateGithubNotice' : 'options.updateCheckGithubNotice')}
+-                >
+-                    <FoundUpdateRow />
+-                    <ChinaDrivesRow />
+-                    <Row
+-                        option={O.updateCheck}
+-                        hint={t(updateStatus?.updateCheckSupportReason === 'channel' ? 'options.updateUnsupportedChannel' : 'options.enableUpdateCheckDesc')}
+-                        disabled={!updateStatus?.updateCheckSupported}
+-                    >
+-                        <Toggle checked={electronSettings.ENABLE_UPDATE_CHECK} onChange={() => void update.onToggleUpdateCheck()} />
+-                    </Row>
+-                    <Reveal when={electronSettings.ENABLE_UPDATE_CHECK}>
+-                        {/* Kept in view where the app cannot update itself: the reason is under the label. */}
+-                        <Row
+-                            sub
+-                            option={O.autoUpdate}
+-                            hint={t(autoUpdateSupported
+-                                ? 'options.enableAutoUpdateDesc'
+-                                : updateStatus?.autoUpdateSupportReason === 'system' ? 'options.updateUnsupportedSystem' : 'options.manualUpdateOnlyDesc')}
+-                            disabled={!update.canEnableAutoUpdate}
+-                        >
+-                            <Toggle checked={electronSettings.ENABLE_AUTO_UPDATE && autoUpdateSupported} onChange={() => void update.onToggleAutoUpdate()} />
+-                        </Row>
+-                    </Reveal>
+-                    <Row option={O.updateChannel} disabled={isInternalBuild}>
+-                        <Select
+-                            value={electronSettings.UPDATE_CHANNEL}
+-                            options={isInternalBuild
+-                                ? [{ value: 'internal', label: t('options.updateChannelInternal') }]
+-                                : [
+-                                    { value: 'realeco', label: t('options.updateChannelRealeco') },
+-                                    { value: 'limo', label: t('options.updateChannelLimo') },
+-                                    { value: 'cielo', label: t('options.updateChannelCielo') },
+-                                ]}
+-                            onChange={channel => void update.onUpdateChannelChange(channel as 'realeco' | 'limo' | 'cielo')}
+-                        />
+-                    </Row>
+-                </Group>
+-            )}
+-
+             <Group def={PONDER}>
+                 <Row option={O.ponderHints} hint={t('options.ponderHintsDesc')}>
+                     <Segmented
 diff --git a/src/components/modal/settings/pages/GraphicsPage.tsx b/src/components/modal/settings/pages/GraphicsPage.tsx
 index e98c8a4..4f02916 100644
 --- a/src/components/modal/settings/pages/GraphicsPage.tsx
@@ -1145,44 +1339,144 @@ index e98c8a4..4f02916 100644
                  <Row option={O.followSystem} hint={t('options.reduceMotionFollowSystemDesc')}>
                      <Toggle checked={motion.followSystem} onChange={motion.setFollowSystem} />
 diff --git a/src/components/modal/settings/pages/PlaybackPage.tsx b/src/components/modal/settings/pages/PlaybackPage.tsx
-index 54fee9c..1630faa 100644
+index 54fee9c..8bd1ea0 100644
 --- a/src/components/modal/settings/pages/PlaybackPage.tsx
 +++ b/src/components/modal/settings/pages/PlaybackPage.tsx
-@@ -41,6 +41,7 @@ const O = {
+@@ -8,11 +8,8 @@ import { announceTransition, type TransitionRenderer } from '../../../../service
+ import { canAnalyseTracks } from '../../../../services/automix/transitionStrategy';
+ import { useAudioSettingsStore } from '../../../../stores/useAudioSettingsStore';
+ import { useAutomixSettingsStore } from '../../../../stores/useAutomixSettingsStore';
+-import { useDesktopSettingsStore } from '../../../../stores/useDesktopSettingsStore';
+ import { runsOnWindows } from '../../../../utils/platform';
+ import { Button, Chips, Group, Reveal, Row, Segmented, Slider, Status, Toggle, option, type SettingsGroupDef, type SettingsOptionDef } from '../kit';
+-import AudioOutputDeviceRow from './AudioOutputDeviceRow';
+-import HifiSettings, { HIFI_OPTIONS } from './hifi/HifiSettings';
+ import { useSettingsPage } from './settingsPageContext';
+ 
+ // src/components/modal/settings/pages/PlaybackPage.tsx
+@@ -32,18 +29,15 @@ const O = {
+     animation: option(TRANSITION, 'transitionAnimation', 'options.transitionAnimation'),
+     animationRing: option(TRANSITION, 'transitionAnimationRing', 'options.transitionAnimationRing'),
+     animationCard: option(TRANSITION, 'transitionAnimationCard', 'options.transitionAnimationCard'),
+-    outputDevice: option(SOUND, 'audioOutputDevice', 'options.audioOutputDevice'),
+     replayGain: option(SOUND, 'replayGainSettings', 'options.replayGainMode'),
+     fade: option(SOUND, 'playbackFade', 'options.playbackFade'),
+-    transcode: option(SOUND, 'transcodeFallback', 'options.transcodeFallback', { electronOnly: true }),
+     queueBehavior: option(BEHAVIOR, 'queueDefaultBehavior', 'options.queueDefaultBehavior'),
+     autoSkipUnplayable: option(BEHAVIOR, 'autoSkipUnplayable', 'options.autoSkipUnplayable'),
      shuffleRoundNoRepeat: option(BEHAVIOR, 'shuffleRoundNoRepeat', 'options.shuffleRoundNoRepeat'),
-     preventSleep: option(BEHAVIOR, 'preventDisplaySleepDuringPlayback', 'options.preventDisplaySleepDuringPlayback', { electronOnly: true }),
-     voiceInputPause: option(BEHAVIOR, 'voiceInputPause', 'options.voiceInputPause', { electronOnly: true, available: () => runsOnWindows() }),
+-    preventSleep: option(BEHAVIOR, 'preventDisplaySleepDuringPlayback', 'options.preventDisplaySleepDuringPlayback', { electronOnly: true }),
+-    voiceInputPause: option(BEHAVIOR, 'voiceInputPause', 'options.voiceInputPause', { electronOnly: true, available: () => runsOnWindows() }),
 +    focusPause: option(BEHAVIOR, 'focusPause', 'options.focusPause', { available: () => typeof window !== 'undefined' && Boolean(window.FoliaNativeStorage) }),
  };
  
- export const OPTIONS: SettingsOptionDef[] = [...HIFI_OPTIONS, ...Object.values(O)];
-@@ -76,12 +77,14 @@ const PlaybackPage: React.FC = () => {
+-export const OPTIONS: SettingsOptionDef[] = [...HIFI_OPTIONS, ...Object.values(O)];
++export const OPTIONS: SettingsOptionDef[] = Object.values(O);
+ 
+ /**
+  * The pass an animation chip plays when it is switched on: a ten-second blend at 120 BPM, addressed
+@@ -56,8 +50,7 @@ const previewCue = (renderer: TransitionRenderer) => (
+ const PlaybackPage: React.FC = () => {
+     const { t } = useTranslation();
+     const { isElectron, viewProps } = useSettingsPage();
+-    const { replayGainMode, onReplayGainModeChange, onAudioOutputDeviceChange } = viewProps.playback;
+-    const { voiceInputPause } = viewProps.lab;
++    const { replayGainMode, onReplayGainModeChange } = viewProps.playback;
+     const automix = useAutomixSettingsStore(useShallow(state => ({
+         enabled: state.automixEnabled,
+         mode: state.transitionMode,
+@@ -75,19 +68,17 @@ const PlaybackPage: React.FC = () => {
+     const audio = useAudioSettingsStore(useShallow(state => ({
          mediaCache: state.enableMediaCache,
          fade: state.playbackFadeEnabled,
-         transcode: state.enableTranscodeFallback,
+-        transcode: state.enableTranscodeFallback,
 +        focusPause: state.pauseOnAudioFocusLoss,
          queueBehavior: state.queueAddBehavior,
          autoSkipUnplayable: state.autoSkipUnplayable,
          shuffleRoundNoRepeat: state.shuffleRoundNoRepeat,
          setMediaCache: state.handleToggleMediaCache,
          setFade: state.handleTogglePlaybackFade,
-         setTranscode: state.handleToggleTranscodeFallback,
+-        setTranscode: state.handleToggleTranscodeFallback,
 +        setFocusPause: state.handleTogglePauseOnAudioFocusLoss,
          setQueueBehavior: state.handleSetQueueAddBehavior,
          setAutoSkipUnplayable: state.handleToggleAutoSkipUnplayable,
          setShuffleRoundNoRepeat: state.handleToggleShuffleRoundNoRepeat,
-@@ -234,6 +237,11 @@ const PlaybackPage: React.FC = () => {
+     })));
+-    const preventSleep = useDesktopSettingsStore(state => state.preventDisplaySleepDuringPlayback);
+-    const setPreventSleep = useDesktopSettingsStore(state => state.handleTogglePreventDisplaySleepDuringPlayback);
+ 
+     // Asked on every render, not kept: whether the models are on disk can change while the page is
+     // open, and the subscription below only makes the page render again when it does.
+@@ -115,7 +106,6 @@ const PlaybackPage: React.FC = () => {
+ 
+     return (
+         <>
+-            {isElectron && <HifiSettings />}
+             <Group def={TRANSITION}>
+                 <Row option={O.transition}>
+                     <Toggle checked={automix.enabled} onChange={automix.setEnabled} />
+@@ -194,7 +184,6 @@ const PlaybackPage: React.FC = () => {
+             </Group>
+ 
+             <Group def={SOUND}>
+-                <AudioOutputDeviceRow option={O.outputDevice} onDeviceChange={onAudioOutputDeviceChange} />
+                 <Row option={O.replayGain} note={t('options.replayGainModeDesc')}>
+                     <Segmented
+                         value={replayGainMode}
+@@ -210,11 +199,6 @@ const PlaybackPage: React.FC = () => {
+                 <Row option={O.fade} hint={t('options.playbackFadeDesc')}>
+                     <Toggle checked={audio.fade} onChange={audio.setFade} />
+                 </Row>
+-                {window.electron?.requestTranscodeFallback && (
+-                    <Row option={O.transcode} hint={t('options.transcodeFallbackDesc')}>
+-                        <Toggle checked={audio.transcode} onChange={audio.setTranscode} />
+-                    </Row>
+-                )}
+             </Group>
+ 
+             <Group def={BEHAVIOR}>
+@@ -234,14 +218,9 @@ const PlaybackPage: React.FC = () => {
                  <Row option={O.shuffleRoundNoRepeat} note={t('options.shuffleRoundNoRepeatDesc')}>
                      <Toggle checked={audio.shuffleRoundNoRepeat} onChange={audio.setShuffleRoundNoRepeat} />
                  </Row>
+-                {isElectron && (
+-                    <Row option={O.preventSleep} hint={t('options.preventDisplaySleepDuringPlaybackDesc')}>
+-                        <Toggle checked={preventSleep} onChange={setPreventSleep} />
+-                    </Row>
+-                )}
+-                {voiceInputPause.supported && (
+-                    <Row option={O.voiceInputPause} hint={t('options.voiceInputPauseDesc')}>
+-                        <Toggle checked={voiceInputPause.enabled} onChange={voiceInputPause.onToggle} />
 +                {typeof window !== 'undefined' && Boolean(window.FoliaNativeStorage) && (
 +                    <Row option={O.focusPause} note={t('options.focusPauseDesc')}>
 +                        <Toggle checked={audio.focusPause} onChange={audio.setFocusPause} />
-+                    </Row>
-+                )}
-                 {isElectron && (
-                     <Row option={O.preventSleep} hint={t('options.preventDisplaySleepDuringPlaybackDesc')}>
-                         <Toggle checked={preventSleep} onChange={setPreventSleep} />
+                     </Row>
+                 )}
+             </Group>
+diff --git a/src/components/modal/settings/pages/PlayerPage.tsx b/src/components/modal/settings/pages/PlayerPage.tsx
+index 23d7452..19169e2 100644
+--- a/src/components/modal/settings/pages/PlayerPage.tsx
++++ b/src/components/modal/settings/pages/PlayerPage.tsx
+@@ -68,7 +68,6 @@ const O = {
+     alwaysBackButton: option(PLAYER_UI, 'alwaysShowPlayerBackButton', 'options.alwaysShowPlayerBackButton'),
+     alwaysTrackSwitch: option(PLAYER_UI, 'alwaysShowTrackSwitchButtons', 'options.alwaysShowTrackSwitchButtons'),
+     // The titlebar it sits behind is only drawn by the desktop window.
+-    headerBlur: option(PLAYER_UI, 'playerHeaderBlur', 'options.playerHeaderBlur', { electronOnly: true }),
+ };
+ 
+ export const OPTIONS: SettingsOptionDef[] = Object.values(O);
+@@ -422,11 +421,6 @@ const PlayerPage: React.FC = () => {
+                 <Row option={O.alwaysTrackSwitch} note={t('options.alwaysShowTrackSwitchButtonsDesc')}>
+                     <Toggle checked={chrome.alwaysTrackSwitch} onChange={chrome.setAlwaysTrackSwitch} />
+                 </Row>
+-                {isElectron && (
+-                    <Row option={O.headerBlur} hint={t('options.playerHeaderBlurDesc')}>
+-                        <Toggle checked={chrome.headerBlur} onChange={chrome.setHeaderBlur} />
+-                    </Row>
+-                )}
+             </FoldedGroup>
+         </>
+     );
 diff --git a/src/components/modal/settings/pages/QualityPage.tsx b/src/components/modal/settings/pages/QualityPage.tsx
 new file mode 100644
 index 0000000..4047bc3
@@ -1240,7 +1534,7 @@ index 92620c2..04852d7 100644
      general,
      interaction,
 diff --git a/src/components/modal/userGuideContent.ts b/src/components/modal/userGuideContent.ts
-index a8b5aa7..da21d4f 100644
+index a8b5aa7..b9a421f 100644
 --- a/src/components/modal/userGuideContent.ts
 +++ b/src/components/modal/userGuideContent.ts
 @@ -13,7 +13,7 @@ export type UserGuideShortcut = {
@@ -1248,7 +1542,7 @@ index a8b5aa7..da21d4f 100644
  
  export const USER_GUIDE_PAGE_COUNT = 7;
 -export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.8.0';
-+export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.9.11';
++export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.9.12';
  
  export type HelpTabShortcut = {
      id: string;
@@ -1752,7 +2046,7 @@ index 2f367df..361d5da 100644
              enabled
              && window.electron?.requestTranscodeFallback
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..8ff7b4f 100644
+index 86f3b6d..5e89bb0 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -1956,10 +2250,24 @@ index 86f3b6d..8ff7b4f 100644
      "transcodeFallbackDesc": "Converts tracks that cannot be decoded with FFmpeg. The file is not changed.",
      "playbackFade": "Fade on pause and resume",
      "playbackFadeDesc": "Fades out before pausing and back in on resume.",
-@@ -4513,6 +4506,169 @@ export default {
+@@ -4513,6 +4506,183 @@ export default {
      "noDescription": "No description available",
    },
    "releaseNotes": {
++    "v0_9_12": {
++      "intro": "0.9.12 clears desktop-only system settings out of the phone UI: the head unit and iOS no longer show switches that only mean something in the Windows/Linux/macOS desktop app.",
++      "desktopCleanup": {
++        "title": "No more desktop settings on the head unit or iOS",
++        "description": "Some switches only ever did anything in the desktop app (window titlebar buttons, player header blur, audio output device, update check and channel, open the player window on launch, voice-input pause, global shortcuts, OBS/Discord integration, GPU preference, background throttling). On Android and iOS they either did nothing or did nothing when tapped. This build removes those rows and the pages behind them from the phone UI; the desktop program itself (Electron, the mpv/HiFi engine) is removed in a later build.",
++      },
++      "fixes": {
++        "window": "Removed the window titlebar and player header blur switches.",
++        "output": "Removed the audio output device picker: phones play to the system output.",
++        "update": "Removed the whole update check / auto update / channel group; phone updates are install packages.",
++        "shortcuts": "Removed global shortcuts and OBS/Discord desktop integration rows; steering-wheel keys and the rest of settings are untouched.",
++        "keep": "Playback, lyrics, quality, the head-unit performance profile, UI scale and Ponder hints stay exactly as they were."
++      }
++    },
 +    "v0_9_11": {
 +      "intro": "0.9.11 fixes \"tap play and it pauses, every time\": the native layer used to pause whenever another app took audio focus, and now ignores focus by default and drops the fake pause a head unit echoes back.",
 +      "playPauseFix": {
@@ -2126,7 +2434,7 @@ index 86f3b6d..8ff7b4f 100644
      "v0_7_0": {
        "intro": "Here are the new features and improvements in version 0.7.0.",
        "temperaVisualExpansion": {
-@@ -5228,6 +5384,10 @@ export default {
+@@ -5228,6 +5398,10 @@ export default {
      "capsuleOpensPalette": "Click to open the command palette",
    },
    "localMusic": {
@@ -2137,7 +2445,7 @@ index 86f3b6d..8ff7b4f 100644
      "foldersAndPlaylists": "Folders",
      "albums": "Albums",
      "artists": "Artists",
-@@ -5242,8 +5402,34 @@ export default {
+@@ -5242,8 +5416,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -2172,7 +2480,7 @@ index 86f3b6d..8ff7b4f 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6239,13 @@ export default {
+@@ -6053,8 +6253,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -2188,10 +2496,18 @@ index 86f3b6d..8ff7b4f 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/in.ts b/src/i18n/locales/in.ts
-index fac0d47..8ec28ba 100644
+index fac0d47..f5c8eb8 100644
 --- a/src/i18n/locales/in.ts
 +++ b/src/i18n/locales/in.ts
-@@ -4201,7 +4201,9 @@ export default {
+@@ -2796,6 +2796,7 @@ export default {
+     "settingsPageHome": "Beranda & playlist",
+     "settingsPagePlayback": "Pemutaran",
+     "settingsPageLyrics": "Lirik",
++    "settingsPageQuality": "Pemeriksaan kualitas audio",
+     "settingsPageGeneral": "Umum",
+     "settingsPageInteraction": "Pintasan",
+     "settingsPageIntegration": "Koneksi & integrasi",
+@@ -4201,7 +4202,9 @@ export default {
      "invalidJsonFormat": "Format JSON tidak valid",
      "pasteJsonHere": "Tempel JSON di sini...",
      "settingsHeadingSound": "Suara & perangkat",
@@ -2201,10 +2517,24 @@ index fac0d47..8ec28ba 100644
      "transcodeFallbackDesc": "Mengonversi trek yang tidak dapat didekode dengan FFmpeg. Berkas tidak diubah.",
      "playbackFade": "Fade saat jeda dan lanjut",
      "playbackFadeDesc": "Fade keluar sebelum jeda dan masuk kembali saat lanjut.",
-@@ -4513,6 +4515,86 @@ export default {
+@@ -4513,6 +4516,100 @@ export default {
      "noDescription": "Tidak ada deskripsi tersedia"
    },
    "releaseNotes": {
++    "v0_9_12": {
++      "intro": "0.9.12 membersihkan pengaturan khusus desktop dari antarmuka ponsel: head unit dan iOS tidak lagi menampilkan sakelar yang hanya berarti di aplikasi desktop.",
++      "desktopCleanup": {
++        "title": "Pengaturan desktop tidak lagi muncul di head unit atau iOS",
++        "description": "Sebagian sakelar hanya bekerja di aplikasi desktop (tombol titlebar, blur header pemutar, perangkat keluaran audio, cek pembaruan dan kanal, buka jendela pemutar saat mulai, jeda input suara, pintasan global, integrasi OBS/Discord, preferensi GPU, pembatasan latar belakang). Di Android dan iOS semuanya tidak berefek. Build ini menghapus baris dan halaman itu dari antarmuka ponsel; program desktopnya sendiri dihapus pada build berikutnya.",
++      },
++      "fixes": {
++        "window": "Menghapus sakelar titlebar jendela dan blur header pemutar.",
++        "output": "Menghapus pemilih perangkat keluaran audio.",
++        "update": "Menghapus seluruh grup cek pembaruan / pembaruan otomatis / kanal.",
++        "shortcuts": "Menghapus pintasan global dan integrasi desktop OBS/Discord; tombol setir tetap sama.",
++        "keep": "Pemutaran, lirik, kualitas, profil performa head unit, skala UI dan petunjuk Ponder tetap."
++      }
++    },
 +    "v0_9_11": {
 +      "intro": "0.9.11 memperbaiki \"tekan putar malah jeda, terus begitu\": lapisan native dulu menjeda setiap kali aplikasi lain mengambil fokus audio; kini fokus diabaikan secara bawaan dan gema jeda dari head unit dibuang.",
 +      "playPauseFix": {
@@ -2289,10 +2619,18 @@ index fac0d47..8ec28ba 100644
        "intro": "Berikut fitur baru dan peningkatan di versi 0.7.0.",
        "temperaVisualExpansion": {
 diff --git a/src/i18n/locales/vi.ts b/src/i18n/locales/vi.ts
-index 23ebf79..79ff79a 100644
+index 23ebf79..336af7d 100644
 --- a/src/i18n/locales/vi.ts
 +++ b/src/i18n/locales/vi.ts
-@@ -4201,7 +4201,9 @@ export default {
+@@ -2796,6 +2796,7 @@ export default {
+     "settingsPageHome": "Trang chủ & Danh sách phát",
+     "settingsPagePlayback": "Điều khiển phát lại",
+     "settingsPageLyrics": "Lời bài hát",
++    "settingsPageQuality": "Kiểm tra chất lượng âm thanh",
+     "settingsPageGeneral": "Cài đặt chung",
+     "settingsPageInteraction": "Phím tắt & Thao tác nhanh",
+     "settingsPageIntegration": "Kết nối & Tích hợp",
+@@ -4201,7 +4202,9 @@ export default {
      "invalidJsonFormat": "Định dạng JSON không hợp lệ",
      "pasteJsonHere": "Dán JSON vào đây...",
      "settingsHeadingSound": "Âm thanh & Thiết bị",
@@ -2303,7 +2641,7 @@ index 23ebf79..79ff79a 100644
      "playbackFade": "Làm mờ khi tạm dừng và tiếp tục",
      "playbackFadeDesc": "Giảm âm dần trước khi tạm dừng và tăng dần khi tiếp tục thay vì ngắt âm đột ngột. Bỏ qua nếu âm thanh không đi qua bộ xử lý âm thanh.",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..5126fcd 100644
+index 0067e9a..31c83e9 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -2445,10 +2783,24 @@ index 0067e9a..5126fcd 100644
      "transcodeFallbackDesc": "遇到无法解码的歌曲时用 FFmpeg 转换，不修改原文件。",
      "playbackFade": "暂停/播放淡入淡出",
      "playbackFadeDesc": "暂停前淡出，恢复时淡入。",
-@@ -4513,6 +4577,169 @@ export default {
+@@ -4513,6 +4577,183 @@ export default {
      "noDescription": "暂无详细介绍",
    },
    "releaseNotes": {
++    "v0_9_12": {
++      "intro": "0.9.12 把桌面端专属的系统设定从手机端界面清掉：车机和 iOS 上不再出现只对 Windows／Linux／macOS 桌面版有意义的开关，设置页只剩手机真的用得到的东西。",
++      "desktopCleanup": {
++        "title": "桌面端设定不再出现在车机与 iOS",
++        "description": "以前有些开关只是桌面版才有效（窗口标题栏按钮、播放器页头毛玻璃、音频输出装置选择、检查更新与更新通道、开机直接打开播放器窗口、语音输入暂停、全局快捷键、OBS／Discord 联动、GPU 偏好、后台节流等），在车机和 iOS 上要么没作用，要么点了也不会有反应。这一版把这些行和它们背后的设定页一起从手机端拿掉；真正的桌面端主程序（Electron、mpv／HiFi 引擎）之后单独一版清掉。",
++      },
++      "fixes": {
++        "window": "移除「窗口标题栏按钮」「页头毛玻璃」等窗口外观开关。",
++        "output": "移除「音频输出装置」选择：手机上声音就是系统输出，没有可选装置。",
++        "update": "移除「检查更新／自动更新／更新通道」整组：手机更新走安装包，桌面更新器用不到。",
++        "shortcuts": "移除全局快捷键与 OBS／Discord 等桌面联动开关，车机方控与设定页不受影响。",
++        "keep": "播放、歌词、音质、车机性能档、界面缩放、Ponder 提示等手机真正用到的设定照旧。"
++      }
++    },
 +    "v0_9_11": {
 +      "intro": "0.9.11 修「點播放就變暫停、怎麼點怎麼暫停」：原生層以前一被別的 App 搶走音訊焦點就自動暫停，現在預設不理焦點，並吞掉車機回送來的假暫停。",
 +      "playPauseFix": {
@@ -2615,7 +2967,7 @@ index 0067e9a..5126fcd 100644
      "v0_7_0": {
        "intro": "以下是 0.7.0 的新功能与改进",
        "temperaVisualExpansion": {
-@@ -5228,6 +5455,10 @@ export default {
+@@ -5228,6 +5469,10 @@ export default {
      "capsuleOpensPalette": "点一下打开命令面板",
    },
    "localMusic": {
@@ -2626,7 +2978,7 @@ index 0067e9a..5126fcd 100644
      "foldersAndPlaylists": "文件夹",
      "albums": "专辑",
      "artists": "艺术家",
-@@ -5242,8 +5473,34 @@ export default {
+@@ -5242,8 +5487,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -2661,7 +3013,7 @@ index 0067e9a..5126fcd 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6308,13 @@ export default {
+@@ -6051,8 +6322,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -6578,6 +6930,28 @@ index c89a5ba..d9a1b83 100644
    };
  };
  
+diff --git a/src/utils/settingsAnchorModel.ts b/src/utils/settingsAnchorModel.ts
+index 2622b3d..67b5a09 100644
+--- a/src/utils/settingsAnchorModel.ts
++++ b/src/utils/settingsAnchorModel.ts
+@@ -45,9 +45,6 @@ export const SETTINGS_ANCHOR_DEFINITIONS = {
+     lyrics: { section: 'lyrics' },
+     scrobbleSettings: { section: 'integration' },
+ 
+-    // pages/hifi/ on pages/PlaybackPage (desktop app only); the mpv output group only while mpv is the engine.
+-    hifiEngine: { section: 'playback' },
+-    hifiOutput: { section: 'playback' },
+ 
+     // pages/GeneralPage, and the pinned commands on pages/InteractionPage
+     languageSettings: { section: 'general' },
+@@ -84,7 +81,6 @@ export const SETTINGS_ANCHOR_DEFINITIONS = {
+     desktopTrayBehavior: { section: 'desktop' },
+     uiZoom: { section: 'desktop' },
+     wallpaperMode: { section: 'desktop' },
+-    updateCheck: { section: 'general' },
+ 
+     // pages/RemotePage (desktop app only)
+     remoteControl: { section: 'remote' },
 diff --git a/src/utils/textEncodingRepair.ts b/src/utils/textEncodingRepair.ts
 new file mode 100644
 index 0000000..786b248
@@ -7052,6 +7426,19 @@ index 0000000..4b966b1
 +        expect(decodeLyricBytes(gbk)).toBe('[00:00.00]该死的温柔');
 +    });
 +});
+diff --git a/test/unit/settings/settingsNavModel.test.ts b/test/unit/settings/settingsNavModel.test.ts
+index b553221..c5c3faf 100644
+--- a/test/unit/settings/settingsNavModel.test.ts
++++ b/test/unit/settings/settingsNavModel.test.ts
+@@ -13,7 +13,7 @@ import id from '../../../src/i18n/locales/in';
+ const echo = (key: string) => key;
+ 
+ const ALL_SECTIONS: SettingsSectionId[] = [
+-    'appearance', 'player', 'home', 'graphics', 'playback', 'lyrics', 'sources', 'general', 'interaction', 'integration', 'ai', 'storage', 'desktop', 'remote', 'mods', 'developer',
++    'appearance', 'player', 'home', 'graphics', 'playback', 'lyrics', 'quality', 'sources', 'general', 'interaction', 'integration', 'ai', 'storage', 'desktop', 'remote', 'mods', 'developer',
+ ];
+ 
+ const lookup = (bundle: Record<string, unknown>, key: string): unknown => (
 diff --git a/test/unit/stores/__snapshots__/storeContract.test.ts.snap b/test/unit/stores/__snapshots__/storeContract.test.ts.snap
 index 89340da..b05172a 100644
 --- a/test/unit/stores/__snapshots__/storeContract.test.ts.snap
