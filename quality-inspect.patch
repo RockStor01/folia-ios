@@ -746,23 +746,26 @@ index 92620c2..04852d7 100644
      interaction,
 diff --git a/src/hooks/useLocalAudioImport.ts b/src/hooks/useLocalAudioImport.ts
 new file mode 100644
-index 0000000..b50d19d
+index 0000000..a63528e
 --- /dev/null
 +++ b/src/hooks/useLocalAudioImport.ts
-@@ -0,0 +1,67 @@
+@@ -0,0 +1,94 @@
 +// src/hooks/useLocalAudioImport.ts
 +// 「從檔案匯入」在每個首頁 suite 裡都一樣：一顆隱藏的 input、一個 busy 旗標、一個 handler。
 +// 抽出來是因為 Bravais 空牆、Grid3D 空狀態、TUI 清單都要同一件事，分散寫三份遲早對不上。
 +
 +import { useCallback, useRef, useState } from 'react';
++import i18n from '../i18n/config';
 +import { importAudioFiles } from '../services/localMusicService';
++import { setStatusMessage } from '../stores/useStatusMessageStore';
++import { isMetadataParsingAvailable } from '../utils/localMetadataWorkerClient';
 +
 +export interface LocalAudioImportController {
 +    /** 要掛在 input 上的 ref（input 必須真的在 DOM 裡）。 */
 +    inputRef: React.RefObject<HTMLInputElement | null>;
 +    importing: boolean;
 +    /** 匯入進度（第 done 首／共 total 首）；沒在匯入時是 null。 */
-+    progress: { done: number; total: number } | null;
++    progress: { done: number; total: number; eta: string | null } | null;
 +    /** 開系統選檔器（iOS 走「檔案」App，安卓走 SAF 文件選擇器）。 */
 +    openPicker: () => void;
 +    /** 給 <input type="file" multiple onChange> 用的處理函式。 */
@@ -773,7 +776,19 @@ index 0000000..b50d19d
 +export const useLocalAudioImport = (): LocalAudioImportController => {
 +    const inputRef = useRef<HTMLInputElement | null>(null);
 +    const [importing, setImporting] = useState(false);
-+    const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
++    const [progress, setProgress] = useState<{ done: number; total: number; eta: string | null } | null>(null);
++    // 估剩餘時間用：知道「還要四十分鐘」比看著 10/2216 猜有沒有卡死有用得多。
++    const startedAtRef = useRef(0);
++    const formatEta = (done: number, total: number): string | null => {
++        if (done <= 0 || total <= 0 || !startedAtRef.current) return null;
++        const elapsedMs = Date.now() - startedAtRef.current;
++        const remainingMs = (elapsedMs / done) * (total - done);
++        if (!Number.isFinite(remainingMs) || remainingMs <= 0) return null;
++        if (remainingMs < 60000) {
++            return i18n.t('localMusic.importEtaSeconds', { seconds: Math.max(1, Math.round(remainingMs / 1000)) });
++        }
++        return i18n.t('localMusic.importEtaMinutes', { minutes: Math.max(1, Math.round(remainingMs / 60000)) });
++    };
 +    const [lastResult, setLastResult] = useState<LocalAudioImportController['lastResult']>(null);
 +    const busyRef = useRef(false);
 +
@@ -789,18 +804,30 @@ index 0000000..b50d19d
 +
 +        busyRef.current = true;
 +        setImporting(true);
-+        setProgress({ done: 0, total: picked.length });
++        startedAtRef.current = Date.now();
++        setProgress({ done: 0, total: picked.length, eta: null });
 +        void (async () => {
 +            try {
 +                // 進度每五首刷一次就好：每首刷新等於讓整面牆跟著重繪兩千次，反而更卡。
 +                const result = await importAudioFiles(picked, {
 +                    onProgress: info => {
 +                        if (info.done === 0 || info.done === info.total || info.done % 5 === 0) {
-+                            setProgress({ done: info.done, total: info.total });
++                            setProgress({ done: info.done, total: info.total, eta: formatEta(info.done, info.total) });
 +                        }
 +                    },
 +                });
 +                setLastResult({ count: result.songs.length, failed: result.failed.length, skipped: result.skipped });
++                // 解析 worker 起不來（舊車機 WebView 常見）時，歌照樣進得來，但沒有標籤 / 封面 / 時長，
++                // 這件事要講出來，否則使用者只會看到一堆檔名，以為又是壞掉。
++                if (result.songs.length > 0) {
++                    setStatusMessage({
++                        type: 'success',
++                        text: i18n.t('localMusic.importFinished', { added: result.songs.length, failed: result.failed.length }),
++                    });
++                }
++                if (result.songs.length > 0 && !isMetadataParsingAvailable()) {
++                    setStatusMessage({ type: 'info', text: i18n.t('localMusic.importWithoutTags') });
++                }
 +                if (result.failed.length > 0) {
 +                    console.warn('[LocalImport] Some files could not be imported:', result.failed);
 +                }
@@ -908,7 +935,7 @@ index 0000000..8e34f78
 +    return rows;
 +};
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..555691b 100644
+index 86f3b6d..fcce0fd 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -1079,7 +1106,7 @@ index 86f3b6d..555691b 100644
      "minimizeToTray": "Minimize to tray",
      "closeToTray": "Close window to tray",
      "closeToTrayDesc": "The close button hides the window to the tray instead of quitting",
-@@ -5242,8 +5224,13 @@ export default {
+@@ -5242,8 +5224,18 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -1087,13 +1114,18 @@ index 86f3b6d..555691b 100644
 +    "importFilesHint": "Pick audio files from this device and play them straight from local storage. iPhones have no folder picker, so this is the way in.",
 +    "importingFiles": "Importing…",
 +    "importingProgress": "Importing {{done}}/{{total}}",
++    "importingProgressEta": "Importing {{done}}/{{total}} (~{{eta}} left)",
++    "importEtaMinutes": "{{minutes}} min",
++    "importEtaSeconds": "{{seconds}} s",
      "sortDescending": "Descending",
      "importFolder": "Import Folder",
 +    "importFolderNothingNew": "Nothing new was added: the picker may have been cancelled, the folder was already imported, or it holds no audio. If this device cannot open a folder picker, use “Import files”.",
++    "importFinished": "Imported {{added}} song(s), {{failed}} failed",
++    "importWithoutTags": "This device's WebView cannot start the parser (common on older builds), so songs were added by file name only: they play, but tags, covers and durations are missing.",
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6040,13 @@ export default {
+@@ -6053,8 +6045,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -1109,7 +1141,7 @@ index 86f3b6d..555691b 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..4c00725 100644
+index 0067e9a..87f3594 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -1210,7 +1242,7 @@ index 0067e9a..4c00725 100644
      "minimizeToTray": "最小化到托盘",
      "closeToTray": "关闭窗口时隐藏到托盘",
      "closeToTrayDesc": "点关闭按钮时不退出，隐藏到托盘继续播放",
-@@ -5242,8 +5294,13 @@ export default {
+@@ -5242,8 +5294,18 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -1218,13 +1250,18 @@ index 0067e9a..4c00725 100644
 +    "importFilesHint": "选择手机里的音频文件，直接从本地播放；iPhone 上没有文件夹权限，用的是这条路。",
 +    "importingFiles": "正在导入…",
 +    "importingProgress": "正在导入 {{done}}/{{total}}",
++    "importingProgressEta": "正在导入 {{done}}/{{total}}（约剩 {{eta}}）",
++    "importEtaMinutes": "{{minutes}} 分钟",
++    "importEtaSeconds": "{{seconds}} 秒",
      "sortDescending": "降序",
      "importFolder": "导入文件夹",
 +    "importFolderNothingNew": "没有新增歌曲：可能取消了选择，也可能这个文件夹已经导入过、或里面没有音频文件（这台装置打不开文件夹选择器的话，请用「导入文件」）。",
++    "importFinished": "已导入 {{added}} 首（失败 {{failed}} 首）",
++    "importWithoutTags": "這台装置的 WebView 起不了解析程序（旧版通常如此），已改用档名汇入：歌能播，但没有标签、封面和时长。",
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6108,13 @@ export default {
+@@ -6051,8 +6113,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -1507,7 +1544,7 @@ index f8476f7..2a29009 100644
      from { opacity: 0; transform: translateY(6px); }
      to { opacity: 1; transform: none; }
 diff --git a/src/library/suites/bravais/bravaisEmptyWallHint.ts b/src/library/suites/bravais/bravaisEmptyWallHint.ts
-index 4c47f22..8475fcc 100644
+index 4c47f22..5b6c33c 100644
 --- a/src/library/suites/bravais/bravaisEmptyWallHint.ts
 +++ b/src/library/suites/bravais/bravaisEmptyWallHint.ts
 @@ -30,11 +30,50 @@ export const onlineWallHint = (
@@ -1534,7 +1571,7 @@ index 4c47f22..8475fcc 100644
 +        onPickFiles?: () => void;
 +        importing?: boolean;
 +        /** 匯入進度。有就顯示「第幾／共幾首」，因為一次匯入上千首時轉圈圈看起來像卡死。 */
-+        progress?: { done: number; total: number } | null;
++        progress?: { done: number; total: number; eta?: string | null } | null;
 +    },
 +    t: TFunction,
 +): BravaisWallHint => {
@@ -1544,7 +1581,7 @@ index 4c47f22..8475fcc 100644
 +    if (canPickFiles && onPickFiles) {
 +        actions.push({
 +            label: importing
-+                ? (progress ? t('localMusic.importingProgress', { done: progress.done, total: progress.total }) : t('localMusic.importingFiles'))
++                ? (progress ? t(progress.eta ? 'localMusic.importingProgressEta' : 'localMusic.importingProgress', { done: progress.done, total: progress.total, eta: progress.eta ?? '' }) : t('localMusic.importingFiles'))
 +                : t('localMusic.importFiles'),
 +            onClick: onPickFiles,
 +            primary: true,
@@ -1590,7 +1627,7 @@ index c35036c..9c17aad 100644
  
  /** 列表面板工具行的排序（本地文件夹才有）。 */
 diff --git a/src/library/suites/grid/home/LocalGrid3DView.tsx b/src/library/suites/grid/home/LocalGrid3DView.tsx
-index 70f5244..f1deb53 100644
+index 70f5244..2bd712a 100644
 --- a/src/library/suites/grid/home/LocalGrid3DView.tsx
 +++ b/src/library/suites/grid/home/LocalGrid3DView.tsx
 @@ -1,6 +1,6 @@
@@ -1713,7 +1750,7 @@ index 70f5244..f1deb53 100644
 +                        {importingFiles ? <Loader2 size={16} className="animate-spin" /> : <FileAudio size={16} />}
 +                        {importingFiles
 +                            ? (importProgress
-+                                ? t('localMusic.importingProgress', { done: importProgress.done, total: importProgress.total })
++                                ? t(importProgress.eta ? 'localMusic.importingProgressEta' : 'localMusic.importingProgress', { done: importProgress.done, total: importProgress.total, eta: importProgress.eta ?? '' })
 +                                : t('localMusic.importingFiles'))
 +                            : t('localMusic.importFiles')}
 +                    </button>
@@ -1748,7 +1785,7 @@ index 70f5244..f1deb53 100644
  };
  
 diff --git a/src/library/suites/tui/LibraryTuiHomeLists.tsx b/src/library/suites/tui/LibraryTuiHomeLists.tsx
-index 347bbc3..6d2f379 100644
+index 347bbc3..abde7f1 100644
 --- a/src/library/suites/tui/LibraryTuiHomeLists.tsx
 +++ b/src/library/suites/tui/LibraryTuiHomeLists.tsx
 @@ -22,6 +22,7 @@ import { useLibraryHomeLocal, useLocalDirectoryTrees, useLocalHomeBatchConfig }
@@ -1799,7 +1836,7 @@ index 347bbc3..6d2f379 100644
 +                <button type="button" onClick={audioImport.openPicker} disabled={audioImport.importing} className="self-start opacity-70 hover:opacity-100 disabled:opacity-30">
 +                    {`[${audioImport.importing
 +                        ? (audioImport.progress
-+                            ? t('localMusic.importingProgress', { done: audioImport.progress.done, total: audioImport.progress.total })
++                            ? t(audioImport.progress.eta ? 'localMusic.importingProgressEta' : 'localMusic.importingProgress', { done: audioImport.progress.done, total: audioImport.progress.total, eta: audioImport.progress.eta ?? '' })
 +                            : t('localMusic.importingFiles'))
 +                        : t('localMusic.importFiles')}]`}
 +                </button>
@@ -2866,7 +2903,7 @@ index 0000000..df20d8f
 +    }
 +}
 diff --git a/src/services/localMusicService.ts b/src/services/localMusicService.ts
-index 26a0181..1345ea3 100644
+index 26a0181..8dab683 100644
 --- a/src/services/localMusicService.ts
 +++ b/src/services/localMusicService.ts
 @@ -30,6 +30,7 @@ import { hasLocalCoverBinary } from './localCoverBinaryStore';
@@ -2877,7 +2914,71 @@ index 26a0181..1345ea3 100644
  import { useLyricSettingsStore } from '../stores/useLyricSettingsStore';
  import { getLocalLyricFilePriority, isSameLocalLyricFormatOrder, normalizeLocalLyricFormatOrder, type LocalLyricFileFormat } from '../utils/lyrics/localLyricFormatOrder';
  import { readLyricFile } from '../utils/lyrics/lyricFileDecoding';
-@@ -1204,6 +1205,187 @@ export async function importFolder(expectedRootName?: string): Promise<LocalSong
+@@ -296,8 +297,21 @@ export function extractMetadataFromFilename(fileName: string): { title?: string;
+     };
+ }
+ 
++/**
++ * 量時長最多等這麼久。
++ *
++ * `loadedmetadata` 不保證會來：車機 / 舊 WebView 對某些容器（SAF 讀回來的 FLAC、APE）根本解不開，
++ * 既不觸發 loadedmetadata 也不觸發 error，Promise 就永遠不 resolve——整批匯入停在第 N 首，看起來就是卡死。
++ * 逾時後直接回 0（清單顯示 —），讓匯入繼續往下走。
++ */
++const AUDIO_DURATION_TIMEOUT_MS = 5000;
++/** 连續几次量不到就认定这台装置解不开，后面的歌不再逐首等 5 秒（两千首就是两小时）。 */
++const DURATION_PROBE_FAILURE_LIMIT = 3;
++let durationProbeFailures = 0;
++
+ // Get audio duration from file
+ async function getAudioDuration(file: File): Promise<number> {
++    if (durationProbeFailures >= DURATION_PROBE_FAILURE_LIMIT) return 0;
+     const playbackInput = await repairFlacMetadata(file, true);
+     return new Promise((resolve) => {
+         const audio = new Audio();
+@@ -307,17 +321,32 @@ async function getAudioDuration(file: File): Promise<number> {
+             return;
+         }
+ 
+-        audio.addEventListener('loadedmetadata', () => {
+-            const duration = audio.duration * 1000; // Convert to milliseconds
++        let settled = false;
++        const finish = (duration: number) => {
++            if (settled) return;
++            settled = true;
++            clearTimeout(timer);
++            audio.removeEventListener('loadedmetadata', onLoaded);
++            audio.removeEventListener('error', onError);
+             URL.revokeObjectURL(url);
+             resolve(duration);
+-        });
+-
+-        audio.addEventListener('error', () => {
+-            URL.revokeObjectURL(url);
+-            resolve(0); // Default duration on error
+-        });
+-
++        };
++        const onLoaded = () => {
++            durationProbeFailures = 0;
++            finish(Number.isFinite(audio.duration) ? audio.duration * 1000 : 0);
++        };
++        const onError = () => {
++            durationProbeFailures += 1;
++            finish(0);
++        };
++        const timer = setTimeout(() => {
++            console.warn('[LocalMusic][Import] duration probe timed out, using 0');
++            durationProbeFailures += 1;
++            finish(0);
++        }, AUDIO_DURATION_TIMEOUT_MS);
++
++        audio.addEventListener('loadedmetadata', onLoaded);
++        audio.addEventListener('error', onError);
+         audio.src = url;
+     });
+ }
+@@ -1204,6 +1233,199 @@ export async function importFolder(expectedRootName?: string): Promise<LocalSong
      }
  }
  
@@ -2938,12 +3039,11 @@ index 26a0181..1345ea3 100644
 +    const PARSE_WINDOW = 3;
 +    let processedCount = 0;
 +
-+    for (let start = 0; start < candidates.length; start += PARSE_WINDOW) {
-+        const window = candidates.slice(start, start + PARSE_WINDOW);
-+        const fresh = window.filter(file => !existingSignatures.has(`${file.name}:${file.size}:${file.lastModified}`));
-+        result.skipped += window.length - fresh.length;
-+
-+        // 先並行解析（解析在 worker 裡，主執行緒這時是空的，不會卡畫面）。
++    /** 一窗：篩掉重覆的，再把新鮮的那幾首丟進 worker 並行解析。 */
++    const parseWindow = async (start: number) => {
++        const windowFiles = candidates.slice(start, start + PARSE_WINDOW);
++        const fresh = windowFiles.filter(file => !existingSignatures.has(`${file.name}:${file.size}:${file.lastModified}`));
++        result.skipped += windowFiles.length - fresh.length;
 +        const parsed = new Map<File, { embeddedMetadata: EmbeddedMetadata; duration: number }>();
 +        await Promise.all(fresh.map(async file => {
 +            let embeddedMetadata: EmbeddedMetadata = {};
@@ -2954,6 +3054,19 @@ index 26a0181..1345ea3 100644
 +            }
 +            parsed.set(file, { embeddedMetadata, duration: embeddedMetadata.duration || 0 });
 +        }));
++        return { fresh, parsed };
++    };
++
++    // 預取下一窗：解析在 worker 裡跑，寫檔在 IndexedDB 的 I/O 上等，兩邊重疊才不會白白互等。
++    // 車機的 eMMC 慢，把「解析」疊在「寫檔」後面大約能省下三到四成的壁鐘時間。
++    let pendingParse = parseWindow(0);
++
++    for (let start = 0; start < candidates.length; start += PARSE_WINDOW) {
++        const { fresh, parsed } = await pendingParse;
++        const nextStart = start + PARSE_WINDOW;
++        pendingParse = nextStart < candidates.length
++            ? parseWindow(nextStart)
++            : Promise.resolve({ fresh: [] as File[], parsed: new Map<File, { embeddedMetadata: EmbeddedMetadata; duration: number }>() });
 +
 +        for (const file of fresh) {
 +            options.onProgress?.({ done: processedCount, total: candidates.length, fileName: file.name });
@@ -3065,7 +3178,7 @@ index 26a0181..1345ea3 100644
  /** Imports a folder the caller already holds instead of asking the picker (the dev mock song's OPFS folder). */
  export async function importDirectoryHandle(dirHandle: FileSystemDirectoryHandle): Promise<LocalSong[]> {
      return await runLocalFolderMutation(() => importFolderContents(dirHandle));
-@@ -1614,6 +1796,7 @@ export async function deleteLocalSong(id: string): Promise<void> {
+@@ -1614,6 +1836,7 @@ export async function deleteLocalSong(id: string): Promise<void> {
      await Promise.all([
          dbDeleteLocalSong(id),
          removeCachedCover(`cover_local_${id}`),
@@ -3073,7 +3186,7 @@ index 26a0181..1345ea3 100644
      ]);
  }
  
-@@ -1738,6 +1921,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
+@@ -1738,6 +1961,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
          }
      }
  
@@ -3090,7 +3203,7 @@ index 26a0181..1345ea3 100644
      // No accessible handle available - permission may need to be restored or the file moved.
      console.warn(`[LocalMusic] No accessible handle for song ${song.id}. Permission restore or re-import is required.`);
      return null;
-@@ -1755,6 +1948,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+@@ -1755,6 +1988,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
          }
      }
  
@@ -3100,7 +3213,7 @@ index 26a0181..1345ea3 100644
      const recoveredHandle = await recoverFileHandleFromPersistedDirectory(song);
      if (!recoveredHandle) return null;
      try {
-@@ -1774,14 +1970,16 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+@@ -1774,14 +2010,16 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
   * from its own handle. Mirrors getAudioFromLocalSong's resolution (accessible handle, else a recover)
   * but returns the ArrayBuffer. Null when no handle can be reached - permission not restored, or moved.
   */
@@ -3120,7 +3233,7 @@ index 26a0181..1345ea3 100644
      } catch (error) {
          console.error('[LocalMusic] Failed to read local bytes:', error);
          fileHandleMap.delete(song.id);
-@@ -1789,6 +1987,32 @@ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuf
+@@ -1789,6 +2027,32 @@ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuf
      }
  }
  
@@ -3153,7 +3266,7 @@ index 26a0181..1345ea3 100644
  // Extracts and persists one song's embedded cover after an explicit playback-time request.
  async function extractAndPersistSongCover(
      song: LocalSong,
-@@ -1880,6 +2104,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
+@@ -1880,6 +2144,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
      await Promise.all([
          dbDeleteLocalSongs(uniqueSongIds),
          ...uniqueSongIds.map(id => removeCachedCover(`cover_local_${id}`)),
@@ -3224,17 +3337,43 @@ index dce29d6..284324b 100644
      useDesktopSettingsStore.subscribe(state => apply(state.uiZoomEnabled, state.uiZoomStep));
  };
 diff --git a/src/utils/localMetadataWorkerClient.ts b/src/utils/localMetadataWorkerClient.ts
-index 682f39b..4a54a01 100644
+index 682f39b..202d7a4 100644
 --- a/src/utils/localMetadataWorkerClient.ts
 +++ b/src/utils/localMetadataWorkerClient.ts
-@@ -23,32 +23,59 @@ export interface HashedLocalCoverResult {
+@@ -23,51 +23,152 @@ export interface HashedLocalCoverResult {
      coverAssetId: string;
  }
  
 -let metadataWorker: Worker | null = null;
  let workerRequestId = 0;
- const workerCallbacks = new Map<string, (result: unknown | null) => void>();
+-const workerCallbacks = new Map<string, (result: unknown | null) => void>();
  
+-export const initMetadataWorker = (): Worker => {
+-    if (!metadataWorker) {
+-        metadataWorker = new Worker(
++/**
++ * 一條請求等多久就放棄。
++ *
++ * 車機 / 舊 iOS 的 WebView 可能不認模組化 worker（`{ type: 'module' }`）；這種情況 worker 不會
++ * 回「錯誤」，而是根本沒有訊息回來，Promise 就永遠懸著——匯入看起來就是「點了直接卡死」。
++ * 加上逾時後，最壞情況只是這首歌沒有標籤（退回用檔名），整批照樣往下跑。
++ */
++export const METADATA_WORKER_TIMEOUT_MS = 20000;
++
++/**
++ * 一鍵關掉 worker 的開關（`VITE_DISABLE_METADATA_WORKER=true` 建置）。
++ * 給「這台機器到底是不是 worker 出問題」這種現場排查用：關掉後匯入只走檔名，能立刻分辨是解析卡住還是別的地方。
++ */
++const METADATA_WORKER_DISABLED = import.meta.env.VITE_DISABLE_METADATA_WORKER === 'true';
++
++interface PendingCall {
++    resolve: (result: unknown | null) => void;
++    workerIndex: number;
++    timer: ReturnType<typeof setTimeout>;
++}
++
++const workerCallbacks = new Map<string, PendingCall>();
++
 +/**
 + * 解析 worker 的數量。
 + *
@@ -3242,40 +3381,46 @@ index 682f39b..4a54a01 100644
 + * 兩千多首就得排到天荒地老。開兩條讓解析真正並行（手機 CPU 有限，兩條剛好，再多會互相搶）。
 + */
 +const METADATA_WORKER_COUNT = 2;
-+const metadataWorkers: Worker[] = [];
++const metadataWorkers: Array<Worker | null> = [];
 +/** 每條 worker 手上還沒回覆的請求數；派工時挑最閒的那條。 */
 +const workerInFlight: number[] = [];
++/** 建不起來或中途掛掉的 worker 不再重試，免得每首歌都在同一個地方再失敗一次。 */
++const deadWorkers: boolean[] = [];
++/** 每條 worker 逾時過幾次；連續兩次就當它壞了，不用每首歌都等滿 20 秒。 */
++const workerTimeouts: number[] = [];
 +
-+const createWorker = (index: number): Worker => {
-+    const worker = new Worker(
-+        new URL('../workers/metadataParser.worker.ts', import.meta.url),
-+        { type: 'module' }
-+    );
-+    worker.onmessage = (e) => {
-+        const { type, data, requestId, message } = e.data;
-+        const callback = workerCallbacks.get(requestId);
-+        if (!callback) return;
-+        workerCallbacks.delete(requestId);
-+        workerInFlight[index] = Math.max(0, (workerInFlight[index] ?? 1) - 1);
-+        if (type === 'result') {
-+            callback(data);
-+        } else {
-+            console.warn('[MetadataWorker] parsing error:', message);
-+            callback(null);
-+        }
-+    };
-+    workerInFlight[index] = 0;
-+    return worker;
++const settle = (requestId: string, result: unknown | null) => {
++    const pending = workerCallbacks.get(requestId);
++    if (!pending) return;
++    workerCallbacks.delete(requestId);
++    clearTimeout(pending.timer);
++    workerInFlight[pending.workerIndex] = Math.max(0, (workerInFlight[pending.workerIndex] ?? 1) - 1);
++    pending.resolve(result);
 +};
 +
- export const initMetadataWorker = (): Worker => {
--    if (!metadataWorker) {
--        metadataWorker = new Worker(
--            new URL('../workers/metadataParser.worker.ts', import.meta.url),
--            { type: 'module' }
--        );
++/** 一條 worker 掛了：它手上的請求全部當「沒有標籤」放掉，別讓匯入停在那裡乾等。 */
++const failWorker = (index: number, reason: unknown) => {
++    if (deadWorkers[index]) return;
++    deadWorkers[index] = true;
++    console.warn(`[MetadataWorker] worker ${index} unavailable, falling back to filename-only import:`, reason);
++    for (const [requestId, pending] of Array.from(workerCallbacks)) {
++        if (pending.workerIndex === index) settle(requestId, null);
++    }
++};
++
++const createWorker = (index: number): Worker | null => {
++    if (METADATA_WORKER_DISABLED) {
++        deadWorkers[index] = true;
++        return null;
++    }
++    try {
++        const worker = new Worker(
+             new URL('../workers/metadataParser.worker.ts', import.meta.url),
+             { type: 'module' }
+         );
 -        metadataWorker.onmessage = (e) => {
--            const { type, data, requestId, message } = e.data;
++        worker.onmessage = (e) => {
+             const { type, data, requestId, message } = e.data;
 -            const callback = workerCallbacks.get(requestId);
 -            if (callback) {
 -                workerCallbacks.delete(requestId);
@@ -3285,52 +3430,101 @@ index 682f39b..4a54a01 100644
 -                    console.warn('[MetadataWorker] parsing error:', message);
 -                    callback(null);
 -                }
--            }
--        };
-+    if (metadataWorkers.length === 0) {
-+        for (let index = 0; index < METADATA_WORKER_COUNT; index += 1) {
-+            metadataWorkers.push(createWorker(index));
-+        }
++            if (type === 'result') {
++                workerTimeouts[index] = 0;
++                settle(requestId, data);
++                return;
+             }
++            console.warn('[MetadataWorker] parsing error:', message);
++            settle(requestId, null);
+         };
++        // 載不起來（舊 WebView 不認模組化 worker、或檔案被 CSP 擋）時走這裡。
++        worker.onerror = error => failWorker(index, error?.message ?? error);
++        worker.onmessageerror = () => failWorker(index, 'messageerror');
++        workerInFlight[index] = 0;
++        return worker;
++    } catch (error) {
++        deadWorkers[index] = true;
++        console.warn(`[MetadataWorker] cannot start worker ${index}:`, error);
++        return null;
      }
-+    return metadataWorkers[0];
 +};
  
 -    return metadataWorker;
-+/** 挑手上請求最少的那一條；一樣閒就挑前面那條。 */
++export const initMetadataWorker = (): Worker | null => {
++    for (let index = 0; index < METADATA_WORKER_COUNT; index += 1) {
++        if (metadataWorkers[index] !== undefined) continue;
++        metadataWorkers[index] = deadWorkers[index] ? null : createWorker(index);
++    }
++    return metadataWorkers.find((worker): worker is Worker => worker !== null) ?? null;
+ };
+ 
+-export const parseEmbeddedMetadataAsync = (
+-    file: File,
+-    includeCover = false
+-): Promise<EmbeddedMetadataResult | null> => {
+-    return new Promise((resolve) => {
+-        const worker = initMetadataWorker();
+-        const requestId = `meta_req_${++workerRequestId}`;
+-        workerCallbacks.set(requestId, result => resolve(result as EmbeddedMetadataResult | null));
+-        worker.postMessage({ type: 'parse-metadata', file, includeCover, requestId });
+-    });
++/** 挑手上請求最少、而且還活著的那一條；都掛了就回 -1（呼叫端直接給 null，不讓匯入卡住）。 */
 +const pickWorkerIndex = (): number => {
 +    initMetadataWorker();
-+    let best = 0;
-+    for (let index = 1; index < metadataWorkers.length; index += 1) {
-+        if ((workerInFlight[index] ?? 0) < (workerInFlight[best] ?? 0)) best = index;
++    let best = -1;
++    for (let index = 0; index < metadataWorkers.length; index += 1) {
++        if (!metadataWorkers[index] || deadWorkers[index]) continue;
++        if (best === -1 || (workerInFlight[index] ?? 0) < (workerInFlight[best] ?? 0)) best = index;
 +    }
 +    return best;
  };
  
- export const parseEmbeddedMetadataAsync = (
-@@ -56,8 +83,10 @@ export const parseEmbeddedMetadataAsync = (
-     includeCover = false
- ): Promise<EmbeddedMetadataResult | null> => {
-     return new Promise((resolve) => {
+-export const hashLocalCoverBlobAsync = (cover: Blob): Promise<HashedLocalCoverResult | null> => {
+-    return new Promise((resolve) => {
 -        const worker = initMetadataWorker();
-+        const index = pickWorkerIndex();
-+        const worker = metadataWorkers[index];
-         const requestId = `meta_req_${++workerRequestId}`;
+-        const requestId = `cover_hash_req_${++workerRequestId}`;
+-        workerCallbacks.set(requestId, result => resolve(result as HashedLocalCoverResult | null));
+-        worker.postMessage({ type: 'hash-cover', cover, requestId });
++const request = (message: Record<string, unknown>, prefix: string): Promise<unknown | null> => {
++    const index = pickWorkerIndex();
++    const worker = index >= 0 ? metadataWorkers[index] : null;
++    if (!worker) return Promise.resolve(null);
++    const requestId = `${prefix}_${++workerRequestId}`;
++    return new Promise(resolve => {
 +        workerInFlight[index] = (workerInFlight[index] ?? 0) + 1;
-         workerCallbacks.set(requestId, result => resolve(result as EmbeddedMetadataResult | null));
-         worker.postMessage({ type: 'parse-metadata', file, includeCover, requestId });
++        const timer = setTimeout(() => {
++            console.warn(`[MetadataWorker] request timed out after ${METADATA_WORKER_TIMEOUT_MS}ms (${prefix})`);
++            settle(requestId, null);
++            workerTimeouts[index] = (workerTimeouts[index] ?? 0) + 1;
++            // 一條 worker 連續兩次連訊息都回不來（不是解析失敗，是根本沒反應）：判死，後面直接走檔名。
++            if (workerTimeouts[index] >= 2) failWorker(index, 'repeated timeouts');
++        }, METADATA_WORKER_TIMEOUT_MS);
++        workerCallbacks.set(requestId, { resolve, workerIndex: index, timer });
++        try {
++            worker.postMessage({ ...message, requestId });
++        } catch (error) {
++            failWorker(index, error);
++            settle(requestId, null);
++        }
      });
-@@ -65,8 +94,10 @@ export const parseEmbeddedMetadataAsync = (
- 
- export const hashLocalCoverBlobAsync = (cover: Blob): Promise<HashedLocalCoverResult | null> => {
-     return new Promise((resolve) => {
--        const worker = initMetadataWorker();
-+        const index = pickWorkerIndex();
-+        const worker = metadataWorkers[index];
-         const requestId = `cover_hash_req_${++workerRequestId}`;
-+        workerInFlight[index] = (workerInFlight[index] ?? 0) + 1;
-         workerCallbacks.set(requestId, result => resolve(result as HashedLocalCoverResult | null));
-         worker.postMessage({ type: 'hash-cover', cover, requestId });
-     });
+ };
++
++export const parseEmbeddedMetadataAsync = (
++    file: File,
++    includeCover = false
++): Promise<EmbeddedMetadataResult | null> => request(
++    { type: 'parse-metadata', file, includeCover },
++    'meta_req',
++).then(result => result as EmbeddedMetadataResult | null);
++
++export const hashLocalCoverBlobAsync = (cover: Blob): Promise<HashedLocalCoverResult | null> => request(
++    { type: 'hash-cover', cover },
++    'cover_hash_req',
++).then(result => result as HashedLocalCoverResult | null);
++
++/** 給介面用：解析是不是真的跑得起來；false 時匯入只能靠檔名，該講給使用者聽。 */
++export const isMetadataParsingAvailable = (): boolean => pickWorkerIndex() >= 0;
 diff --git a/src/utils/uiZoom.ts b/src/utils/uiZoom.ts
 index 64ef098..d4357bc 100644
 --- a/src/utils/uiZoom.ts
