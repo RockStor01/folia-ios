@@ -20,11 +20,32 @@ index 39ec48c..114cb4d 100644
      <title>Folia</title>
      <script src="/runtime-config.js"></script>
    <script type="importmap">
+diff --git a/package.json b/package.json
+index 6976461..2d4496a 100644
+--- a/package.json
++++ b/package.json
+@@ -8,7 +8,7 @@
+     "email": "chthollyphile@users.noreply.github.com"
+   },
+   "private": true,
+-  "version": "0.8.0",
++  "version": "0.9.4",
+   "license": "AGPL-3.0",
+   "type": "module",
+   "main": "electron/main.cjs",
 diff --git a/src/App.tsx b/src/App.tsx
-index 7cf3c35..c479411 100644
+index 7cf3c35..ad901de 100644
 --- a/src/App.tsx
 +++ b/src/App.tsx
-@@ -116,6 +116,7 @@ import { useProviderNotices } from './components/app/useProviderNotices';
+@@ -35,6 +35,7 @@ import ReleaseNotesDialog from './components/modal/ReleaseNotesDialog';
+ import LegacyModelsPrompt from './components/modal/LegacyModelsPrompt';
+ import { PlaybackEntryViewPrompt } from './components/modal/playback-entry-view/PlaybackEntryViewPrompt';
+ import { useStartupExperienceGate } from './hooks/useStartupExperienceGate';
++import { maybeApplyCarPerformancePresetOnce } from './perf/carPerformancePreset';
+ import { useAppDialogsModel } from './components/app/dialogs/useAppDialogsModel';
+ import { useHomeModel } from './components/app/home/useHomeModel';
+ import { createLyricFilterPatternSaver } from './components/app/home/createLyricFilterPatternSaver';
+@@ -116,6 +117,7 @@ import { useProviderNotices } from './components/app/useProviderNotices';
  import { useLocalLibraryAutoScan } from './hooks/useLocalLibraryAutoScan';
  import { useElectronVideoExportController } from './hooks/useElectronVideoExportController';
  import { useElectronWindowPlaybackHandoff } from './components/app/playback/restore/useElectronWindowPlaybackHandoff';
@@ -32,7 +53,19 @@ index 7cf3c35..c479411 100644
  import { useMediaSessionBridge } from './hooks/useMediaSessionBridge';
  import { usePlayerChromeAutoHide } from './hooks/usePlayerChromeAutoHide';
  import { useMacWallpaperHitRegions } from './hooks/useMacWallpaperHitRegions';
-@@ -1434,6 +1435,14 @@ export default function App() {
+@@ -362,6 +364,11 @@ export default function App() {
+         prevSettingsOpenRef.current = isOpen;
+     }, [settingsModalState.isOpen, navidromeEnabled, loadNavidromeFavorites]);
+ 
++    // 車機第一次開這個版本時，自動把最吃 GPU 的幾項壓到「流暢優先」（設置頁可還原）。
++    useEffect(() => {
++        maybeApplyCarPerformancePresetOnce();
++    }, []);
++
+     // Player State
+     useEffect(() => {
+         (window as any).__folia_current_time = currentTime;
+@@ -1434,6 +1441,14 @@ export default function App() {
          isNowPlayingControlDisabledRef,
      };
      useMediaSessionBridge(mediaSessionOptions);
@@ -828,6 +861,79 @@ index 0000000..8719e05
 +};
 +
 +export default LinkedFolderPicker;
+diff --git a/src/components/modal/NewFeaturesIntro.tsx b/src/components/modal/NewFeaturesIntro.tsx
+index 5de4bf3..af66827 100644
+--- a/src/components/modal/NewFeaturesIntro.tsx
++++ b/src/components/modal/NewFeaturesIntro.tsx
+@@ -10,7 +10,7 @@ import { NEW_FEATURES_RELEASE } from './newFeaturesRelease';
+ // sheet (ReleaseNotesDialog) or the settings window.
+ export const NewFeaturesIntro: React.FC = () => {
+     const { t } = useTranslation();
+-    const { i18nKey, features, majorUpdate } = NEW_FEATURES_RELEASE;
++    const { i18nKey, features, fixes, majorUpdate } = NEW_FEATURES_RELEASE;
+ 
+     return (
+         <>
+@@ -39,6 +39,17 @@ export const NewFeaturesIntro: React.FC = () => {
+                     </div>
+                 ))}
+             </div>
++            {fixes && fixes.length > 0 ? (
++                <div className="st-card mt-3.5 overflow-hidden rounded-xl bg-[var(--st-card)] shadow-[0_0_0_1px_var(--st-line)]" data-testid="release-notes-fixes">
++                    <div className="border-b border-[color:var(--st-line)] px-4 py-2 text-sm font-semibold">{t('help.releaseNotesFixes')}</div>
++                    {fixes.map(id => (
++                        <div key={id} className="flex gap-2.5 px-4 py-2.5 text-xs leading-[19px] text-[color:var(--st-t2)]">
++                            <span className="shrink-0 text-[color:var(--st-accent)]">·</span>
++                            <span className="min-w-0">{t(`${i18nKey}.fixes.${id}`)}</span>
++                        </div>
++                    ))}
++                </div>
++            ) : null}
+         </>
+     );
+ };
+diff --git a/src/components/modal/newFeaturesRelease.ts b/src/components/modal/newFeaturesRelease.ts
+index e49a39c..b233720 100644
+--- a/src/components/modal/newFeaturesRelease.ts
++++ b/src/components/modal/newFeaturesRelease.ts
+@@ -1,4 +1,4 @@
+-import { ListMusic, MessageSquareText, Puzzle, SlidersVertical, Sparkles, Store } from 'lucide-react';
++import { FolderOpen, Gamepad2, ListMusic, MessageSquareText, Puzzle, Settings, SlidersVertical, Sparkles, Store, Usb } from 'lucide-react';
+ import type { LucideIcon } from 'lucide-react';
+ 
+ // src/components/modal/newFeaturesRelease.ts
+@@ -10,6 +10,8 @@ type NewFeatureCard = {
+ 
+ type NewFeaturesRelease = {
+     i18nKey: string;
++    /** 這一版修了什麼：每個 id 對應 i18nKey.fixes.<id> 的一句說明，列出時只當條列用。 */
++    fixes?: string[];
+     /** 重大更新：介绍上方显示「<代号> Update · 重大更新」标签；代号不翻译，文案在 help.majorUpdateLabel。
+      *  servicePack：同一重大更新的热修复版，标签改成「<代号> Update SP<n> · 重大更新」，文案在 help.servicePackLabel。 */
+     majorUpdate?: { codename: string; servicePack?: number };
+@@ -18,14 +20,14 @@ type NewFeaturesRelease = {
+ 
+ // Defines the current release's cards; their localized text lives under i18nKey in every locale.
+ export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
+-    i18nKey: 'releaseNotes.v0_8_0',
+-    majorUpdate: { codename: 'Severance' },
++    i18nKey: 'releaseNotes.v0_9_4',
+     features: [
+-        { id: 'sourceMods', icon: Puzzle },
+-        { id: 'modMarket', icon: Store },
+-        { id: 'foliaPlaylists', icon: ListMusic },
+-        { id: 'moments', icon: MessageSquareText },
+-        { id: 'stemMixer', icon: SlidersVertical },
+-        { id: 'moreDetails', icon: Sparkles },
++        { id: 'linkedMode', icon: FolderOpen },
++        { id: 'usbDiagnose', icon: Usb },
++        { id: 'carPerf', icon: SlidersVertical },
++        { id: 'settingsEntry', icon: Settings },
++        { id: 'mediaKeys', icon: Gamepad2 },
++        { id: 'releaseNotesEveryUpdate', icon: Sparkles },
+     ],
++    fixes: ['importProgress', 'importLiveLists', 'carGutter', 'linkNotReplied'],
+ };
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
 --- a/src/components/modal/settings/navigation/settingsNavModel.ts
@@ -938,6 +1044,49 @@ index 1220f0a..07caf7a 100644
              <Group def={THEME}>
                  <Row option={O.daylight} note={t('options.followSystemThemeDesc')}>
                      <Segmented<DaylightChoice>
+diff --git a/src/components/modal/settings/pages/GraphicsPage.tsx b/src/components/modal/settings/pages/GraphicsPage.tsx
+index e98c8a4..4f02916 100644
+--- a/src/components/modal/settings/pages/GraphicsPage.tsx
++++ b/src/components/modal/settings/pages/GraphicsPage.tsx
+@@ -13,6 +13,7 @@ import { LYRIC_RENDER_SCALES } from '../../../../utils/lyricRenderQuality';
+ import { lyricAntialiasChoices, lyricRenderScaleChoices } from '../../../visualizer/renderQuality/LyricRenderQualityRows';
+ import { NATIVE_BLUR_SUPPORTED } from '../../../../utils/nativeBlurSupport';
+ import { openPerfCheck } from '../../../perfCheck/openPerfCheck';
++import { applyCarPerformancePreset, isCarUnit, revertCarPerformancePreset } from '../../../../perf/carPerformancePreset';
+ import { Button, Group, Link, Reveal, Row, Segmented, Toggle, option, useSettingsKitTheme, type SettingsGroupDef, type SettingsOptionDef } from '../kit';
+ import { GpuPreferenceRow } from './graphics/GpuPreferenceRow';
+ import { useSettingsPage } from './settingsPageContext';
+@@ -37,6 +38,7 @@ const IS_WINDOWS_DESKTOP = typeof window !== 'undefined' && window.electron?.pla
+ 
+ const PERFORMANCE: SettingsGroupDef = { id: 'graphicsPerformance', titleKey: 'options.labPerformanceSection' };
+ const MOTION: SettingsGroupDef = { id: 'graphicsMotion', titleKey: 'options.reduceMotionSection' };
++const CAR: SettingsGroupDef = { id: 'graphicsCarUnit', titleKey: 'options.carPerfSection' };
+ 
+ const O = {
+     perfCheck: option(PERFORMANCE, 'perfCheck', 'options.perfCheck', { electronOnly: true }),
+@@ -181,6 +183,22 @@ const GraphicsPage: React.FC = () => {
+                 {IS_WINDOWS_DESKTOP && <GpuPreferenceRow option={O.gpuPreference} />}
+             </Group>
+ 
++            {/* 車機一鍵檔：Android WebView（梁山嘟嘟 S3 8+128 這類）按一下就把最吃資源的四項一起壓下去。 */}
++            <Group def={CAR} foot={t('options.carPerfDesc')}>
++                <div className="st-row flex flex-wrap items-center gap-2.5 px-4 py-3" data-testid="car-perf-preset">
++                    {isCarUnit() ? (
++                        <span className="rounded-full bg-[var(--st-fill)] px-2 py-0.5 text-xs text-[color:var(--st-accent)]">
++                            {t('options.carPerfDetected')}
++                        </span>
++                    ) : null}
++                    <Button onClick={() => applyCarPerformancePreset()}>{t('options.carPerfApply')}</Button>
++                    <Button onClick={() => revertCarPerformancePreset()}>{t('options.carPerfRevert')}</Button>
++                </div>
++                <div className="st-row px-4 pb-3 text-xs leading-[19px] text-[color:var(--st-t2)]">
++                    {t('options.carPerfWhat')}
++                </div>
++            </Group>
++
+             <Group def={MOTION} foot={t('options.reduceMotionSectionDesc')}>
+                 <Row option={O.followSystem} hint={t('options.reduceMotionFollowSystemDesc')}>
+                     <Toggle checked={motion.followSystem} onChange={motion.setFollowSystem} />
 diff --git a/src/components/modal/settings/pages/QualityPage.tsx b/src/components/modal/settings/pages/QualityPage.tsx
 new file mode 100644
 index 0000000..4047bc3
@@ -994,6 +1143,19 @@ index 92620c2..04852d7 100644
      sources,
      general,
      interaction,
+diff --git a/src/components/modal/userGuideContent.ts b/src/components/modal/userGuideContent.ts
+index a8b5aa7..49f7858 100644
+--- a/src/components/modal/userGuideContent.ts
++++ b/src/components/modal/userGuideContent.ts
+@@ -13,7 +13,7 @@ export type UserGuideShortcut = {
+ export type GuidePage = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+ 
+ export const USER_GUIDE_PAGE_COUNT = 7;
+-export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.8.0';
++export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.9.4';
+ 
+ export type HelpTabShortcut = {
+     id: string;
 diff --git a/src/hooks/useLocalAudioImport.ts b/src/hooks/useLocalAudioImport.ts
 new file mode 100644
 index 0000000..7b6e632
@@ -1323,7 +1485,7 @@ index 0000000..8e34f78
 +    return rows;
 +};
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..68682a7 100644
+index 86f3b6d..56ecd3b 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -1492,7 +1654,21 @@ index 86f3b6d..68682a7 100644
      "settingsPageGeneral": "General",
      "settingsPageInteraction": "Shortcuts",
      "settingsPageIntegration": "Connections",
-@@ -3336,6 +3316,10 @@ export default {
+@@ -3125,6 +3105,13 @@ export default {
+     "memoryByProcess": "By process",
+     "memorySeriesUnavailable": "Not reported on this platform",
+     "reduceMotionSection": "Reduce motion",
++    "carPerfSection": "Head-unit performance",
++    "carPerfDesc": "On an Android head unit (WebView) this pushes the GPU-heavy parts to smooth-first in one click. Use it on eight-core units like the Liangshan Dudu S3 (8+128); on a 9-inch screen you will not see a quality difference.",
++    "carPerfDetected": "Android head unit detected",
++    "carPerfApply": "Apply head-unit preset",
++    "carPerfRevert": "Revert to previous values",
++    "carPerfWhat": "Changes together: static mode on, home dynamic background off, player-page native blur off, lyric canvas capped at 60 FPS with 0.75x resolution and antialiasing off, lyric style switched to Still, background to the simplest built-in one, vignette and geometric background off, all interface motion reduced. The previous values are saved and can be restored at any time.",
++
+     "reduceMotionSectionDesc": "Folia plays full animation by default. Turn an item on to reduce motion there.",
+     "reduceMotionFollowSystem": "Follow system setting",
+     "reduceMotionFollowSystemDesc": "The system's animation setting decides all motion",
+@@ -3336,6 +3323,10 @@ export default {
      "uiZoom": "Interface zoom",
      "uiZoomDesc": "Zoom the whole main window by a fixed step. With a large display scale in Windows the window feels cramped; zoom out to see more. The remote control window keeps its size.",
      "uiZoomStep": "Zoom",
@@ -1503,7 +1679,58 @@ index 86f3b6d..68682a7 100644
      "minimizeToTray": "Minimize to tray",
      "closeToTray": "Close window to tray",
      "closeToTrayDesc": "The close button hides the window to the tray instead of quitting",
-@@ -5242,8 +5226,34 @@ export default {
+@@ -4513,6 +4504,39 @@ export default {
+     "noDescription": "No description available",
+   },
+   "releaseNotes": {
++    "v0_9_4": {
++      "intro": "0.9.4 finishes the head-unit path: read an external drive in place without copying, a diagnostics panel when the USB drive is missing, steering-wheel media keys taken over at the native layer, a常駐 Settings entry next to the title, and a one-tap performance preset tuned for Android head units like the Liangshan Dudu S3 (8+128) that applies itself on first launch.",
++      "linkedMode": {
++        "title": "Linked mode: import without copying",
++        "description": "New “Import folder (no copy)”: only the paths are registered, the music stays on the USB drive or internal storage, and playback streams through a local server bound to 127.0.0.1 (seeking included). 2,216 tracks go from tens of minutes to a few minutes, and the quality column still works by reading the file header over HTTP Range."
++      },
++      "usbDiagnose": {
++        "title": "Diagnostics when the USB drive is missing",
++        "description": "Besides /storage/<UUID>, it now scans /mnt/media_rw, /mnt/usb and /udisk, marks unreadable volumes with ⚠ and says why; you can type a path manually; “Diagnostics” lists the SDK, permissions, real mount points and /proc/mounts so a screenshot is enough to tell whether the drive never mounted or the ROM keeps it away from third-party apps."
++      },
++      "carPerf": {
++        "title": "One-tap head-unit performance preset",
++        "description": "Animation & Performance now has a Head-unit performance group: one click turns off the home dynamic background and the player-page native blur, caps the lyric canvas at 60 FPS / 0.75x resolution with antialiasing off, switches the lyric style to Still, and reduces all interface motion. Previous values are saved for reverting, and Android head units apply it once automatically on first launch."
++      },
++      "settingsEntry": {
++        "title": "Settings sits next to the title",
++        "description": "The library home reads folia · Library [Settings] NetEase [Local], and collection pages read [← Back] [Settings]. It opens the full settings window with its sidebar and search box, so typing “size” or “source” finds the page."
++      },
++      "mediaKeys": {
++        "title": "Steering-wheel keys taken over",
++        "description": "A WebView never registers a media session, so head-unit media keys never reached the page. This build both registers a MediaSession and intercepts dispatchKeyEvent, covering both kinds of head units, and reports playback state so the status bar and Bluetooth card follow along."
++      },
++      "releaseNotesEveryUpdate": {
++        "title": "Every update explains what changed",
++        "description": "This window. Each new version lists what was added and what was fixed on the first launch after the update; once seen it stays quiet, and you can reopen it from Settings → Help → Release notes."
++      },
++      "fixes": {
++        "importProgress": "No more two identical progress lines while importing: only the button you pressed shows numbers, the other returns to its own label and greys out.",
++        "importLiveLists": "Thousands of tracks no longer appear only at the end: the list refreshes every 25 songs written, so the library grows during the import.",
++        "carGutter": "Head unit, web and iPhone builds no longer reserve the 32 px desktop title bar strip at the top, so a 9-inch screen shows one or two extra rows.",
++        "linkNotReplied": "A linked import that adds nothing, or skips a whole batch, now says so instead of staying silent."
++      }
++    },
+     "v0_7_0": {
+       "intro": "Here are the new features and improvements in version 0.7.0.",
+       "temperaVisualExpansion": {
+@@ -5228,6 +5252,10 @@ export default {
+     "capsuleOpensPalette": "Click to open the command palette",
+   },
+   "localMusic": {
++    "carPerfApplied": "Head-unit performance settings applied",
++    "carPerfReverted": "Reverted to the previous settings",
++    "carPerfAutoApplied": "Head-unit performance settings applied automatically (Settings → Animation & Performance → Head-unit performance to revert)",
++    "carPerfNoBackup": "The head-unit preset was never applied, so there is nothing to revert",
+     "foldersAndPlaylists": "Folders",
+     "albums": "Albums",
+     "artists": "Artists",
+@@ -5242,8 +5270,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -1538,7 +1765,7 @@ index 86f3b6d..68682a7 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6063,13 @@ export default {
+@@ -6053,8 +6107,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -1554,7 +1781,7 @@ index 86f3b6d..68682a7 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..2011449 100644
+index 0067e9a..4f72e20 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -1645,7 +1872,15 @@ index 0067e9a..2011449 100644
      "homeTreeHints": "←→ 折叠",
      "homeBatchHints": "Ins 选中 · {{mod}}+A 全选 · {{mod}}+Enter 播放 · {{mod}}+Shift+Enter 入队",
      "homeSelection": "已选 {{count}} 项 · {{tracks}} 首",
-@@ -2796,6 +2845,7 @@ export default {
+@@ -2583,6 +2632,7 @@ export default {
+     "communityQqHint": "{{number}} · 点击复制群号",
+     "qqGroupNumberCopied": "群号已复制",
+     "releaseNotes": "版本更新",
++    "releaseNotesFixes": "這一版修正了",
+     "releaseNotesDescription": "查看这个版本带来的变化",
+     "majorUpdateLabel": "{{codename}} Update · 重大更新",
+     "servicePackLabel": "{{codename}} Update SP{{servicePack}} · 重大更新",
+@@ -2796,6 +2846,7 @@ export default {
      "settingsPageHome": "主页与歌单",
      "settingsPagePlayback": "播放控制",
      "settingsPageLyrics": "歌词",
@@ -1653,7 +1888,21 @@ index 0067e9a..2011449 100644
      "settingsPageGeneral": "通用",
      "settingsPageInteraction": "快捷操作",
      "settingsPageIntegration": "连接与集成",
-@@ -3336,6 +3386,10 @@ export default {
+@@ -3125,6 +3176,13 @@ export default {
+     "memoryByProcess": "分进程",
+     "memorySeriesUnavailable": "当前系统不提供这个数据",
+     "reduceMotionSection": "降低动态效果",
++    "carPerfSection": "车机性能",
++    "carPerfDesc": "Android 车机（WebView）上把最吃 GPU 的几项一次压到流畅优先。梁山嘟嘟 S3（8+128）这类八核机器用这一档，9 寸屏看不出画质差别。",
++    "carPerfDetected": "检测到 Android 车机",
++    "carPerfApply": "套用车机最佳性能",
++    "carPerfRevert": "还原到套用前",
++    "carPerfWhat": "会一起改：静态模式开、首页动态背景关、播放页原生模糊关、歌词画布 60 FPS 上限 + 0.75 倍分辨率 + 关抗锯齿、歌词样式换成「静态」、背景换成内置最简、暗角与几何背景关、界面动效全部降级。原值会存起来，随时可还原。",
++
+     "reduceMotionSectionDesc": "Folia 默认播放完整动画。打开某一项，那一处的动效就会降低。",
+     "reduceMotionFollowSystem": "跟随系统设置",
+     "reduceMotionFollowSystemDesc": "由系统的动画设置决定全部动效",
+@@ -3336,6 +3394,10 @@ export default {
      "uiZoom": "界面缩放",
      "uiZoomDesc": "按固定挡位缩放整个主窗口。系统缩放调得大时界面会显得挤，缩小一些能看到更多内容。妙控窗保持原来的大小。",
      "uiZoomStep": "缩放挡位",
@@ -1664,7 +1913,58 @@ index 0067e9a..2011449 100644
      "minimizeToTray": "最小化到托盘",
      "closeToTray": "关闭窗口时隐藏到托盘",
      "closeToTrayDesc": "点关闭按钮时不退出，隐藏到托盘继续播放",
-@@ -5242,8 +5296,34 @@ export default {
+@@ -4513,6 +4575,39 @@ export default {
+     "noDescription": "暂无详细介绍",
+   },
+   "releaseNotes": {
++    "v0_9_4": {
++      "intro": "0.9.4 把車機這一條路補完：可以直接讀外部硬碟、不複製檔案；找不到 USB 時有診斷面板；方向盤的播放／暫停鍵接管了；左上角常駐一個「設置」；另外針對梁山嘟嘟 S3（8+128）這類 Android 車機做了一鍵效能檔，第一次開就自動套用。",
++      "linkedMode": {
++        "title": "連結模式：匯入不再複製檔案",
++        "description": "新增「導入文件夾（不複製）」：只登記路徑，音樂留在原本的 USB 或內建儲存裡，播放時用一個只在 127.0.0.1 監聽的本機服務邊播邊讀（拖進度條也正常）。2216 首從幾十分鐘降到幾分鐘，音質欄照樣判定（走 Range 讀檔頭，不用拉整首）。"
++      },
++      "usbDiagnose": {
++        "title": "找不到 USB 時的診斷面板",
++        "description": "除了 /storage/<UUID>，還會掃 /mnt/media_rw、/mnt/usb、/udisk，讀不到的卷宗標 ⚠ 並直說原因；可以手動輸入路徑跳過去；按「診斷」會列出這台車機的 SDK、權限、實際掛載點與 /proc/mounts，截圖就能判斷 USB 是沒掛上還是被 ROM 鎖給系統 App。"
++      },
++      "carPerf": {
++        "title": "車機一鍵效能檔（S3 8+128 調好）",
++        "description": "動畫與性能裡多了「車機性能」：一鍵關掉首頁動態背景與播放頁原生模糊、歌詞畫布壓到 60 FPS / 0.75 倍解析度 / 關抗鋸齒、歌詞樣式換成最輕的「靜態」、界面動效全部降級。原值會存起來可還原；Android 車機第一次開啟這個版本會自動套用一次。"
++      },
++      "settingsEntry": {
++        "title": "設置常駐在標題旁，不用記快捷鍵",
++        "description": "曲庫首頁是 folia · 曲庫 [設置] 網易雲 [本地]，資料夾／歌單／專輯內頁是 [← 返回] [設置]。點開就是完整設定，左側分類、上方可搜尋，找「字號」「音源」直接搜。"
++      },
++      "mediaKeys": {
++        "title": "方向盤方控接管（播放／暫停／上下首）",
++        "description": "WebView 原本不向系統註冊媒體工作階段，車機的媒體鍵送不到頁面。這版在原生層同時註冊 MediaSession 並攔 dispatchKeyEvent，兩種車機都能認；同時把播放狀態回報給車機，狀態列與藍牙音樂卡片也會跟著顯示。"
++      },
++      "releaseNotesEveryUpdate": {
++        "title": "每次更新後第一次開啟會說明改了什麼",
++        "description": "就是你現在看的這個視窗。之後每次換版本，第一次啟動都會列出新增了什麼、修正了什麼；看過一次就不再打擾，想再看可以從 設定 → 幫助 → 版本更新 打開。"
++      },
++      "fixes": {
++        "importProgress": "匯入時不再出現兩行一模一樣的進度：只有你按下去的那顆按鈕顯示數字，另一顆退回自己的名字並灰掉。",
++        "importLiveLists": "兩千多首不必等全部跑完才出現：每寫完 25 首就刷新一次清單，匯入途中曲庫會一段段長出來。",
++        "carGutter": "車機／網頁／iPhone 版去掉頂部 32px 空白（那是桌面版標題欄專用），9 吋屏多看到一兩行。",
++        "linkNotReplied": "連結模式匯入後沒反應、或整批被略過時會明確提示，不再靜悄悄。"
++      }
++    },
+     "v0_7_0": {
+       "intro": "以下是 0.7.0 的新功能与改进",
+       "temperaVisualExpansion": {
+@@ -5228,6 +5323,10 @@ export default {
+     "capsuleOpensPalette": "点一下打开命令面板",
+   },
+   "localMusic": {
++    "carPerfApplied": "已套用车机性能设置",
++    "carPerfReverted": "已还原到套用前的设置",
++    "carPerfAutoApplied": "已自动套用车机性能设置（设置 → 动画与性能 → 车机性能 可还原）",
++    "carPerfNoBackup": "还没有套用过车机性能设置，没有可还原的值",
+     "foldersAndPlaylists": "文件夹",
+     "albums": "专辑",
+     "artists": "艺术家",
+@@ -5242,8 +5341,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -1699,7 +1999,7 @@ index 0067e9a..2011449 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6131,13 @@ export default {
+@@ -6051,8 +6176,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -2608,6 +2908,155 @@ index 0000000..aa3000b
 +                    ? t('libraryTui.qualityUnknown')
 +                    : t('libraryTui.qualityPending');
 +    return spec ? `${spec} ${verdict}` : verdict;
++};
+diff --git a/src/perf/carPerformancePreset.ts b/src/perf/carPerformancePreset.ts
+new file mode 100644
+index 0000000..21630c6
+--- /dev/null
++++ b/src/perf/carPerformancePreset.ts
+@@ -0,0 +1,143 @@
++import i18n from '../i18n/config';
++import { setStatusMessage } from '../stores/useStatusMessageStore';
++import { useThemeSettingsStore } from '../stores/useThemeSettingsStore';
++import { usePlayerChromeSettingsStore } from '../stores/usePlayerChromeSettingsStore';
++import { useVisualizerSettingsStore } from '../stores/useVisualizerSettingsStore';
++import { useMotionSettingsStore, MOTION_SURFACE_IDS } from '../stores/useMotionSettingsStore';
++
++// src/perf/carPerformancePreset.ts
++// 車機一鍵效能檔：Android WebView 的車機（梁山嘟嘟 S3 8+128 這類八核 + 8GB 的機器）跑的是同一個
++// Chromium，但 GPU 是車規 SoC 的內顯，9 吋 1280×720 左右的屏，最吃資源的分別是：歌詞可視化的每幀畫布、
++// 首頁動態背景、播放頁的原生模糊、以及各種過場動畫。這裡把這些一起壓到「流暢優先」。
++//
++// 套用前把原值存起來，可以一鍵還原；只寫 localStorage 與 zustand，不改任何渲染邏輯。
++
++const PRESET_BACKUP_KEY = 'folia_car_perf_preset_backup';
++const PRESET_APPLIED_KEY = 'folia_car_perf_preset_applied';
++
++/** 車機 = Android WebView，且不是桌面殼。 */
++export const isCarUnit = (): boolean => (
++    typeof navigator !== 'undefined'
++    && !(typeof window !== 'undefined' && window.electron)
++    && /Android/i.test(navigator.userAgent)
++);
++
++type Backup = {
++    staticMode: boolean;
++    homeBackgroundOff: boolean;
++    nativeBlur: boolean;
++    frameRate: string;
++    lyricQuality: { scale: number; antialias: string };
++    visualizerMode: string;
++    backgroundMode: string | null;
++    vignetteOff: boolean;
++    geometricOff: boolean;
++    reducedMotion: Record<string, boolean>;
++};
++
++const readBackup = (): Backup | null => {
++    try {
++        const raw = localStorage.getItem(PRESET_BACKUP_KEY);
++        return raw ? JSON.parse(raw) as Backup : null;
++    } catch {
++        return null;
++    }
++};
++
++const takeBackup = (): Backup => ({
++    staticMode: useThemeSettingsStore.getState().staticMode,
++    homeBackgroundOff: useThemeSettingsStore.getState().disableHomeDynamicBackground,
++    nativeBlur: usePlayerChromeSettingsStore.getState().enablePlayerPageNativeBlur,
++    frameRate: String(useVisualizerSettingsStore.getState().visualizerFrameRate),
++    lyricQuality: { ...useVisualizerSettingsStore.getState().lyricRenderQuality },
++    visualizerMode: useVisualizerSettingsStore.getState().visualizerMode,
++    backgroundMode: useVisualizerSettingsStore.getState().visualizerBackgroundMode ?? null,
++    vignetteOff: useVisualizerSettingsStore.getState().disableVisualizerVignette,
++    geometricOff: useVisualizerSettingsStore.getState().disableVisualizerGeometricBackground,
++    reducedMotion: { ...useMotionSettingsStore.getState().reducedMotionSurfaces },
++});
++
++/** 套用車機效能檔。quiet=true 時不跳提示（自動套用那條路自己會講）。 */
++export const applyCarPerformancePreset = (options: { quiet?: boolean } = {}) => {
++    if (!readBackup()) {
++        try {
++            localStorage.setItem(PRESET_BACKUP_KEY, JSON.stringify(takeBackup()));
++        } catch {
++            // 存不進去就沒有還原，仍然先套用。
++        }
++    }
++
++    const theme = useThemeSettingsStore.getState();
++    const chrome = usePlayerChromeSettingsStore.getState();
++    const vis = useVisualizerSettingsStore.getState();
++    const motion = useMotionSettingsStore.getState();
++
++    // 1. 動態背景、畫面特效全關：這兩個是首頁／播放頁最貴的兩筆。
++    theme.handleToggleStaticMode(true);
++    theme.handleToggleDisableHomeDynamicBackground(true);
++    chrome.handleTogglePlayerPageNativeBlur(false);
++
++    // 2. 歌詞畫布：60 FPS 上限（再低會明顯頓）+ 0.75 倍解析度 + 關抗鋸齒。9 吋屏上肉眼看不出差，填充率省一半以上。
++    vis.handleSetVisualizerFrameRate(60);
++    vis.handleSetLyricRenderQuality({ scale: 0.75, antialias: 'off' });
++    // 3. 歌詞樣式換成最輕的「靜態」：不跑逐字動畫、不開著色器；背景也換回內建最簡的一種。
++    vis.handleSetVisualizerMode('still', { notify: false });
++    vis.handleSetVisualizerBackgroundMode('common');
++    vis.handleToggleDisableVisualizerVignette(true);
++    vis.handleToggleDisableVisualizerGeometricBackground(true);
++
++    // 4. 界面動效全降級：換頁、牆面、轉場、微互動都不再跑彈簧曲線。
++    for (const surface of MOTION_SURFACE_IDS) {
++        motion.handleToggleReducedMotionSurface(surface, true);
++    }
++
++    if (!options.quiet) {
++        setStatusMessage({ type: 'success', text: i18n.t('localMusic.carPerfApplied') });
++    }
++};
++
++/** 還原成套用前的值。沒有備份時只回一句「沒有可還原的設定」。 */
++export const revertCarPerformancePreset = () => {
++    const backup = readBackup();
++    if (!backup) {
++        setStatusMessage({ type: 'info', text: i18n.t('localMusic.carPerfNoBackup') });
++        return;
++    }
++
++    useThemeSettingsStore.getState().handleToggleStaticMode(backup.staticMode);
++    useThemeSettingsStore.getState().handleToggleDisableHomeDynamicBackground(backup.homeBackgroundOff);
++    usePlayerChromeSettingsStore.getState().handleTogglePlayerPageNativeBlur(backup.nativeBlur);
++    useVisualizerSettingsStore.getState().handleSetVisualizerFrameRate(backup.frameRate as never);
++    useVisualizerSettingsStore.getState().handleSetLyricRenderQuality(backup.lyricQuality as never);
++    useVisualizerSettingsStore.getState().handleSetVisualizerMode(backup.visualizerMode as never, { notify: false });
++    if (backup.backgroundMode) {
++        useVisualizerSettingsStore.getState().handleSetVisualizerBackgroundMode(backup.backgroundMode as never);
++    } else {
++        useVisualizerSettingsStore.getState().handleResetVisualizerBackgroundMode();
++    }
++    useVisualizerSettingsStore.getState().handleToggleDisableVisualizerVignette(backup.vignetteOff);
++    useVisualizerSettingsStore.getState().handleToggleDisableVisualizerGeometricBackground(backup.geometricOff);
++    for (const surface of MOTION_SURFACE_IDS) {
++        useMotionSettingsStore.getState().handleToggleReducedMotionSurface(surface, Boolean(backup.reducedMotion[surface]));
++    }
++
++    try {
++        localStorage.removeItem(PRESET_BACKUP_KEY);
++    } catch {
++        // 忽略。
++    }
++    setStatusMessage({ type: 'success', text: i18n.t('localMusic.carPerfReverted') });
++};
++
++/** 車機第一次開這個版本時自動套一次；之後不再打擾（設置頁仍可重新套用／還原）。 */
++export const maybeApplyCarPerformancePresetOnce = () => {
++    if (!isCarUnit()) return;
++    try {
++        if (localStorage.getItem(PRESET_APPLIED_KEY)) return;
++        localStorage.setItem(PRESET_APPLIED_KEY, '1');
++    } catch {
++        return;
++    }
++    applyCarPerformancePreset({ quiet: true });
++    setStatusMessage({ type: 'info', text: i18n.t('localMusic.carPerfAutoApplied') });
 +};
 diff --git a/src/services/audioQuality/inspectAudioQuality.ts b/src/services/audioQuality/inspectAudioQuality.ts
 new file mode 100644
