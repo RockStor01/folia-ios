@@ -578,6 +578,180 @@ index 0000000..8b22e15
 +};
 +
 +export default SpectrumChart;
+diff --git a/src/components/local/LinkedFolderPicker.tsx b/src/components/local/LinkedFolderPicker.tsx
+new file mode 100644
+index 0000000..13d3b4a
+--- /dev/null
++++ b/src/components/local/LinkedFolderPicker.tsx
+@@ -0,0 +1,168 @@
++// src/components/local/LinkedFolderPicker.tsx
++// 車機「連結模式」的資料夾選擇器：選一個原生目錄，之後只登記路徑、不複製檔案。
++//
++// 為什麼要自己做一個而不是用系統選檔器：Android 的 ACTION_OPEN_DOCUMENT_TREE 只能給 SAF 的
++// DocumentFile，列兩千多筆要幾分鐘，比複製還慢；這裡走的是「所有檔案存取」權限下的 java.io.File，
++// 原生列目錄幾秒就跑完。代價是使用者要自己去系統設定點一次授權，所以第一屏就是講清楚這件事。
++
++import React, { useCallback, useEffect, useState } from 'react';
++import { useTranslation } from 'react-i18next';
++import {
++    hasStoragePermission,
++    listStorageDirectory,
++    listStorageRoots,
++    requestStoragePermission,
++    type NativeStorageDir,
++    type NativeStorageFile,
++    type NativeStorageRoot,
++} from '../../services/nativeLinkedStorage';
++
++interface LinkedFolderPickerProps {
++    onCancel: () => void;
++    onImport: (rootPath: string, rootName: string) => void;
++}
++
++interface CurrentFolder {
++    name: string;
++    path: string;
++    dirs: NativeStorageDir[];
++    files: NativeStorageFile[];
++}
++
++const PermissionGate: React.FC<{ onGranted: () => void }> = ({ onGranted }) => {
++    const { t } = useTranslation();
++    useEffect(() => {
++        // 授權頁在系統設定裡，沒有回呼；只能輪詢。使用者按返回就代表放棄，這裡不逼他。
++        const timer = window.setInterval(() => {
++            if (hasStoragePermission()) {
++                window.clearInterval(timer);
++                onGranted();
++            }
++        }, 1200);
++        return () => window.clearInterval(timer);
++    }, [onGranted]);
++    return (
++        <div className="flex flex-col gap-3">
++            <p className="text-sm opacity-80">{t('localMusic.linkedPermissionNeeded')}</p>
++            <p className="text-xs opacity-50">{t('localMusic.linkedFolderHint')}</p>
++            <button
++                type="button"
++                onClick={requestStoragePermission}
++                className="self-start border border-white/30 px-3 py-1.5 text-sm hover:bg-white/10"
++            >
++                {`[${t('localMusic.linkedPermissionAction')}]`}
++            </button>
++        </div>
++    );
++};
++
++export const LinkedFolderPicker: React.FC<LinkedFolderPickerProps> = ({ onCancel, onImport }) => {
++    const { t } = useTranslation();
++    const [permitted, setPermitted] = useState(hasStoragePermission());
++    const [roots, setRoots] = useState<NativeStorageRoot[]>([]);
++    const [folder, setFolder] = useState<CurrentFolder | null>(null);
++
++    const refreshRoots = useCallback(() => {
++        setRoots(listStorageRoots());
++    }, []);
++
++    useEffect(() => {
++        if (permitted) refreshRoots();
++    }, [permitted, refreshRoots]);
++
++    const enter = useCallback((path: string, name: string) => {
++        const listing = listStorageDirectory(path);
++        setFolder({ name, path, dirs: listing.dirs, files: listing.files });
++    }, []);
++
++    const goUp = useCallback(() => {
++        if (!folder) return;
++        const parent = folder.path.replace(/\/[^/]+\/?$/, '') || '/';
++        if (parent === '/' || parent === folder.path) {
++            setFolder(null);
++            return;
++        }
++        const name = parent.split('/').filter(Boolean).pop() ?? parent;
++        enter(parent, name);
++    }, [enter, folder]);
++
++    return (
++        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4" onClick={onCancel}>
++            <div
++                className="max-h-[80vh] w-full max-w-[560px] overflow-y-auto border border-white/20 bg-neutral-950 p-4 text-neutral-100"
++                onClick={event => event.stopPropagation()}
++                data-linked-folder-picker
++            >
++                <div className="mb-3 flex items-center justify-between gap-3">
++                    <span className="text-base">{t('localMusic.linkedPickFolder')}</span>
++                    <button type="button" onClick={onCancel} className="opacity-60 hover:opacity-100">{`[${t('localMusic.cancel')}]`}</button>
++                </div>
++
++                {!permitted ? (
++                    <PermissionGate onGranted={() => setPermitted(true)} />
++                ) : (
++                    <>
++                        <div className="mb-2 break-all text-xs opacity-50">{folder ? folder.path : '/'}</div>
++
++                        {folder ? (
++                            <>
++                                <button type="button" onClick={goUp} className="mb-2 block text-sm opacity-70 hover:opacity-100">
++                                    {`← ${t('localMusic.linkedUpFolder')}`}
++                                </button>
++                                {folder.dirs.length === 0 && folder.files.length === 0 ? (
++                                    <p className="py-3 text-sm opacity-60">{t('localMusic.linkedEmptyFolder')}</p>
++                                ) : null}
++                                <ul className="mb-3 flex flex-col">
++                                    {folder.dirs.map(directory => (
++                                        <li key={directory.path}>
++                                            <button
++                                                type="button"
++                                                onClick={() => enter(directory.path, directory.name)}
++                                                className="w-full break-all py-1.5 text-left text-sm hover:bg-white/10"
++                                            >
++                                                {`${directory.name}/`}
++                                            </button>
++                                        </li>
++                                    ))}
++                                </ul>
++                                {folder.files.length > 0 ? (
++                                    <p className="mb-3 text-xs opacity-50">
++                                        {t('localMusic.linkedFoundCount', { count: folder.files.length })}
++                                    </p>
++                                ) : null}
++                                <button
++                                    type="button"
++                                    onClick={() => onImport(folder.path, folder.name)}
++                                    className="border border-white/30 px-3 py-1.5 text-sm hover:bg-white/10"
++                                >
++                                    {`[${t('localMusic.linkedUseThisFolder')}]`}
++                                </button>
++                            </>
++                        ) : (
++                            <ul className="flex flex-col">
++                                {roots.length === 0 ? (
++                                    <li className="py-3 text-sm opacity-60">{t('localMusic.linkedNoFolder')}</li>
++                                ) : null}
++                                {roots.map(root => (
++                                    <li key={root.path}>
++                                        <button
++                                            type="button"
++                                            onClick={() => enter(root.path, root.name)}
++                                            className="w-full break-all py-1.5 text-left text-sm hover:bg-white/10"
++                                        >
++                                            {`${root.name}（${root.path}）`}
++                                        </button>
++                                    </li>
++                                ))}
++                            </ul>
++                        )}
++
++                        <p className="mt-3 text-xs opacity-40">{t('localMusic.linkedFolderHint')}</p>
++                    </>
++                )}
++            </div>
++        </div>
++    );
++};
++
++export default LinkedFolderPicker;
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
 --- a/src/components/modal/settings/navigation/settingsNavModel.ts
@@ -746,19 +920,20 @@ index 92620c2..04852d7 100644
      interaction,
 diff --git a/src/hooks/useLocalAudioImport.ts b/src/hooks/useLocalAudioImport.ts
 new file mode 100644
-index 0000000..a63528e
+index 0000000..6913ed7
 --- /dev/null
 +++ b/src/hooks/useLocalAudioImport.ts
-@@ -0,0 +1,94 @@
+@@ -0,0 +1,153 @@
 +// src/hooks/useLocalAudioImport.ts
 +// 「從檔案匯入」在每個首頁 suite 裡都一樣：一顆隱藏的 input、一個 busy 旗標、一個 handler。
 +// 抽出來是因為 Bravais 空牆、Grid3D 空狀態、TUI 清單都要同一件事，分散寫三份遲早對不上。
 +
 +import { useCallback, useRef, useState } from 'react';
 +import i18n from '../i18n/config';
-+import { importAudioFiles } from '../services/localMusicService';
++import { importAudioFiles, importLinkedAudioPaths, LINKED_LOCAL_ROOT_NAME } from '../services/localMusicService';
 +import { setStatusMessage } from '../stores/useStatusMessageStore';
 +import { isMetadataParsingAvailable } from '../utils/localMetadataWorkerClient';
++import { isLinkedStorageSupported, scanStorageDirectory } from '../services/nativeLinkedStorage';
 +
 +export interface LocalAudioImportController {
 +    /** 要掛在 input 上的 ref（input 必須真的在 DOM 裡）。 */
@@ -771,6 +946,14 @@ index 0000000..a63528e
 +    /** 給 <input type="file" multiple onChange> 用的處理函式。 */
 +    handleFiles: (files: FileList | null) => void;
 +    lastResult: { count: number; failed: number; skipped: number } | null;
++    /** 車機 APK 的原生層在不在（不在就沒有「不複製」這個選項）。 */
++    linkedSupported: boolean;
++    /** 原生資料夾瀏覽器開著沒有。 */
++    linkedPickerOpen: boolean;
++    openLinkedPicker: () => void;
++    closeLinkedPicker: () => void;
++    /** 選定一個原生資料夾 → 掃描 → 只登記路徑，不複製檔案。 */
++    importLinkedFolder: (rootPath: string, rootName: string) => void;
 +}
 +
 +export const useLocalAudioImport = (): LocalAudioImportController => {
@@ -791,6 +974,10 @@ index 0000000..a63528e
 +    };
 +    const [lastResult, setLastResult] = useState<LocalAudioImportController['lastResult']>(null);
 +    const busyRef = useRef(false);
++    const linkedSupported = isLinkedStorageSupported();
++    const [linkedPickerOpen, setLinkedPickerOpen] = useState(false);
++    const openLinkedPicker = useCallback(() => setLinkedPickerOpen(true), []);
++    const closeLinkedPicker = useCallback(() => setLinkedPickerOpen(false), []);
 +
 +    const openPicker = useCallback(() => {
 +        inputRef.current?.click();
@@ -842,7 +1029,53 @@ index 0000000..a63528e
 +        })();
 +    }, []);
 +
-+    return { inputRef, importing, progress, openPicker, handleFiles, lastResult };
++    const importLinkedFolder = useCallback((rootPath: string, rootName: string) => {
++        if (busyRef.current) return;
++        setLinkedPickerOpen(false);
++        busyRef.current = true;
++        setImporting(true);
++        startedAtRef.current = Date.now();
++        // total 0 代表「還在掃描」：車機上一次掃兩千多筆目錄要幾秒，先把畫面切過去再掃。
++        setProgress({ done: 0, total: 0, eta: null });
++        void (async () => {
++            try {
++                await new Promise<void>(resolve => { setTimeout(resolve, 0); });
++                const files = scanStorageDirectory(rootPath);
++                setProgress({ done: 0, total: files.length, eta: null });
++                const folderName = rootName || LINKED_LOCAL_ROOT_NAME;
++                const result = await importLinkedAudioPaths(files, rootPath, folderName, {
++                    onProgress: info => {
++                        if (info.done === 0 || info.done === info.total || info.done % 5 === 0) {
++                            setProgress({ done: info.done, total: info.total, eta: formatEta(info.done, info.total) });
++                        }
++                    },
++                });
++                setLastResult({ count: result.songs.length, failed: result.failed.length, skipped: result.skipped });
++                if (result.songs.length > 0) {
++                    setStatusMessage({
++                        type: 'success',
++                        text: i18n.t('localMusic.importFinished', { added: result.songs.length, failed: result.failed.length }),
++                    });
++                }
++                if (result.failed.length > 0) {
++                    setStatusMessage({ type: 'info', text: i18n.t('localMusic.linkedFailedProbe') });
++                    console.warn('[LocalImport][Link] Some files were skipped:', result.failed);
++                }
++            } catch (error) {
++                console.error('[LocalImport][Link] Linking a folder failed', error);
++                setLastResult({ count: 0, failed: 0, skipped: 0 });
++            } finally {
++                busyRef.current = false;
++                setImporting(false);
++                setProgress(null);
++            }
++        })();
++    }, []);
++
++    return {
++        inputRef, importing, progress, openPicker, handleFiles, lastResult,
++        linkedSupported, linkedPickerOpen, openLinkedPicker, closeLinkedPicker, importLinkedFolder,
++    };
 +};
 diff --git a/src/hooks/useTrackQualityLabels.ts b/src/hooks/useTrackQualityLabels.ts
 new file mode 100644
@@ -935,7 +1168,7 @@ index 0000000..8e34f78
 +    return rows;
 +};
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..fcce0fd 100644
+index 86f3b6d..087e613 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -1106,13 +1339,25 @@ index 86f3b6d..fcce0fd 100644
      "minimizeToTray": "Minimize to tray",
      "closeToTray": "Close window to tray",
      "closeToTrayDesc": "The close button hides the window to the tray instead of quitting",
-@@ -5242,8 +5224,18 @@ export default {
+@@ -5242,8 +5224,30 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
 +    "importFiles": "Import Files",
 +    "importFilesHint": "Pick audio files from this device and play them straight from local storage. iPhones have no folder picker, so this is the way in.",
 +    "importingFiles": "Importing…",
++    "importLinkedFolder": "Import Folder (Link)",
++    "linkingFolder": "Scanning folder…",
++    "linkedFolderHint": "Music stays where it is and is read during playback — good for built-in storage and USB drives.",
++    "linkedPermissionNeeded": "All-files access is required to read music on this device directly.",
++    "linkedPermissionAction": "Grant access",
++    "linkedPickFolder": "Choose a folder to read",
++    "linkedUseThisFolder": "Link this folder",
++    "linkedUpFolder": "Up one level",
++    "linkedNoFolder": "No readable storage found",
++    "linkedEmptyFolder": "No audio files in this folder",
++    "linkedFoundCount": "{{count}} audio file(s) in this folder",
++    "linkedFailedProbe": "Some files could not be read (they may have moved) and were skipped.",
 +    "importingProgress": "Importing {{done}}/{{total}}",
 +    "importingProgressEta": "Importing {{done}}/{{total}} (~{{eta}} left)",
 +    "importEtaMinutes": "{{minutes}} min",
@@ -1125,7 +1370,7 @@ index 86f3b6d..fcce0fd 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6045,13 @@ export default {
+@@ -6053,8 +6057,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -1141,7 +1386,7 @@ index 86f3b6d..fcce0fd 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..87f3594 100644
+index 0067e9a..f2be4de 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -1242,13 +1487,25 @@ index 0067e9a..87f3594 100644
      "minimizeToTray": "最小化到托盘",
      "closeToTray": "关闭窗口时隐藏到托盘",
      "closeToTrayDesc": "点关闭按钮时不退出，隐藏到托盘继续播放",
-@@ -5242,8 +5294,18 @@ export default {
+@@ -5242,8 +5294,30 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
 +    "importFiles": "导入文件",
 +    "importFilesHint": "选择手机里的音频文件，直接从本地播放；iPhone 上没有文件夹权限，用的是这条路。",
 +    "importingFiles": "正在导入…",
++    "importLinkedFolder": "导入文件夹（不复制）",
++    "linkingFolder": "正在扫描文件夹…",
++    "linkedFolderHint": "音乐留在原处，播放时直接读取；适合車機内建储存与 USB 随身碟。",
++    "linkedPermissionNeeded": "需要「所有文件访问」权限，才能直接读取車機里的音乐。",
++    "linkedPermissionAction": "去授权",
++    "linkedPickFolder": "选择要读取的文件夹",
++    "linkedUseThisFolder": "导入这个文件夹",
++    "linkedUpFolder": "上一层",
++    "linkedNoFolder": "没有可读取的储存空间",
++    "linkedEmptyFolder": "这个文件夹里没有音频文件",
++    "linkedFoundCount": "这个文件夹有 {{count}} 首音频",
++    "linkedFailedProbe": "有几首读不到标签（文件可能已被移走），已跳过。",
 +    "importingProgress": "正在导入 {{done}}/{{total}}",
 +    "importingProgressEta": "正在导入 {{done}}/{{total}}（约剩 {{eta}}）",
 +    "importEtaMinutes": "{{minutes}} 分钟",
@@ -1261,7 +1518,7 @@ index 0067e9a..87f3594 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6113,13 @@ export default {
+@@ -6051,8 +6125,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -1785,18 +2042,19 @@ index 70f5244..2bd712a 100644
  };
  
 diff --git a/src/library/suites/tui/LibraryTuiHomeLists.tsx b/src/library/suites/tui/LibraryTuiHomeLists.tsx
-index 347bbc3..abde7f1 100644
+index 347bbc3..b8b330d 100644
 --- a/src/library/suites/tui/LibraryTuiHomeLists.tsx
 +++ b/src/library/suites/tui/LibraryTuiHomeLists.tsx
-@@ -22,6 +22,7 @@ import { useLibraryHomeLocal, useLocalDirectoryTrees, useLocalHomeBatchConfig }
+@@ -22,6 +22,8 @@ import { useLibraryHomeLocal, useLocalDirectoryTrees, useLocalHomeBatchConfig }
  import { useLibraryHomeNavidrome } from '../../core/home/navidrome/useLibraryHomeNavidrome';
  import { useLibraryHomeActions } from '../../core/home/useLibraryHomeActions';
  import { useLibraryHomeListRegistration } from '../../core/home/useLibraryHomeSurfaceRegistration';
 +import { useLocalAudioImport } from '../../../hooks/useLocalAudioImport';
++import { LinkedFolderPicker } from '../../../components/local/LinkedFolderPicker';
  import LibraryTuiDirectory from './LibraryTuiDirectory';
  import LibraryTuiAccountList from './LibraryTuiAccountList';
  import type { LibraryTuiPromptRequest } from './LibraryTuiPrompt';
-@@ -199,6 +200,8 @@ export const LibraryTuiLocalList: React.FC<LibraryTuiListCommonProps & {
+@@ -199,6 +201,8 @@ export const LibraryTuiLocalList: React.FC<LibraryTuiListCommonProps & {
          else if (id === 'import-playlist') playlistFileInputRef.current?.click();
      };
      const isEmptyLibrary = directoryTrees.loaded && localSongs.length === 0 && directoryTrees.trees.length === 0;
@@ -1805,7 +2063,7 @@ index 347bbc3..abde7f1 100644
  
      useLibraryHomeListRegistration({
          enabled: !isEmptyLibrary,
-@@ -231,6 +234,14 @@ export const LibraryTuiLocalList: React.FC<LibraryTuiListCommonProps & {
+@@ -231,6 +235,14 @@ export const LibraryTuiLocalList: React.FC<LibraryTuiListCommonProps & {
      });
  
      const fileInput = (
@@ -1820,7 +2078,7 @@ index 347bbc3..abde7f1 100644
          <input
              ref={playlistFileInputRef}
              type="file"
-@@ -243,6 +254,7 @@ export const LibraryTuiLocalList: React.FC<LibraryTuiListCommonProps & {
+@@ -243,6 +255,7 @@ export const LibraryTuiLocalList: React.FC<LibraryTuiListCommonProps & {
                  if (file) void homeActions.importPlaylistFile(file);
              }}
          />
@@ -1828,7 +2086,7 @@ index 347bbc3..abde7f1 100644
      );
  
      if (isEmptyLibrary) {
-@@ -250,7 +262,14 @@ export const LibraryTuiLocalList: React.FC<LibraryTuiListCommonProps & {
+@@ -250,11 +263,33 @@ export const LibraryTuiLocalList: React.FC<LibraryTuiListCommonProps & {
              <StatusText status="empty-library">
                  {fileInput}
                  <span>{t('localMusic.noLocalMusic')}</span>
@@ -1840,11 +2098,30 @@ index 347bbc3..abde7f1 100644
 +                            : t('localMusic.importingFiles'))
 +                        : t('localMusic.importFiles')}]`}
 +                </button>
++                {audioImport.linkedSupported ? (
++                    <button type="button" disabled={audioImport.importing} onClick={audioImport.openLinkedPicker} className="self-start opacity-70 hover:opacity-100 disabled:opacity-30">
++                        {`[${audioImport.importing
++                            ? (audioImport.progress && audioImport.progress.total > 0
++                                ? t(audioImport.progress.eta ? 'localMusic.importingProgressEta' : 'localMusic.importingProgress', { done: audioImport.progress.done, total: audioImport.progress.total, eta: audioImport.progress.eta ?? '' })
++                                : t('localMusic.linkingFolder'))
++                            : t('localMusic.importLinkedFolder')}]`}
++                    </button>
++                ) : null}
 +                {localActions.some(action => action.id === 'import-folder') ? (
                      <button type="button" disabled={importBusy} onClick={() => void homeActions.importFolder()} className="self-start opacity-70 hover:opacity-100 disabled:opacity-30">
                          {`[${actionState.scan?.active ? t('options.scanning') : actionState.importingFolder ? t('localMusic.importing') : t('localMusic.importFolder')}]`}
                      </button>
-@@ -263,13 +282,18 @@ export const LibraryTuiLocalList: React.FC<LibraryTuiListCommonProps & {
+                 ) : null}
++                {audioImport.linkedPickerOpen ? (
++                    <LinkedFolderPicker
++                        onCancel={audioImport.closeLinkedPicker}
++                        onImport={audioImport.importLinkedFolder}
++                    />
++                ) : null}
+             </StatusText>
+         );
+     }
+@@ -263,14 +298,42 @@ export const LibraryTuiLocalList: React.FC<LibraryTuiListCommonProps & {
          <>
              {fileInput}
              <ActionBar
@@ -1865,11 +2142,35 @@ index 347bbc3..abde7f1 100644
 +                    // 「導入文件」在車機上是唯一進得去曲庫的路（WebView 沒有資料夾選擇器），所以不放進 core 的動作清單，
 +                    // 直接以按鈕掛在這裡；邏輯與 Grid、Bravais 共用 useLocalAudioImport。
 +                    { id: 'import-files', label: t('localMusic.importFiles'), disabled: audioImport.importing, pending: false },
++                    // 車機 APK 才有的第二條路：不複製檔案，直接讀原位置（USB / 內建儲存）。
++                    ...(audioImport.linkedSupported
++                        ? [{
++                            id: 'import-linked-folder',
++                            label: audioImport.importing
++                                ? (audioImport.progress && audioImport.progress.total > 0
++                                    ? t(audioImport.progress.eta ? 'localMusic.importingProgressEta' : 'localMusic.importingProgress', { done: audioImport.progress.done, total: audioImport.progress.total, eta: audioImport.progress.eta ?? '' })
++                                    : t('localMusic.linkingFolder'))
++                                : t('localMusic.importLinkedFolder'),
++                            disabled: audioImport.importing,
++                            pending: audioImport.importing,
++                        }]
++                        : []),
 +                ]}
-+                onRun={(id) => { if (id === 'import-files') audioImport.openPicker(); else runAction(id); }}
++                onRun={(id) => {
++                    if (id === 'import-files') audioImport.openPicker();
++                    else if (id === 'import-linked-folder') audioImport.openLinkedPicker();
++                    else runAction(id);
++                }}
              />
++            {audioImport.linkedPickerOpen ? (
++                <LinkedFolderPicker
++                    onCancel={audioImport.closeLinkedPicker}
++                    onImport={audioImport.importLinkedFolder}
++                />
++            ) : null}
              <LibraryTuiDirectory
                  {...common}
+                 directoryKey={directoryKey}
 diff --git a/src/library/suites/tui/LibraryTuiRow.tsx b/src/library/suites/tui/LibraryTuiRow.tsx
 index c1d9db4..882186c 100644
 --- a/src/library/suites/tui/LibraryTuiRow.tsx
@@ -2903,18 +3204,26 @@ index 0000000..df20d8f
 +    }
 +}
 diff --git a/src/services/localMusicService.ts b/src/services/localMusicService.ts
-index 26a0181..8dab683 100644
+index 26a0181..e065a12 100644
 --- a/src/services/localMusicService.ts
 +++ b/src/services/localMusicService.ts
-@@ -30,6 +30,7 @@ import { hasLocalCoverBinary } from './localCoverBinaryStore';
+@@ -30,6 +30,15 @@ import { hasLocalCoverBinary } from './localCoverBinaryStore';
  import { hasLocalSongCover } from '../utils/localSongCover';
  import { createFoliaIgnoreMatcher, isIgnoredByFoliaMatchers, type FoliaIgnoreMatcher } from '../utils/foliaIgnore';
  import { getLocalLibraryAvailability } from './localLibraryAvailability';
 +import { deleteImportedAudio, deleteImportedAudioMany, putImportedAudio, readImportedAudio } from './localImportedAudioStore';
++import {
++    fetchNativeBlob,
++    fetchNativeRange,
++    nativeAudioUrl,
++    nativeCoverUrl,
++    probeNativeFile,
++    type NativeStorageFile,
++} from './nativeLinkedStorage';
  import { useLyricSettingsStore } from '../stores/useLyricSettingsStore';
  import { getLocalLyricFilePriority, isSameLocalLyricFormatOrder, normalizeLocalLyricFormatOrder, type LocalLyricFileFormat } from '../utils/lyrics/localLyricFormatOrder';
  import { readLyricFile } from '../utils/lyrics/lyricFileDecoding';
-@@ -296,8 +297,21 @@ export function extractMetadataFromFilename(fileName: string): { title?: string;
+@@ -296,8 +305,21 @@ export function extractMetadataFromFilename(fileName: string): { title?: string;
      };
  }
  
@@ -2936,7 +3245,7 @@ index 26a0181..8dab683 100644
      const playbackInput = await repairFlacMetadata(file, true);
      return new Promise((resolve) => {
          const audio = new Audio();
-@@ -307,17 +321,32 @@ async function getAudioDuration(file: File): Promise<number> {
+@@ -307,17 +329,32 @@ async function getAudioDuration(file: File): Promise<number> {
              return;
          }
  
@@ -2978,7 +3287,7 @@ index 26a0181..8dab683 100644
          audio.src = url;
      });
  }
-@@ -1204,6 +1233,199 @@ export async function importFolder(expectedRootName?: string): Promise<LocalSong
+@@ -1204,6 +1241,330 @@ export async function importFolder(expectedRootName?: string): Promise<LocalSong
      }
  }
  
@@ -3175,10 +3484,141 @@ index 26a0181..8dab683 100644
 +    return `local_imported_${Math.abs(hash).toString(36)}_${signature.length}`;
 +}
 +
++/** 連結模式的虛擬根目錄：曲子記在這底下，跟「本機匯入」（抄進資料庫的那批）分得開。 */
++export const LINKED_LOCAL_ROOT_NAME = '外部資料夾';
++
++/**
++ * 連結模式下同一首要落回同一筆記錄：用絕對路徑 + 大小 + 修改時間當簽章。
++ * 不能用 songIdForFile——那個吃 File 物件，連結模式從頭到尾不產生 File。
++ */
++function songIdForLinkedPath(filePath: string, size: number, lastModified: number): string {
++    const signature = `${filePath}:${size}:${lastModified}`;
++    let hash = 0;
++    for (let index = 0; index < signature.length; index += 1) {
++        hash = (hash * 31 + signature.charCodeAt(index)) | 0;
++    }
++    return `local_linked_${Math.abs(hash).toString(36)}_${signature.length}`;
++}
++
++/**
++ * 「連結模式」匯入：只登記路徑，不複製檔案本體。
++ *
++ * 這是車機上快的關鍵——原本 2216 首要抄 3~6 GB 進 IndexedDB，車機 eMMC 寫入慢，光抄就要幾十分鐘；
++ * 這裡只讀標籤（原生 MediaMetadataRetriever）與封面，音樂本體留在原處，播放時由本機 HTTP 服務
++ * 以 Range 邊播邊讀。拔掉 USB 或檔案被搬走時，那首歌會變成「檔案不見了」，重新掃一次就好。
++ */
++export async function importLinkedAudioPaths(
++    files: NativeStorageFile[],
++    rootPath: string,
++    rootFolderName: string,
++    options: ImportAudioFilesOptions = {},
++): Promise<ImportAudioFilesResult> {
++    const result: ImportAudioFilesResult = { songs: [], skipped: 0, failed: [] };
++    const candidates = files.filter(file => KNOWN_AUDIO_EXTENSIONS.test(file.name));
++    if (candidates.length === 0) return result;
++
++    const allSongs = await getLocalSongs();
++    const existingSignatures = new Set(
++        allSongs
++            .filter(song => song.folderName === rootFolderName)
++            .map(song => song.linkedFilePath ?? song.filePath),
++    );
++
++    const pendingSave: LocalSong[] = [];
++    let processedCount = 0;
++
++    for (const file of candidates) {
++        options.onProgress?.({ done: processedCount, total: candidates.length, fileName: file.name });
++        if (processedCount > 0 && processedCount % 10 === 0) {
++            await new Promise<void>(resolve => { setTimeout(resolve, 0); });
++        }
++        processedCount += 1;
++
++        if (existingSignatures.has(file.path)) {
++            result.skipped += 1;
++            continue;
++        }
++
++        try {
++            const probe = probeNativeFile(file.path);
++            if (!probe || probe.error) {
++                result.failed.push({ fileName: file.name, reason: probe?.error || 'native probe failed' });
++                continue;
++            }
++
++            const metadata = extractMetadataFromFilename(file.name);
++            const importedMetadata = buildImportedMetadataSnapshot({
++                fileName: file.name,
++                embeddedTitle: probe.title,
++                fallbackTitle: metadata.title,
++                embeddedArtist: probe.artist,
++                fallbackArtist: metadata.artist,
++                embeddedAlbum: probe.album,
++            });
++
++            let localCoverAssetId: string | undefined;
++            if (probe.coverUrl) {
++                const coverHttpUrl = nativeCoverUrl(probe.coverUrl);
++                if (coverHttpUrl) {
++                    try {
++                        const response = await fetch(coverHttpUrl);
++                        const coverBlob = response.ok ? await response.blob() : null;
++                        const prepared = coverBlob ? await prepareLocalCoverBlob(coverBlob) : null;
++                        if (prepared?.assetId) localCoverAssetId = prepared.assetId;
++                    } catch (error) {
++                        console.warn(`[LocalMusic][Link] Failed to read cover for ${file.name}:`, error);
++                    }
++                }
++            }
++
++            const relativePath = rootPath && file.path.startsWith(rootPath)
++                ? file.path.slice(rootPath.length).replace(/^\/+/, '')
++                : file.name;
++
++            const localSong: LocalSong = {
++                id: songIdForLinkedPath(file.path, file.size, file.lastModified),
++                fileName: file.name,
++                filePath: `${rootFolderName}/${relativePath}`,
++                linkedFilePath: file.path,
++                duration: probe.duration || 0,
++                fileSize: file.size,
++                fileLastModified: file.lastModified,
++                fileSignature: `link:${file.path}:${file.size}:${file.lastModified}`,
++                mimeType: probe.mime || 'audio/mpeg',
++                bitrate: probe.bitrate || 0,
++                addedAt: Date.now(),
++                title: importedMetadata.title,
++                titleOrigin: 'import',
++                importedMetadata,
++                localCoverAssetId,
++                localCoverSource: localCoverAssetId ? 'embedded' : undefined,
++                hasManualLyricSelection: false,
++                folderName: rootFolderName,
++            };
++
++            existingSignatures.add(file.path);
++            result.songs.push(localSong);
++            pendingSave.push(localSong);
++            if (pendingSave.length >= IMPORT_SAVE_BATCH_SIZE) {
++                await saveLocalSongs(pendingSave.splice(0));
++            }
++        } catch (error) {
++            console.error(`[LocalMusic][Link] Failed to link ${file.name}:`, error);
++            result.failed.push({ fileName: file.name, reason: (error as Error)?.message || 'unknown' });
++        }
++    }
++
++    if (pendingSave.length > 0) await saveLocalSongs(pendingSave.splice(0));
++    options.onProgress?.({ done: candidates.length, total: candidates.length, fileName: '' });
++    if (result.songs.length > 0) notifyLocalMusicUpdated();
++    console.log(`[LocalMusic][Link] Linked ${result.songs.length} file(s), skipped ${result.skipped}, failed ${result.failed.length}`);
++    return result;
++}
++
  /** Imports a folder the caller already holds instead of asking the picker (the dev mock song's OPFS folder). */
  export async function importDirectoryHandle(dirHandle: FileSystemDirectoryHandle): Promise<LocalSong[]> {
      return await runLocalFolderMutation(() => importFolderContents(dirHandle));
-@@ -1614,6 +1836,7 @@ export async function deleteLocalSong(id: string): Promise<void> {
+@@ -1614,6 +1975,7 @@ export async function deleteLocalSong(id: string): Promise<void> {
      await Promise.all([
          dbDeleteLocalSong(id),
          removeCachedCover(`cover_local_${id}`),
@@ -3186,7 +3626,22 @@ index 26a0181..8dab683 100644
      ]);
  }
  
-@@ -1738,6 +1961,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
+@@ -1714,6 +2076,14 @@ async function cleanupDirHandleIfUnused(rootFolderName: string): Promise<void> {
+ // Get audio blob from local song using fileHandle
+ // Returns blob URL if fileHandle exists, null otherwise
+ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | null> {
++    // 連結模式：bytes 不在 App 裡，直接給 <audio> 原生層的 http 位址（支援 Range，邊播邊讀）。
++    // 這條要擺最前面——連結的歌本來就沒有 FileHandle，也沒有 imported 副本。
++    if (song.linkedFilePath) {
++        const linkedUrl = nativeAudioUrl(song.linkedFilePath);
++        if (linkedUrl) return linkedUrl;
++        console.warn(`[LocalMusic] Linked file unreachable for ${song.id}: ${song.linkedFilePath}`);
++    }
++
+     const fileHandle = await getAccessibleFileHandle(song);
+ 
+     if (fileHandle) {
+@@ -1738,6 +2108,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
          }
      }
  
@@ -3203,7 +3658,23 @@ index 26a0181..8dab683 100644
      // No accessible handle available - permission may need to be restored or the file moved.
      console.warn(`[LocalMusic] No accessible handle for song ${song.id}. Permission restore or re-import is required.`);
      return null;
-@@ -1755,6 +1988,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+@@ -1745,6 +2125,15 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
+ 
+ /** Resolves the current File for playback recovery without changing the song or minting a URL. */
+ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null> {
++    if (song.linkedFilePath) {
++        const blob = await fetchNativeBlob(song.linkedFilePath);
++        if (!blob) return null;
++        return new File([blob], song.fileName, {
++            type: song.mimeType || blob.type || 'audio/mpeg',
++            lastModified: song.fileLastModified ?? Date.now(),
++        });
++    }
++
+     const fileHandle = await getAccessibleFileHandle(song);
+     if (fileHandle) {
+         try {
+@@ -1755,6 +2144,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
          }
      }
  
@@ -3213,12 +3684,18 @@ index 26a0181..8dab683 100644
      const recoveredHandle = await recoverFileHandleFromPersistedDirectory(song);
      if (!recoveredHandle) return null;
      try {
-@@ -1774,14 +2010,16 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+@@ -1774,14 +2166,22 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
   * from its own handle. Mirrors getAudioFromLocalSong's resolution (accessible handle, else a recover)
   * but returns the ArrayBuffer. Null when no handle can be reached - permission not restored, or moved.
   */
 -export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuffer | null> {
 +async function readLocalSongFile(song: LocalSong): Promise<File | null> {
++    if (song.linkedFilePath) {
++        // 真的需要整首 bytes 的 caller（automix 分離、時長修復）就把檔案拉回來一次；
++        // 一般播放與列表都不走這裡（播放走 getAudioFromLocalSong，列表只用檔頭）。
++        return await getFileFromLocalSong(song);
++    }
++
      const fileHandle = await getAccessibleFileHandle(song);
      if (!fileHandle) {
 -        console.warn(`[LocalMusic] No accessible handle for song ${song.id} (automix bytes)`);
@@ -3233,7 +3710,7 @@ index 26a0181..8dab683 100644
      } catch (error) {
          console.error('[LocalMusic] Failed to read local bytes:', error);
          fileHandleMap.delete(song.id);
-@@ -1789,6 +2027,32 @@ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuf
+@@ -1789,6 +2189,35 @@ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuf
      }
  }
  
@@ -3253,6 +3730,9 @@ index 26a0181..8dab683 100644
 + * 整首讀進來（FLAC 動輒五十 MB）只為了看檔頭，列表一滾就把記憶體吃光，所以切一段就好。
 + */
 +export async function getLocalSongHeaderBytes(song: LocalSong, byteLength = 65536): Promise<ArrayBuffer | null> {
++    if (song.linkedFilePath) {
++        return await fetchNativeRange(song.linkedFilePath, byteLength);
++    }
 +    const file = await readLocalSongFile(song);
 +    if (!file) return null;
 +    try {
@@ -3266,7 +3746,7 @@ index 26a0181..8dab683 100644
  // Extracts and persists one song's embedded cover after an explicit playback-time request.
  async function extractAndPersistSongCover(
      song: LocalSong,
-@@ -1880,6 +2144,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
+@@ -1880,6 +2309,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
      await Promise.all([
          dbDeleteLocalSongs(uniqueSongIds),
          ...uniqueSongIds.map(id => removeCachedCover(`cover_local_${id}`)),
@@ -3274,6 +3754,209 @@ index 26a0181..8dab683 100644
      ]);
      await dropDeletedSongsFromPlaylists(uniqueSongIds);
      await Promise.all(Array.from(affectedRoots).map(cleanupDirHandleIfUnused));
+diff --git a/src/services/nativeLinkedStorage.ts b/src/services/nativeLinkedStorage.ts
+new file mode 100644
+index 0000000..dad8889
+--- /dev/null
++++ b/src/services/nativeLinkedStorage.ts
+@@ -0,0 +1,197 @@
++// src/services/nativeLinkedStorage.ts
++// 「連結模式」的 JS 側：把 Android 原生層（FoliaNativeStorage.java）的介面收斂成幾個型別安全的函式。
++//
++// 存在的理由見 native/FoliaNativeStorage.java 的註解：車機上不想把 3~6 GB 的音檔抄進 IndexedDB，
++// 就地讀、就地把檔案以 HTTP Range 串給 WebView 播放。這支模組在不是車機 APK（瀏覽器、iPhone）時
++// 全部回 false / null，呼叫端不用判斷平台。
++
++export interface NativeStorageRoot {
++    name: string;
++    path: string;
++}
++
++export interface NativeStorageDir {
++    name: string;
++    path: string;
++}
++
++export interface NativeStorageFile {
++    name: string;
++    path: string;
++    size: number;
++    lastModified: number;
++}
++
++export interface NativeProbeResult {
++    name?: string;
++    path?: string;
++    size?: number;
++    lastModified?: number;
++    mime?: string;
++    title?: string;
++    artist?: string;
++    album?: string;
++    duration?: number;
++    bitrate?: number;
++    sampleRate?: number;
++    bitsPerSample?: number;
++    /** 原生層落在快取目錄的封面絕對路徑（只當識別用，不給 JS 讀）。 */
++    coverPath?: string;
++    /** 可直接 fetch 的封面相對路徑，例如 /c/xxxx。 */
++    coverUrl?: string;
++    error?: string;
++}
++
++interface NativeBridge {
++    ping: () => string;
++    serverPort: () => number;
++    hasPermission: () => boolean;
++    requestPermission: () => void;
++    roots: () => string;
++    list: (dirPath: string) => string;
++    scan: (dirPath: string) => string;
++    probe: (filePath: string) => string;
++}
++
++declare global {
++    interface Window {
++        FoliaNativeStorage?: NativeBridge;
++    }
++}
++
++const bridge = (): NativeBridge | undefined => (
++    typeof window === 'undefined' ? undefined : window.FoliaNativeStorage
++);
++
++export const isLinkedStorageSupported = (): boolean => Boolean(bridge());
++
++export const hasStoragePermission = (): boolean => {
++    try {
++        return Boolean(bridge()?.hasPermission());
++    } catch {
++        return false;
++    }
++};
++
++export const requestStoragePermission = (): void => {
++    try {
++        bridge()?.requestPermission();
++    } catch (error) {
++        console.warn('[LinkedStorage] Permission request failed', error);
++    }
++};
++
++const parse = <T>(raw: string, fallback: T): T => {
++    try {
++        const value = JSON.parse(raw) as T;
++        return value ?? fallback;
++    } catch (error) {
++        console.warn('[LinkedStorage] Could not parse native payload', error);
++        return fallback;
++    }
++};
++
++export const listStorageRoots = (): NativeStorageRoot[] => {
++    try {
++        const raw = bridge()?.roots();
++        return raw ? parse<NativeStorageRoot[]>(raw, []) : [];
++    } catch (error) {
++        console.warn('[LinkedStorage] roots failed', error);
++        return [];
++    }
++};
++
++export const listStorageDirectory = (dirPath: string): { dirs: NativeStorageDir[]; files: NativeStorageFile[] } => {
++    try {
++        const raw = bridge()?.list(dirPath);
++        if (!raw) return { dirs: [], files: [] };
++        const payload = parse<{ dirs?: NativeStorageDir[]; files?: NativeStorageFile[] }>(raw, {});
++        return { dirs: payload.dirs ?? [], files: payload.files ?? [] };
++    } catch (error) {
++        console.warn('[LinkedStorage] list failed', error);
++        return { dirs: [], files: [] };
++    }
++};
++
++export const scanStorageDirectory = (dirPath: string): NativeStorageFile[] => {
++    try {
++        const raw = bridge()?.scan(dirPath);
++        return raw ? parse<NativeStorageFile[]>(raw, []) : [];
++    } catch (error) {
++        console.warn('[LinkedStorage] scan failed', error);
++        return [];
++    }
++};
++
++export const probeNativeFile = (filePath: string): NativeProbeResult | null => {
++    try {
++        const raw = bridge()?.probe(filePath);
++        return raw ? parse<NativeProbeResult | null>(raw, null) : null;
++    } catch (error) {
++        console.warn('[LinkedStorage] probe failed', error);
++        return null;
++    }
++};
++
++/** 原生服務的埠號；拿不到就 0（呼叫端要當成「連結模式不可用」）。 */
++let cachedPort = 0;
++export const nativeServerPort = (): number => {
++    if (cachedPort > 0) return cachedPort;
++    try {
++        const value = bridge()?.serverPort();
++        if (typeof value === 'number' && value > 0) cachedPort = value;
++    } catch (error) {
++        console.warn('[LinkedStorage] serverPort failed', error);
++    }
++    return cachedPort;
++};
++
++const base64UrlEncode = (value: string): string => {
++    const bytes = new TextEncoder().encode(value);
++    let binary = '';
++    for (let index = 0; index < bytes.length; index += 1) {
++        binary += String.fromCharCode(bytes[index]);
++    }
++    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
++};
++
++/** 原生層的串流位址：`<audio src>`、`fetch` 都能用，支援 Range。 */
++export const nativeAudioUrl = (filePath: string): string | null => {
++    const port = nativeServerPort();
++    if (!port) return null;
++    return `http://127.0.0.1:${port}/f/${base64UrlEncode(filePath)}`;
++};
++
++export const nativeCoverUrl = (coverRelativePath: string): string | null => {
++    const port = nativeServerPort();
++    if (!port) return null;
++    if (!coverRelativePath.startsWith('/c/')) return null;
++    return `http://127.0.0.1:${port}${coverRelativePath}`;
++};
++
++/** 只讀檔頭：音質欄的取樣率／位深用，避免為了看 64 KB 把整首 50 MB 拉進來。 */
++export const fetchNativeRange = async (filePath: string, byteLength: number): Promise<ArrayBuffer | null> => {
++    const url = nativeAudioUrl(filePath);
++    if (!url) return null;
++    try {
++        const response = await fetch(url, { headers: { Range: `bytes=0-${Math.max(0, byteLength - 1)}` } });
++        if (!response.ok && response.status !== 206) return null;
++        return await response.arrayBuffer();
++    } catch (error) {
++        console.warn('[LinkedStorage] Range fetch failed', error);
++        return null;
++    }
++};
++
++export const fetchNativeBlob = async (filePath: string): Promise<Blob | null> => {
++    const url = nativeAudioUrl(filePath);
++    if (!url) return null;
++    try {
++        const response = await fetch(url);
++        if (!response.ok && response.status !== 206) return null;
++        return await response.blob();
++    } catch (error) {
++        console.warn('[LinkedStorage] Blob fetch failed', error);
++        return null;
++    }
++};
 diff --git a/src/services/uiZoomRuntime.ts b/src/services/uiZoomRuntime.ts
 index dce29d6..284324b 100644
 --- a/src/services/uiZoomRuntime.ts
@@ -3336,6 +4019,22 @@ index dce29d6..284324b 100644
      apply(initial.uiZoomEnabled, initial.uiZoomStep);
      useDesktopSettingsStore.subscribe(state => apply(state.uiZoomEnabled, state.uiZoomStep));
  };
+diff --git a/src/types.ts b/src/types.ts
+index 7dcb74b..041c411 100644
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -1519,6 +1519,11 @@ export interface LocalSong {
+   fileLastModified?: number; // milliseconds since epoch
+   fileSignature?: string; // Lightweight file identity for incremental scans
+   mimeType: string;
++  /**
++   * 連結模式：這首歌的音檔留在原處（車機內建儲存或 USB），不抄進 App 資料庫。
++   * 播放、封面、檔頭都經由原生層的本機 HTTP 服務即時讀取；有沒有這個欄位就決定了讀檔走哪條路。
++   */
++  linkedFilePath?: string;
+   bitrate?: number; // bps
+   addedAt: number; // timestamp
+ 
 diff --git a/src/utils/localMetadataWorkerClient.ts b/src/utils/localMetadataWorkerClient.ts
 index 682f39b..202d7a4 100644
 --- a/src/utils/localMetadataWorkerClient.ts

@@ -22,6 +22,7 @@ on:
       - 'quality-inspect.patch'
       - '.github/workflows/android-build.yml'
       - 'capacitor.config.json'
+      - 'native/**'
 
 jobs:
   build-apk:
@@ -106,6 +107,30 @@ jobs:
           npx --yes cap add android
           npx --yes cap sync android
 
+      # 連結模式的原生層：直接在產生的 android 工程裡塞一支 Java 類別與改寫 MainActivity，
+      # 這樣不必維護一份完整的 android 工程，也不必在本機裝 Android SDK。
+      - name: Inject native linked-storage bridge
+        working-directory: folia
+        shell: bash
+        run: |
+          set -e
+          PKG_DIR=android/app/src/main/java/top/izuna/foliamajor
+          ls "$PKG_DIR"
+          cp ../native/FoliaNativeStorage.java "$PKG_DIR/FoliaNativeStorage.java"
+          cp ../native/MainActivity.java "$PKG_DIR/MainActivity.java"
+          MAN=android/app/src/main/AndroidManifest.xml
+          python3 - "$MAN" <<'PY'
+          import sys
+          path = sys.argv[1]
+          src = open(path).read()
+          perms = ('  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />\n'
+                   '  <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />\n')
+          if 'MANAGE_EXTERNAL_STORAGE' not in src:
+              src = src.replace('<application', perms + '  <application', 1)
+          open(path, 'w').write(src)
+          print(src[:600])
+          PY
+
       - name: Tune the Android project for a 9-inch head unit
         working-directory: folia/android
         shell: bash
@@ -175,7 +200,7 @@ jobs:
           echo "aapt2: $AAPT"
           $AAPT dump badging Folia-debug.apk | head -10 || true
           echo "--- manifest（確認橫屏鎖定與 cleartext 有寫進去）"
-          $AAPT dump xmltree --file AndroidManifest.xml Folia-debug.apk | grep -iE "screenOrientation|resizeableActivity|usesCleartextTraffic|minSdk" || true
+          $AAPT dump xmltree --file AndroidManifest.xml Folia-debug.apk | grep -iE "screenOrientation|resizeableActivity|usesCleartextTraffic|minSdk|MANAGE_EXTERNAL_STORAGE|READ_EXTERNAL_STORAGE" || true
           unzip -l Folia-debug.apk | tail -3
 
       - name: Upload APK
