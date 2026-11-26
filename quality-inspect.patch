@@ -1316,7 +1316,7 @@ index 0000000..8e34f78
 +    return rows;
 +};
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..e6e6292 100644
+index 86f3b6d..68682a7 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -1468,7 +1468,16 @@ index 86f3b6d..e6e6292 100644
      "homeTitle": "library",
      "homeSources": "sources",
      "columnName": "Name",
-@@ -2796,6 +2773,7 @@ export default {
+@@ -628,6 +605,8 @@ export default {
+     "columnDescription": "Description",
+     "itemType": {"playlist": "playlist", "album": "album", "artist": "artist", "folder": "folder", "cloud": "cloud", "radio": "radio", "daily_recommendations": "daily", "personal_fm": "fm"},
+     "homeHints": "↑↓ move · PgUp/PgDn page · Tab section · F6 source · Enter open · Esc clear filter, then close",
++    "settingsEntry": "Settings",
++    "settingsEntryHint": "Interface size, sources and appearance live here",
+     "homeTreeHints": "←→ fold",
+     "homeBatchHints": "Ins select · {{mod}}+A all · {{mod}}+Enter play · {{mod}}+Shift+Enter queue",
+     "homeSelection": "{{count}} selected · {{tracks}} songs",
+@@ -2796,6 +2775,7 @@ export default {
      "settingsPageHome": "Home & playlists",
      "settingsPagePlayback": "Playback",
      "settingsPageLyrics": "Lyrics",
@@ -1476,7 +1485,7 @@ index 86f3b6d..e6e6292 100644
      "settingsPageGeneral": "General",
      "settingsPageInteraction": "Shortcuts",
      "settingsPageIntegration": "Connections",
-@@ -3336,6 +3314,10 @@ export default {
+@@ -3336,6 +3316,10 @@ export default {
      "uiZoom": "Interface zoom",
      "uiZoomDesc": "Zoom the whole main window by a fixed step. With a large display scale in Windows the window feels cramped; zoom out to see more. The remote control window keeps its size.",
      "uiZoomStep": "Zoom",
@@ -1487,7 +1496,7 @@ index 86f3b6d..e6e6292 100644
      "minimizeToTray": "Minimize to tray",
      "closeToTray": "Close window to tray",
      "closeToTrayDesc": "The close button hides the window to the tray instead of quitting",
-@@ -5242,8 +5224,34 @@ export default {
+@@ -5242,8 +5226,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -1522,7 +1531,7 @@ index 86f3b6d..e6e6292 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6061,13 @@ export default {
+@@ -6053,8 +6063,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -1538,7 +1547,7 @@ index 86f3b6d..e6e6292 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..47ca39c 100644
+index 0067e9a..2011449 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -1620,7 +1629,16 @@ index 0067e9a..47ca39c 100644
      "homeTitle": "曲库",
      "homeSources": "来源",
      "columnName": "名称",
-@@ -2796,6 +2843,7 @@ export default {
+@@ -628,6 +675,8 @@ export default {
+     "columnDescription": "说明",
+     "itemType": {"playlist": "歌单", "album": "专辑", "artist": "歌手", "folder": "文件夹", "cloud": "云盘", "radio": "电台", "daily_recommendations": "每日", "personal_fm": "FM"},
+     "homeHints": "↑↓ 移动 · PgUp/PgDn 翻页 · Tab 分区 · F6 来源 · Enter 打开 · Esc 先清筛选再关闭",
++    "settingsEntry": "设置",
++    "settingsEntryHint": "界面大小、音源、外观都在这里",
+     "homeTreeHints": "←→ 折叠",
+     "homeBatchHints": "Ins 选中 · {{mod}}+A 全选 · {{mod}}+Enter 播放 · {{mod}}+Shift+Enter 入队",
+     "homeSelection": "已选 {{count}} 项 · {{tracks}} 首",
+@@ -2796,6 +2845,7 @@ export default {
      "settingsPageHome": "主页与歌单",
      "settingsPagePlayback": "播放控制",
      "settingsPageLyrics": "歌词",
@@ -1628,7 +1646,7 @@ index 0067e9a..47ca39c 100644
      "settingsPageGeneral": "通用",
      "settingsPageInteraction": "快捷操作",
      "settingsPageIntegration": "连接与集成",
-@@ -3336,6 +3384,10 @@ export default {
+@@ -3336,6 +3386,10 @@ export default {
      "uiZoom": "界面缩放",
      "uiZoomDesc": "按固定挡位缩放整个主窗口。系统缩放调得大时界面会显得挤，缩小一些能看到更多内容。妙控窗保持原来的大小。",
      "uiZoomStep": "缩放挡位",
@@ -1639,7 +1657,7 @@ index 0067e9a..47ca39c 100644
      "minimizeToTray": "最小化到托盘",
      "closeToTray": "关闭窗口时隐藏到托盘",
      "closeToTrayDesc": "点关闭按钮时不退出，隐藏到托盘继续播放",
-@@ -5242,8 +5294,34 @@ export default {
+@@ -5242,8 +5296,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -1674,7 +1692,7 @@ index 0067e9a..47ca39c 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6129,13 @@ export default {
+@@ -6051,8 +6131,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -2197,6 +2215,62 @@ index 70f5244..2bd712a 100644
      );
  };
  
+diff --git a/src/library/suites/tui/LibraryTuiHeader.tsx b/src/library/suites/tui/LibraryTuiHeader.tsx
+index 5c35aca..0cbb59e 100644
+--- a/src/library/suites/tui/LibraryTuiHeader.tsx
++++ b/src/library/suites/tui/LibraryTuiHeader.tsx
+@@ -5,6 +5,7 @@ import type { CollectionResourceSnapshot } from '../../core/shared/resource.cont
+ import type { LibraryCapability } from '../../core/shared/capability.contract';
+ import type { CollectionMutationSnapshot } from '../../core/collection/mutations/mutations.contract';
+ import { resolveCollectionSyncCounts } from '../../core/collection/collectionProgress';
++import { openSettings } from '../../../stores/useSettingsModalStore';
+ 
+ // src/library/suites/tui/LibraryTuiHeader.tsx
+ // TUI 的状态栏：返回、集合名（改名后显示新名字）、订阅星标、来源、加载进度（中断时可续传）、重新拉取、
+@@ -146,6 +147,15 @@ const LibraryTuiHeader: React.FC<LibraryTuiHeaderProps> = ({
+                     </button>
+                 )}
+                 {isLoading && <span className="opacity-50">{t('playlist.loading')}</span>}
++                <button
++                    type="button"
++                    data-tui-settings
++                    title={t('libraryTui.settingsEntryHint')}
++                    onClick={() => openSettings('options')}
++                    className="ml-auto shrink-0 opacity-70 hover:opacity-100"
++                >
++                    {`[${t('libraryTui.settingsEntry')}]`}
++                </button>
+             </div>
+             {mutations.showDailyDate && (
+                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1" role="group" aria-label={t('home.recommendationDate')} data-tui-daily-date>
+diff --git a/src/library/suites/tui/LibraryTuiHome.tsx b/src/library/suites/tui/LibraryTuiHome.tsx
+index 5279cce..351e39f 100644
+--- a/src/library/suites/tui/LibraryTuiHome.tsx
++++ b/src/library/suites/tui/LibraryTuiHome.tsx
+@@ -12,6 +12,7 @@ import { useLibraryHomeDirectory } from '../../core/home/useLibraryHomeDirectory
+ import { useLibraryHomeTabsRegistration } from '../../core/home/useLibraryHomeSurfaceRegistration';
+ import { useNavidromeHomeSectionStore } from '../../core/home/navidrome/useNavidromeHomeSectionStore';
+ import { useThemeSettingsStore } from '../../../stores/useThemeSettingsStore';
++import { openSettings } from '../../../stores/useSettingsModalStore';
+ import { PRIMARY_MODIFIER_LABEL } from '../../../utils/platform';
+ import { LibraryTuiLocalList, LibraryTuiNavidromeList, LibraryTuiOnlineList } from './LibraryTuiHomeLists';
+ import type { LibraryTuiPromptRequest } from './LibraryTuiPrompt';
+@@ -207,6 +208,15 @@ const LibraryTuiHome: React.FC<LibraryHomeSurfaceProps> = (props) => {
+                     {actionState.scan?.active ? (
+                         <span className="ml-auto tabular-nums opacity-60" data-tui-scan>{`${t('options.scanProgress')} ${scanPercent}%`}</span>
+                     ) : null}
++                    <button
++                        type="button"
++                        data-tui-settings
++                        title={t('libraryTui.settingsEntryHint')}
++                        onClick={() => openSettings('options')}
++                        className={`${actionState.scan?.active ? '' : 'ml-auto '}shrink-0 opacity-70 hover:opacity-100`}
++                    >
++                        {`[${t('libraryTui.settingsEntry')}]`}
++                    </button>
+                 </div>
+                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]" role="tablist">
+                     {sections.map(section => (
 diff --git a/src/library/suites/tui/LibraryTuiHomeLists.tsx b/src/library/suites/tui/LibraryTuiHomeLists.tsx
 index 347bbc3..b8b330d 100644
 --- a/src/library/suites/tui/LibraryTuiHomeLists.tsx
