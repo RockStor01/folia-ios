@@ -165,7 +165,7 @@ public class FoliaNativeStorage {
     private void applyPlaybackState(boolean isPlaying) {
         if (mediaSession == null) return;
         try {
-            int actions = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
+            long actions = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
                     | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_STOP
                     | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS;
             mediaSession.setPlaybackState(new PlaybackState.Builder()
