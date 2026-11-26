@@ -20,6 +20,33 @@ index 39ec48c..114cb4d 100644
      <title>Folia</title>
      <script src="/runtime-config.js"></script>
    <script type="importmap">
+diff --git a/src/App.tsx b/src/App.tsx
+index 7cf3c35..c479411 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -116,6 +116,7 @@ import { useProviderNotices } from './components/app/useProviderNotices';
+ import { useLocalLibraryAutoScan } from './hooks/useLocalLibraryAutoScan';
+ import { useElectronVideoExportController } from './hooks/useElectronVideoExportController';
+ import { useElectronWindowPlaybackHandoff } from './components/app/playback/restore/useElectronWindowPlaybackHandoff';
++import { useNativeMediaKeys } from './hooks/useNativeMediaKeys';
+ import { useMediaSessionBridge } from './hooks/useMediaSessionBridge';
+ import { usePlayerChromeAutoHide } from './hooks/usePlayerChromeAutoHide';
+ import { useMacWallpaperHitRegions } from './hooks/useMacWallpaperHitRegions';
+@@ -1434,6 +1435,14 @@ export default function App() {
+         isNowPlayingControlDisabledRef,
+     };
+     useMediaSessionBridge(mediaSessionOptions);
++    // 車機方控：原生 MediaSession 攔到的按鍵轉進來，接回同一組播放控制。
++    useNativeMediaKeys({
++        playRef: mediaSessionPlayRef,
++        pauseRef: mediaSessionPauseRef,
++        prevRef: mediaSessionPrevRef,
++        nextRef: mediaSessionNextRef,
++        playerState: displayPlayerState,
++    });
+     // Linux: on the HiFi route the system media controls come from main's MPRIS, fed the same.
+     useHifiMpris(mediaSessionOptions);
+     useHifiMediaSessionKeepAlive();
 diff --git a/src/components/FloatingPlayerControls.tsx b/src/components/FloatingPlayerControls.tsx
 index 8692eec..c8fca72 100644
 --- a/src/components/FloatingPlayerControls.tsx
@@ -580,10 +607,10 @@ index 0000000..8b22e15
 +export default SpectrumChart;
 diff --git a/src/components/local/LinkedFolderPicker.tsx b/src/components/local/LinkedFolderPicker.tsx
 new file mode 100644
-index 0000000..b7e1f44
+index 0000000..8719e05
 --- /dev/null
 +++ b/src/components/local/LinkedFolderPicker.tsx
-@@ -0,0 +1,195 @@
+@@ -0,0 +1,217 @@
 +// src/components/local/LinkedFolderPicker.tsx
 +// 車機「連結模式」的資料夾選擇器：選一個原生目錄，之後只登記路徑、不複製檔案。
 +//
@@ -595,6 +622,7 @@ index 0000000..b7e1f44
 +import { useTranslation } from 'react-i18next';
 +import {
 +    hasStoragePermission,
++    readNativeDiagnostics,
 +    listStorageDirectory,
 +    listStorageRoots,
 +    requestStoragePermission,
@@ -648,6 +676,7 @@ index 0000000..b7e1f44
 +    const [permitted, setPermitted] = useState(hasStoragePermission());
 +    const [roots, setRoots] = useState<NativeStorageRoot[]>([]);
 +    const [folder, setFolder] = useState<CurrentFolder | null>(null);
++    const [diagnostics, setDiagnostics] = useState<string | null>(null);
 +
 +    const refreshRoots = useCallback(() => {
 +        setRoots(listStorageRoots());
@@ -663,6 +692,7 @@ index 0000000..b7e1f44
 +    }, []);
 +    // 自動探測撈不到的時候（車機把 USB 掛在奇怪的地方），留一條手動輸入路徑的路。
 +    const [manualPath, setManualPath] = useState('');
++    const [diagnostic, setDiagnostic] = useState<string | null>(null);
 +    const goManual = useCallback(() => {
 +        const value = manualPath.trim();
 +        if (!value) return;
@@ -767,6 +797,25 @@ index 0000000..b7e1f44
 +                                <button type="button" onClick={goManual} className="border border-white/30 px-2 py-1 text-sm hover:bg-white/10">
 +                                    {`[${t('localMusic.linkedGoToPath')}]`}
 +                                </button>
++                            </div>
++                        ) : null}
++
++                        {/* 找不到外接裝置時，把這台車機實際的掛載狀況攤出來：使用者截圖或貼回來就知道怎麼回事。 */}
++                        {!folder ? (
++                            <div className="mt-3">
++                                <button
++                                    type="button"
++                                    onClick={() => setDiagnostics(readNativeDiagnostics())}
++                                    className="border border-white/20 px-2 py-1 text-xs opacity-70 hover:bg-white/10 hover:opacity-100"
++                                >
++                                    {`[${t('localMusic.linkedDiagnose')}]`}
++                                </button>
++                                {diagnostics ? (
++                                    <>
++                                        <p className="mt-2 text-xs opacity-50">{t('localMusic.linkedDiagnoseHint')}</p>
++                                        <pre className="mt-1 max-h-[30vh] overflow-auto whitespace-pre-wrap break-all border border-white/20 p-2 text-[11px] leading-relaxed opacity-80">{diagnostics}</pre>
++                                    </>
++                                ) : null}
 +                            </div>
 +                        ) : null}
 +
@@ -1104,6 +1153,78 @@ index 0000000..6913ed7
 +        linkedSupported, linkedPickerOpen, openLinkedPicker, closeLinkedPicker, importLinkedFolder,
 +    };
 +};
+diff --git a/src/hooks/useNativeMediaKeys.ts b/src/hooks/useNativeMediaKeys.ts
+new file mode 100644
+index 0000000..5b079ca
+--- /dev/null
++++ b/src/hooks/useNativeMediaKeys.ts
+@@ -0,0 +1,66 @@
++import type React from 'react';
++// src/hooks/useNativeMediaKeys.ts
++// 車機方控（方向盤按鍵）在 WebView 裡接不到的原因：WebView 不向系統註冊 MediaSession，
++// navigator.mediaSession 只對 Chromium 自己的媒體鍵路由有效。原生層（FoliaNativeStorage.java）
++// 因此建了一個真的 MediaSession + dispatchKeyEvent 攔截，把按鍵用 evaluateJavascript 丟進來。
++//
++// 這裡就是那個接收端：把 'playPause' / 'pause' / 'next' / 'prev' 對到播放器既有的控制函式，
++// 並把目前的播放狀態回報給原生層（否則系統無法判斷 PLAY_PAUSE 該播還是該停）。
++
++import { useEffect, useRef } from 'react';
++import { setNativePlaybackState } from '../services/nativeLinkedStorage';
++
++interface NativeMediaKeyOptions {
++    playRef: React.RefObject<() => Promise<void>>;
++    pauseRef: React.RefObject<() => void>;
++    prevRef: React.RefObject<() => void>;
++    nextRef: React.RefObject<() => Promise<void> | void>;
++    playerState: string;
++}
++
++type MediaKey = 'playPause' | 'play' | 'pause' | 'next' | 'prev';
++
++const start = (fn: (() => Promise<void> | void) | undefined) => {
++    if (!fn) return;
++    try {
++        const result = fn();
++        if (result && typeof (result as Promise<void>).catch === 'function') {
++            (result as Promise<void>).catch(() => undefined);
++        }
++    } catch {
++        // 控制函式自己會處理失敗；這裡只是不讓方控的按鍵把整個 hook 帶走。
++    }
++};
++
++export const useNativeMediaKeys = ({ playRef, pauseRef, prevRef, nextRef, playerState }: NativeMediaKeyOptions): void => {
++    const stateRef = useRef(playerState);
++    stateRef.current = playerState;
++
++    useEffect(() => {
++        const isPlaying = () => stateRef.current === 'playing';
++        const handler = (key: MediaKey) => {
++            // 方控多數只給一顆 PLAY_PAUSE，所以依目前狀態自己決定方向；
++            // 明確的 play / pause 還是照傳進來的走（有些車機是兩顆鍵）。
++            if (key === 'playPause') {
++                if (isPlaying()) start(pauseRef.current);
++                else start(playRef.current);
++                return;
++            }
++            if (key === 'play') { start(playRef.current); return; }
++            if (key === 'pause') { start(pauseRef.current); return; }
++            if (key === 'next') { start(nextRef.current); return; }
++            if (key === 'prev') { start(prevRef.current); }
++        };
++
++        (window as unknown as Record<string, unknown>).__foliaNativeMediaKey = handler;
++        return () => {
++            delete (window as unknown as Record<string, unknown>).__foliaNativeMediaKey;
++        };
++    }, [nextRef, pauseRef, playRef, prevRef]);
++
++    useEffect(() => {
++        setNativePlaybackState(playerState === 'playing');
++    }, [playerState]);
++};
++
++export default useNativeMediaKeys;
 diff --git a/src/hooks/useTrackQualityLabels.ts b/src/hooks/useTrackQualityLabels.ts
 new file mode 100644
 index 0000000..8e34f78
@@ -1195,7 +1316,7 @@ index 0000000..8e34f78
 +    return rows;
 +};
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..41f5926 100644
+index 86f3b6d..e6e6292 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -1366,7 +1487,7 @@ index 86f3b6d..41f5926 100644
      "minimizeToTray": "Minimize to tray",
      "closeToTray": "Close window to tray",
      "closeToTrayDesc": "The close button hides the window to the tray instead of quitting",
-@@ -5242,8 +5224,32 @@ export default {
+@@ -5242,8 +5224,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -1384,6 +1505,8 @@ index 86f3b6d..41f5926 100644
 +    "linkedNoFolder": "No readable storage was detected — type a path below.",
 +    "linkedGoToPath": "Go",
 +    "linkedUnreadable": "Cannot read this path: not mounted, or access denied (common on Android 10 head units).",
++    "linkedDiagnose": "Diagnostics (used when USB is missing)",
++    "linkedDiagnoseHint": "This shows where this head unit actually mounts storage — screenshot it and I can tell where the USB drive is.",
 +    "linkedEmptyFolder": "No audio files in this folder",
 +    "linkedFoundCount": "{{count}} audio file(s) in this folder",
 +    "linkedFailedProbe": "Some files could not be read (they may have moved) and were skipped.",
@@ -1399,7 +1522,7 @@ index 86f3b6d..41f5926 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6059,13 @@ export default {
+@@ -6053,8 +6061,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -1415,7 +1538,7 @@ index 86f3b6d..41f5926 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..4bc9c57 100644
+index 0067e9a..47ca39c 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -1516,7 +1639,7 @@ index 0067e9a..4bc9c57 100644
      "minimizeToTray": "最小化到托盘",
      "closeToTray": "关闭窗口时隐藏到托盘",
      "closeToTrayDesc": "点关闭按钮时不退出，隐藏到托盘继续播放",
-@@ -5242,8 +5294,32 @@ export default {
+@@ -5242,8 +5294,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -1534,6 +1657,8 @@ index 0067e9a..4bc9c57 100644
 +    "linkedNoFolder": "没有自动找到可读取的储存空间，可以在下面手动输入路径",
 +    "linkedGoToPath": "前往",
 +    "linkedUnreadable": "读不到这个路径：可能没挂载、或权限不足（Android 10 的车机常见）。",
++    "linkedDiagnose": "诊断（找不到 USB 时用）",
++    "linkedDiagnoseHint": "这段是这台车机实际的挂载状况，截图发我就知道 USB 挂在哪里。",
 +    "linkedEmptyFolder": "这个文件夹里没有音频文件",
 +    "linkedFoundCount": "这个文件夹有 {{count}} 首音频",
 +    "linkedFailedProbe": "有几首读不到标签（文件可能已被移走），已跳过。",
@@ -1549,7 +1674,7 @@ index 0067e9a..4bc9c57 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6127,13 @@ export default {
+@@ -6051,8 +6129,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -3787,10 +3912,10 @@ index 26a0181..e065a12 100644
      await Promise.all(Array.from(affectedRoots).map(cleanupDirHandleIfUnused));
 diff --git a/src/services/nativeLinkedStorage.ts b/src/services/nativeLinkedStorage.ts
 new file mode 100644
-index 0000000..35e8de1
+index 0000000..c85967d
 --- /dev/null
 +++ b/src/services/nativeLinkedStorage.ts
-@@ -0,0 +1,199 @@
+@@ -0,0 +1,220 @@
 +// src/services/nativeLinkedStorage.ts
 +// 「連結模式」的 JS 側：把 Android 原生層（FoliaNativeStorage.java）的介面收斂成幾個型別安全的函式。
 +//
@@ -3840,6 +3965,8 @@ index 0000000..35e8de1
 +interface NativeBridge {
 +    ping: () => string;
 +    serverPort: () => number;
++    setPlaybackState?: (isPlaying: boolean) => void;
++    diagnose?: () => string;
 +    hasPermission: () => boolean;
 +    requestPermission: () => void;
 +    roots: () => string;
@@ -3915,6 +4042,25 @@ index 0000000..35e8de1
 +    } catch (error) {
 +        console.warn('[LinkedStorage] scan failed', error);
 +        return [];
++    }
++};
++
++/** 把播放狀態回報給原生 MediaSession，方控的 PLAY_PAUSE 才知道該播還是該停。 */
++export const setNativePlaybackState = (isPlaying: boolean): void => {
++    try {
++        bridge()?.setPlaybackState?.(isPlaying);
++    } catch {
++        // 非車機環境沒有這個方法，靜靜跳過。
++    }
++};
++
++/** 「找不到外接裝置」時用的診斷字串（掛載點、權限、目錄內容）。 */
++export const readNativeDiagnostics = (): string | null => {
++    try {
++        return bridge()?.diagnose?.() ?? null;
++    } catch (error) {
++        console.warn('[LinkedStorage] diagnose failed', error);
++        return null;
 +    }
 +};
 +

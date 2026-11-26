@@ -5,11 +5,15 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.media.MediaMetadataRetriever;
+import android.media.session.MediaSession;
+import android.media.session.PlaybackState;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.Settings;
+import android.view.KeyEvent;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebView;
 
 import com.getcapacitor.BridgeActivity;
 
@@ -65,6 +69,11 @@ public class FoliaNativeStorage {
     private final Context context;
     private ServerSocket serverSocket;
     private int port;
+    private WebView webView;
+    private MediaSession mediaSession;
+    private boolean playing = false;
+    /** 方控的按鍵走 Activity 的 dispatchKeyEvent，MainActivity 靠這個把手把按鍵丟回來。 */
+    private static FoliaNativeStorage instance;
 
     private FoliaNativeStorage(Activity activity) {
         this.activity = activity;
@@ -75,7 +84,10 @@ public class FoliaNativeStorage {
     public static void attach(BridgeActivity host) {
         try {
             FoliaNativeStorage storage = new FoliaNativeStorage(host);
+            storage.webView = host.getBridge().getWebView();
             storage.startServer();
+            storage.startMediaSession();
+            instance = storage;
             host.getBridge().getWebView().addJavascriptInterface(storage, JS_NAME);
         } catch (Throwable error) {
             android.util.Log.e("FoliaNativeStorage", "attach failed", error);
@@ -95,6 +107,115 @@ public class FoliaNativeStorage {
             // JSONObject 的 put 只在極端情況失敗，失敗也要回一個能解析的字串。
         }
         return json.toString();
+    }
+
+    /**
+     * 方控（方向盤按鍵）與系統媒體鍵的接收點。
+     *
+     * 為什麼要原生做：WebView 不會向系統註冊 MediaSession，方控的 PLAY/PAUSE 根本傳不到頁面裡的
+     * navigator.mediaSession。這裡建一個真正的 MediaSession 當作「目前在播的 App」，再把按鍵轉給 JS。
+     * 老車機有些不走 MediaSession、直接把 KeyEvent 丟給前景 Activity，所以 MainActivity 也接了
+     * dispatchKeyEvent 一起轉。
+     */
+    private void startMediaSession() {
+        if (Build.VERSION.SDK_INT < 21 || mediaSession != null) return;
+        try {
+            mediaSession = new MediaSession(context, "FoliaPlayback");
+            mediaSession.setCallback(new MediaSession.Callback() {
+                @Override
+                public void onPlay() {
+                    forwardMediaKey("playPause");
+                }
+
+                @Override
+                public void onPause() {
+                    forwardMediaKey("pause");
+                }
+
+                @Override
+                public void onStop() {
+                    forwardMediaKey("pause");
+                }
+
+                @Override
+                public void onSkipToNext() {
+                    forwardMediaKey("next");
+                }
+
+                @Override
+                public void onSkipToPrevious() {
+                    forwardMediaKey("prev");
+                }
+            });
+            mediaSession.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
+            mediaSession.setActive(true);
+            applyPlaybackState(false);
+        } catch (Throwable error) {
+            android.util.Log.e("FoliaNativeStorage", "MediaSession unavailable", error);
+        }
+    }
+
+    /** JS 每次開始／暫停都要回報，MediaSession 才能把 PLAY_PAUSE 判斷成對的動作。 */
+    @JavascriptInterface
+    public void setPlaybackState(boolean isPlaying) {
+        playing = isPlaying;
+        if (Build.VERSION.SDK_INT >= 21) applyPlaybackState(isPlaying);
+    }
+
+    private void applyPlaybackState(boolean isPlaying) {
+        if (mediaSession == null) return;
+        try {
+            int actions = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
+                    | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_STOP
+                    | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS;
+            mediaSession.setPlaybackState(new PlaybackState.Builder()
+                    .setActions(actions)
+                    .setState(isPlaying ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED, 0, isPlaying ? 1f : 0f)
+                    .build());
+        } catch (Throwable error) {
+            android.util.Log.w("FoliaNativeStorage", "setPlaybackState failed: " + error);
+        }
+    }
+
+    /** MainActivity 的 dispatchKeyEvent 轉過來；認得的鍵回 true。 */
+    public static boolean handleHardwareKey(int keyCode) {
+        FoliaNativeStorage storage = instance;
+        if (storage == null) return false;
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+            case KeyEvent.KEYCODE_HEADSETHOOK:
+                storage.forwardMediaKey("playPause");
+                return true;
+            case KeyEvent.KEYCODE_MEDIA_PLAY:
+                storage.forwardMediaKey("play");
+                return true;
+            case KeyEvent.KEYCODE_MEDIA_PAUSE:
+            case KeyEvent.KEYCODE_MEDIA_STOP:
+                storage.forwardMediaKey("pause");
+                return true;
+            case KeyEvent.KEYCODE_MEDIA_NEXT:
+                storage.forwardMediaKey("next");
+                return true;
+            case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+                storage.forwardMediaKey("prev");
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private void forwardMediaKey(String key) {
+        final String js = "window.__foliaNativeMediaKey && window.__foliaNativeMediaKey('" + key + "')";
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (webView != null) webView.evaluateJavascript(js, null);
+                } catch (Throwable error) {
+                    android.util.Log.w("FoliaNativeStorage", "forwardMediaKey failed: " + error);
+                }
+            }
+        });
     }
 
     @JavascriptInterface
@@ -244,6 +365,107 @@ public class FoliaNativeStorage {
         if (name.matches("[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}")) return "外接儲存（" + name + "）";
         if (name.equals("0") || name.equals("sdcard0")) return "內建儲存";
         return name;
+    }
+
+    /**
+     * 給「找不到外接裝置」用的診斷：把這台車機實際的掛載狀況吐成 JSON。
+     *
+     * 車機 ROM 對 USB 的處理五花八門：有的掛在 /storage/<UUID>，有的只掛在 /mnt/media_rw，
+     * 有的乾脆只讓自家的播放器看得到。與其猜，不如把 getExternalFilesDirs、/proc/mounts
+     * 跟幾個常見掛載點的實際內容一起回報，貼回來就知道該往哪裡找。
+     */
+    @JavascriptInterface
+    public String diagnose() {
+        JSONObject json = new JSONObject();
+        try {
+            json.put("sdk", Build.VERSION.SDK_INT);
+            json.put("manageExternalStorage", hasPermission());
+            json.put("readPermission", context.checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED);
+            json.put("externalStorageState", Environment.getExternalStorageState());
+            json.put("port", port);
+
+            JSONArray appDirs = new JSONArray();
+            try {
+                File[] dirs = context.getExternalFilesDirs(null);
+                if (dirs != null) {
+                    for (File dir : dirs) {
+                        if (dir == null) continue;
+                        JSONObject entry = new JSONObject();
+                        entry.put("path", dir.getAbsolutePath());
+                        entry.put("exists", dir.exists());
+                        appDirs.put(entry);
+                    }
+                }
+            } catch (Throwable error) {
+                json.put("appDirsError", String.valueOf(error));
+            }
+            json.put("appDirs", appDirs);
+
+            json.put("dirStorage", dirEntries(new File("/storage")));
+            json.put("dirMediaRw", dirEntries(new File("/mnt/media_rw")));
+            json.put("dirMntUser", dirEntries(new File("/mnt/user/0")));
+            json.put("dirUdisk", dirEntries(new File("/udisk")));
+            json.put("dirUsb", dirEntries(new File("/mnt/usb")));
+
+            JSONArray mounts = new JSONArray();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream("/proc/mounts"), "UTF-8"))) {
+                String line;
+                int guard = 0;
+                while ((line = reader.readLine()) != null && guard++ < 4000) {
+                    String[] parts = line.split(" ");
+                    if (parts.length < 3) continue;
+                    String mountPath = parts[1];
+                    String fs = parts[2];
+                    boolean interesting = mountPath.startsWith("/mnt/") || mountPath.startsWith("/storage/")
+                            || fs.equals("vfat") || fs.equals("exfat") || fs.equals("ntfs") || fs.equals("fuse")
+                            || fs.equals("fuseblk") || fs.equals("sdcardfs") || fs.equals("esdfs");
+                    if (!interesting) continue;
+                    JSONObject entry = new JSONObject();
+                    entry.put("mount", mountPath);
+                    entry.put("fs", fs);
+                    entry.put("dev", parts[0]);
+                    entry.put("readable", new File(mountPath).canRead());
+                    mounts.put(entry);
+                }
+            } catch (Throwable error) {
+                json.put("mountsError", String.valueOf(error));
+            }
+            json.put("mounts", mounts);
+        } catch (Throwable error) {
+            android.util.Log.e("FoliaNativeStorage", "diagnose failed", error);
+        }
+        return json.toString();
+    }
+
+    /** 列一個目錄底下的項目（名稱／canRead／canExecute／是否目錄），拿來看出權限卡在哪。 */
+    private JSONArray dirEntries(File dir) {
+        JSONArray array = new JSONArray();
+        if (!dir.isDirectory()) return array;
+        File[] children = dir.listFiles();
+        if (children == null) {
+            try {
+                JSONObject error = new JSONObject();
+                error.put("error", "listFiles returned null");
+                error.put("canRead", dir.canRead());
+                error.put("canExecute", dir.canExecute());
+                array.put(error);
+            } catch (Exception ignored) {
+            }
+            return array;
+        }
+        Arrays.sort(children);
+        for (File child : children) {
+            try {
+                JSONObject entry = new JSONObject();
+                entry.put("name", child.getName());
+                entry.put("dir", child.isDirectory());
+                entry.put("canRead", child.canRead());
+                entry.put("canExecute", child.canExecute());
+                array.put(entry);
+            } catch (Exception ignored) {
+            }
+        }
+        return array;
     }
 
     /** 單層列目錄：只回子目錄與音檔，夠 JS 做一個檔案瀏覽器。 */
