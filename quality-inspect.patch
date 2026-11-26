@@ -996,10 +996,10 @@ index 92620c2..04852d7 100644
      interaction,
 diff --git a/src/hooks/useLocalAudioImport.ts b/src/hooks/useLocalAudioImport.ts
 new file mode 100644
-index 0000000..6913ed7
+index 0000000..7b6e632
 --- /dev/null
 +++ b/src/hooks/useLocalAudioImport.ts
-@@ -0,0 +1,153 @@
+@@ -0,0 +1,160 @@
 +// src/hooks/useLocalAudioImport.ts
 +// 「從檔案匯入」在每個首頁 suite 裡都一樣：一顆隱藏的 input、一個 busy 旗標、一個 handler。
 +// 抽出來是因為 Bravais 空牆、Grid3D 空狀態、TUI 清單都要同一件事，分散寫三份遲早對不上。
@@ -1015,6 +1015,8 @@ index 0000000..6913ed7
 +    /** 要掛在 input 上的 ref（input 必須真的在 DOM 裡）。 */
 +    inputRef: React.RefObject<HTMLInputElement | null>;
 +    importing: boolean;
++    /** 這輪匯入是誰起的：選檔（複製）還是連結資料夾；兩顆按鈕都掛著進度時，只有真的那顆該顯示數字。 */
++    importMode: 'files' | 'linked' | null;
 +    /** 匯入進度（第 done 首／共 total 首）；沒在匯入時是 null。 */
 +    progress: { done: number; total: number; eta: string | null } | null;
 +    /** 開系統選檔器（iOS 走「檔案」App，安卓走 SAF 文件選擇器）。 */
@@ -1035,6 +1037,7 @@ index 0000000..6913ed7
 +export const useLocalAudioImport = (): LocalAudioImportController => {
 +    const inputRef = useRef<HTMLInputElement | null>(null);
 +    const [importing, setImporting] = useState(false);
++    const [importMode, setImportMode] = useState<'files' | 'linked' | null>(null);
 +    const [progress, setProgress] = useState<{ done: number; total: number; eta: string | null } | null>(null);
 +    // 估剩餘時間用：知道「還要四十分鐘」比看著 10/2216 猜有沒有卡死有用得多。
 +    const startedAtRef = useRef(0);
@@ -1060,6 +1063,7 @@ index 0000000..6913ed7
 +    }, []);
 +
 +    const handleFiles = useCallback((files: FileList | null) => {
++        setImportMode('files');
 +        // FileList 是活的：清 value 之前先抓成陣列，否則清完就空了。
 +        const picked = Array.from(files ?? []);
 +        if (inputRef.current) inputRef.current.value = '';
@@ -1100,6 +1104,7 @@ index 0000000..6913ed7
 +            } finally {
 +                busyRef.current = false;
 +                setImporting(false);
++                setImportMode(null);
 +                setProgress(null);
 +            }
 +        })();
@@ -1110,6 +1115,7 @@ index 0000000..6913ed7
 +        setLinkedPickerOpen(false);
 +        busyRef.current = true;
 +        setImporting(true);
++        setImportMode('linked');
 +        startedAtRef.current = Date.now();
 +        // total 0 代表「還在掃描」：車機上一次掃兩千多筆目錄要幾秒，先把畫面切過去再掃。
 +        setProgress({ done: 0, total: 0, eta: null });
@@ -1143,13 +1149,14 @@ index 0000000..6913ed7
 +            } finally {
 +                busyRef.current = false;
 +                setImporting(false);
++                setImportMode(null);
 +                setProgress(null);
 +            }
 +        })();
 +    }, []);
 +
 +    return {
-+        inputRef, importing, progress, openPicker, handleFiles, lastResult,
++        inputRef, importing, importMode, progress, openPicker, handleFiles, lastResult,
 +        linkedSupported, linkedPickerOpen, openLinkedPicker, closeLinkedPicker, importLinkedFolder,
 +    };
 +};
@@ -2215,8 +2222,21 @@ index 70f5244..2bd712a 100644
      );
  };
  
+diff --git a/src/library/suites/tui/LibraryTuiArtist.tsx b/src/library/suites/tui/LibraryTuiArtist.tsx
+index ca4c582..8c946e9 100644
+--- a/src/library/suites/tui/LibraryTuiArtist.tsx
++++ b/src/library/suites/tui/LibraryTuiArtist.tsx
+@@ -215,7 +215,7 @@ const LibraryTuiArtist: React.FC<LibraryArtistSurfaceProps> = ({
+             data-library-renderer="tui"
+             data-ponder-page-scope="none"
+             data-library-surface="artist"
+-            className="fixed inset-0 z-[110] flex flex-col overflow-hidden pt-8 font-mono"
++            className={`fixed inset-0 z-[110] flex flex-col overflow-hidden font-mono ${typeof window !== 'undefined' && window.electron ? 'pt-8' : ''}`}
+             style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-primary)' }}
+         >
+             <LibraryTuiArtistHeader
 diff --git a/src/library/suites/tui/LibraryTuiHeader.tsx b/src/library/suites/tui/LibraryTuiHeader.tsx
-index 5c35aca..0cbb59e 100644
+index 5c35aca..228bf51 100644
 --- a/src/library/suites/tui/LibraryTuiHeader.tsx
 +++ b/src/library/suites/tui/LibraryTuiHeader.tsx
 @@ -5,6 +5,7 @@ import type { CollectionResourceSnapshot } from '../../core/shared/resource.cont
@@ -2227,24 +2247,24 @@ index 5c35aca..0cbb59e 100644
  
  // src/library/suites/tui/LibraryTuiHeader.tsx
  // TUI 的状态栏：返回、集合名（改名后显示新名字）、订阅星标、来源、加载进度（中断时可续传）、重新拉取、
-@@ -146,6 +147,15 @@ const LibraryTuiHeader: React.FC<LibraryTuiHeaderProps> = ({
-                     </button>
-                 )}
-                 {isLoading && <span className="opacity-50">{t('playlist.loading')}</span>}
+@@ -77,6 +78,15 @@ const LibraryTuiHeader: React.FC<LibraryTuiHeaderProps> = ({
+                 <button type="button" onClick={onBack} className="opacity-70 hover:opacity-100" data-tui-back>
+                     {`[← ${t('libraryTui.back')}]`}
+                 </button>
 +                <button
 +                    type="button"
 +                    data-tui-settings
 +                    title={t('libraryTui.settingsEntryHint')}
 +                    onClick={() => openSettings('options')}
-+                    className="ml-auto shrink-0 opacity-70 hover:opacity-100"
++                    className="shrink-0 opacity-70 hover:opacity-100"
 +                >
 +                    {`[${t('libraryTui.settingsEntry')}]`}
 +                </button>
-             </div>
-             {mutations.showDailyDate && (
-                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1" role="group" aria-label={t('home.recommendationDate')} data-tui-daily-date>
+                 <span className="font-bold" style={{ color: accentColor }} data-tui-title>{title}</span>
+                 {mutations.showSubscribe && (
+                     <button
 diff --git a/src/library/suites/tui/LibraryTuiHome.tsx b/src/library/suites/tui/LibraryTuiHome.tsx
-index 5279cce..351e39f 100644
+index 5279cce..ef79d7f 100644
 --- a/src/library/suites/tui/LibraryTuiHome.tsx
 +++ b/src/library/suites/tui/LibraryTuiHome.tsx
 @@ -12,6 +12,7 @@ import { useLibraryHomeDirectory } from '../../core/home/useLibraryHomeDirectory
@@ -2255,24 +2275,39 @@ index 5279cce..351e39f 100644
  import { PRIMARY_MODIFIER_LABEL } from '../../../utils/platform';
  import { LibraryTuiLocalList, LibraryTuiNavidromeList, LibraryTuiOnlineList } from './LibraryTuiHomeLists';
  import type { LibraryTuiPromptRequest } from './LibraryTuiPrompt';
-@@ -207,6 +208,15 @@ const LibraryTuiHome: React.FC<LibraryHomeSurfaceProps> = (props) => {
-                     {actionState.scan?.active ? (
-                         <span className="ml-auto tabular-nums opacity-60" data-tui-scan>{`${t('options.scanProgress')} ${scanPercent}%`}</span>
-                     ) : null}
+@@ -173,18 +174,29 @@ const LibraryTuiHome: React.FC<LibraryHomeSurfaceProps> = (props) => {
+     const showBatchHints = activeSource === 'local';
+     // 开发版的 suite 切换浮层在首页上贴着左下角：给它留出底部的一行，别盖住按键提示。
+     const devSwitchGutter = import.meta.env.DEV ? 'pb-8' : '';
++    // 桌面版窗口最上面有自繪標題欄（h-8）壓著，要讓開；車機 / 網頁 / iOS 沒有那一條，留白只會白白吃掉 32px。
++    const titlebarGutter = typeof window !== 'undefined' && window.electron ? 'pt-8' : '';
+     // 顶上让出桌面版自绘标题栏的拖拽区（h-8，盖在整个窗口最上面），否则来源页签点不到；网格的首页页头同样留了 p-8。
+ 
+     return (
+         <div
+             data-library-home="tui"
+             data-ponder-page-scope="none"
+-            className={`relative flex h-full w-full flex-col overflow-hidden pt-8 font-mono ${devSwitchGutter}`}
++            className={`relative flex h-full w-full flex-col overflow-hidden font-mono ${titlebarGutter} ${devSwitchGutter}`}
+             style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-primary)' }}
+         >
+             <header className="shrink-0 border-b border-current/15 px-4 py-2 text-[13px]">
+                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1" role="tablist" aria-label={t('libraryTui.homeSources')}>
+                     <span className="font-bold" style={{ color: accentColor }}>{`folia · ${t('libraryTui.homeTitle')}`}</span>
 +                    <button
 +                        type="button"
 +                        data-tui-settings
 +                        title={t('libraryTui.settingsEntryHint')}
 +                        onClick={() => openSettings('options')}
-+                        className={`${actionState.scan?.active ? '' : 'ml-auto '}shrink-0 opacity-70 hover:opacity-100`}
++                        className="shrink-0 opacity-70 hover:opacity-100"
 +                    >
 +                        {`[${t('libraryTui.settingsEntry')}]`}
 +                    </button>
-                 </div>
-                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]" role="tablist">
-                     {sections.map(section => (
+                     {groups.map(group => {
+                         const active = group.source === activeSource;
+                         return (
 diff --git a/src/library/suites/tui/LibraryTuiHomeLists.tsx b/src/library/suites/tui/LibraryTuiHomeLists.tsx
-index 347bbc3..b8b330d 100644
+index 347bbc3..c2a0efc 100644
 --- a/src/library/suites/tui/LibraryTuiHomeLists.tsx
 +++ b/src/library/suites/tui/LibraryTuiHomeLists.tsx
 @@ -22,6 +22,8 @@ import { useLibraryHomeLocal, useLocalDirectoryTrees, useLocalHomeBatchConfig }
@@ -2322,7 +2357,7 @@ index 347bbc3..b8b330d 100644
                  <span>{t('localMusic.noLocalMusic')}</span>
 -                {common.declaredActions.actions.includes('home-import-folder') ? (
 +                <button type="button" onClick={audioImport.openPicker} disabled={audioImport.importing} className="self-start opacity-70 hover:opacity-100 disabled:opacity-30">
-+                    {`[${audioImport.importing
++                    {`[${audioImport.importMode === 'files'
 +                        ? (audioImport.progress
 +                            ? t(audioImport.progress.eta ? 'localMusic.importingProgressEta' : 'localMusic.importingProgress', { done: audioImport.progress.done, total: audioImport.progress.total, eta: audioImport.progress.eta ?? '' })
 +                            : t('localMusic.importingFiles'))
@@ -2330,7 +2365,7 @@ index 347bbc3..b8b330d 100644
 +                </button>
 +                {audioImport.linkedSupported ? (
 +                    <button type="button" disabled={audioImport.importing} onClick={audioImport.openLinkedPicker} className="self-start opacity-70 hover:opacity-100 disabled:opacity-30">
-+                        {`[${audioImport.importing
++                        {`[${audioImport.importMode === 'linked'
 +                            ? (audioImport.progress && audioImport.progress.total > 0
 +                                ? t(audioImport.progress.eta ? 'localMusic.importingProgressEta' : 'localMusic.importingProgress', { done: audioImport.progress.done, total: audioImport.progress.total, eta: audioImport.progress.eta ?? '' })
 +                                : t('localMusic.linkingFolder'))
@@ -2351,7 +2386,7 @@ index 347bbc3..b8b330d 100644
              </StatusText>
          );
      }
-@@ -263,14 +298,42 @@ export const LibraryTuiLocalList: React.FC<LibraryTuiListCommonProps & {
+@@ -263,14 +298,49 @@ export const LibraryTuiLocalList: React.FC<LibraryTuiListCommonProps & {
          <>
              {fileInput}
              <ActionBar
@@ -2371,12 +2406,19 @@ index 347bbc3..b8b330d 100644
 +                    })),
 +                    // 「導入文件」在車機上是唯一進得去曲庫的路（WebView 沒有資料夾選擇器），所以不放進 core 的動作清單，
 +                    // 直接以按鈕掛在這裡；邏輯與 Grid、Bravais 共用 useLocalAudioImport。
-+                    { id: 'import-files', label: t('localMusic.importFiles'), disabled: audioImport.importing, pending: false },
++                    {
++                        id: 'import-files',
++                        label: audioImport.importMode === 'files' && audioImport.progress
++                            ? t(audioImport.progress.eta ? 'localMusic.importingProgressEta' : 'localMusic.importingProgress', { done: audioImport.progress.done, total: audioImport.progress.total, eta: audioImport.progress.eta ?? '' })
++                            : t('localMusic.importFiles'),
++                        disabled: audioImport.importing,
++                        pending: audioImport.importMode === 'files',
++                    },
 +                    // 車機 APK 才有的第二條路：不複製檔案，直接讀原位置（USB / 內建儲存）。
 +                    ...(audioImport.linkedSupported
 +                        ? [{
 +                            id: 'import-linked-folder',
-+                            label: audioImport.importing
++                            label: audioImport.importMode === 'linked'
 +                                ? (audioImport.progress && audioImport.progress.total > 0
 +                                    ? t(audioImport.progress.eta ? 'localMusic.importingProgressEta' : 'localMusic.importingProgress', { done: audioImport.progress.done, total: audioImport.progress.total, eta: audioImport.progress.eta ?? '' })
 +                                    : t('localMusic.linkingFolder'))
@@ -2444,7 +2486,7 @@ index c1d9db4..882186c 100644
                  {canMatch ? (
                      <button
 diff --git a/src/library/suites/tui/LibraryTuiView.tsx b/src/library/suites/tui/LibraryTuiView.tsx
-index d5a1e1c..0545888 100644
+index d5a1e1c..a02c089 100644
 --- a/src/library/suites/tui/LibraryTuiView.tsx
 +++ b/src/library/suites/tui/LibraryTuiView.tsx
 @@ -22,6 +22,8 @@ import { colorWithAlpha } from '../../../utils/colorMix';
@@ -2490,6 +2532,15 @@ index d5a1e1c..0545888 100644
  
      const isEmpty = focus.rowDisplayIndexes.length === 0;
      const isLoading = !snapshot || snapshot.status === 'idle' || snapshot.status === 'loading';
+@@ -293,7 +311,7 @@ const LibraryTuiView: React.FC<LibraryCollectionSurfaceProps> = ({
+             data-library-renderer="tui"
+             data-ponder-page-scope="none"
+             data-library-surface="collection"
+-            className="fixed inset-0 z-[110] flex flex-col overflow-hidden pt-8 font-mono"
++            className={`fixed inset-0 z-[110] flex flex-col overflow-hidden font-mono ${typeof window !== 'undefined' && window.electron ? 'pt-8' : ''}`}
+             style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-primary)' }}
+         >
+             <LibraryTuiHeader
 @@ -327,6 +345,7 @@ const LibraryTuiView: React.FC<LibraryCollectionSurfaceProps> = ({
                  <span>{t('libraryTui.columnArtist')}</span>
                  <span>{t('libraryTui.columnAlbum')}</span>
@@ -3434,7 +3485,7 @@ index 0000000..df20d8f
 +    }
 +}
 diff --git a/src/services/localMusicService.ts b/src/services/localMusicService.ts
-index 26a0181..e065a12 100644
+index 26a0181..2792fed 100644
 --- a/src/services/localMusicService.ts
 +++ b/src/services/localMusicService.ts
 @@ -30,6 +30,15 @@ import { hasLocalCoverBinary } from './localCoverBinaryStore';
@@ -3517,7 +3568,7 @@ index 26a0181..e065a12 100644
          audio.src = url;
      });
  }
-@@ -1204,6 +1241,330 @@ export async function importFolder(expectedRootName?: string): Promise<LocalSong
+@@ -1204,6 +1241,334 @@ export async function importFolder(expectedRootName?: string): Promise<LocalSong
      }
  }
  
@@ -3687,6 +3738,9 @@ index 26a0181..e065a12 100644
 +                // 存檔分批：見 IMPORT_SAVE_BATCH_SIZE 的說明。
 +                if (pendingSave.length >= IMPORT_SAVE_BATCH_SIZE) {
 +                    await saveLocalSongs(pendingSave.splice(0));
++                    // 每批寫完就通知一次：兩千多首要跑十幾分鐘，若等到全部跑完才刷新，
++                    // 使用者這十幾分鐘都只看得到「暫無本地音樂」，像沒在做事。
++                    notifyLocalMusicUpdated();
 +                }
 +            } catch (error) {
 +                console.error(`[LocalMusic][Import] Failed to import ${file.name}:`, error);
@@ -3831,6 +3885,7 @@ index 26a0181..e065a12 100644
 +            pendingSave.push(localSong);
 +            if (pendingSave.length >= IMPORT_SAVE_BATCH_SIZE) {
 +                await saveLocalSongs(pendingSave.splice(0));
++                notifyLocalMusicUpdated();
 +            }
 +        } catch (error) {
 +            console.error(`[LocalMusic][Link] Failed to link ${file.name}:`, error);
@@ -3848,7 +3903,7 @@ index 26a0181..e065a12 100644
  /** Imports a folder the caller already holds instead of asking the picker (the dev mock song's OPFS folder). */
  export async function importDirectoryHandle(dirHandle: FileSystemDirectoryHandle): Promise<LocalSong[]> {
      return await runLocalFolderMutation(() => importFolderContents(dirHandle));
-@@ -1614,6 +1975,7 @@ export async function deleteLocalSong(id: string): Promise<void> {
+@@ -1614,6 +1979,7 @@ export async function deleteLocalSong(id: string): Promise<void> {
      await Promise.all([
          dbDeleteLocalSong(id),
          removeCachedCover(`cover_local_${id}`),
@@ -3856,7 +3911,7 @@ index 26a0181..e065a12 100644
      ]);
  }
  
-@@ -1714,6 +2076,14 @@ async function cleanupDirHandleIfUnused(rootFolderName: string): Promise<void> {
+@@ -1714,6 +2080,14 @@ async function cleanupDirHandleIfUnused(rootFolderName: string): Promise<void> {
  // Get audio blob from local song using fileHandle
  // Returns blob URL if fileHandle exists, null otherwise
  export async function getAudioFromLocalSong(song: LocalSong): Promise<string | null> {
@@ -3871,7 +3926,7 @@ index 26a0181..e065a12 100644
      const fileHandle = await getAccessibleFileHandle(song);
  
      if (fileHandle) {
-@@ -1738,6 +2108,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
+@@ -1738,6 +2112,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
          }
      }
  
@@ -3888,7 +3943,7 @@ index 26a0181..e065a12 100644
      // No accessible handle available - permission may need to be restored or the file moved.
      console.warn(`[LocalMusic] No accessible handle for song ${song.id}. Permission restore or re-import is required.`);
      return null;
-@@ -1745,6 +2125,15 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
+@@ -1745,6 +2129,15 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
  
  /** Resolves the current File for playback recovery without changing the song or minting a URL. */
  export async function getFileFromLocalSong(song: LocalSong): Promise<File | null> {
@@ -3904,7 +3959,7 @@ index 26a0181..e065a12 100644
      const fileHandle = await getAccessibleFileHandle(song);
      if (fileHandle) {
          try {
-@@ -1755,6 +2144,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+@@ -1755,6 +2148,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
          }
      }
  
@@ -3914,7 +3969,7 @@ index 26a0181..e065a12 100644
      const recoveredHandle = await recoverFileHandleFromPersistedDirectory(song);
      if (!recoveredHandle) return null;
      try {
-@@ -1774,14 +2166,22 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+@@ -1774,14 +2170,22 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
   * from its own handle. Mirrors getAudioFromLocalSong's resolution (accessible handle, else a recover)
   * but returns the ArrayBuffer. Null when no handle can be reached - permission not restored, or moved.
   */
@@ -3940,7 +3995,7 @@ index 26a0181..e065a12 100644
      } catch (error) {
          console.error('[LocalMusic] Failed to read local bytes:', error);
          fileHandleMap.delete(song.id);
-@@ -1789,6 +2189,35 @@ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuf
+@@ -1789,6 +2193,35 @@ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuf
      }
  }
  
@@ -3976,7 +4031,7 @@ index 26a0181..e065a12 100644
  // Extracts and persists one song's embedded cover after an explicit playback-time request.
  async function extractAndPersistSongCover(
      song: LocalSong,
-@@ -1880,6 +2309,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
+@@ -1880,6 +2313,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
      await Promise.all([
          dbDeleteLocalSongs(uniqueSongIds),
          ...uniqueSongIds.map(id => removeCachedCover(`cover_local_${id}`)),
