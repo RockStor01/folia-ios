@@ -4,8 +4,8 @@ name: Build Android APK
 # → Capacitor 生成 android 工程 → gradlew 出 APK。
 #
 # 產物有兩個：
-#   Folia-debug.apk   用 debug keystore 簽過，可以直接裝（車機上 sideload 用這個）
-#   Folia-release-unsigned.apk  沒簽名，要自己 apksigner 簽（想上應用商店或長期使用時用）
+#   Folia-debug.apk    跟 release 用同一把固定金鑰簽（可覆蓋安裝，不必先移除）
+#   Folia-release.apk  同一把金鑰簽的 release 版；兩個可以互相覆蓋，版本號只增不減
 #
 # 全程用 ubuntu-latest 自帶的 Android SDK，不需要 macOS，也不需要你的電腦裝風水。
 
@@ -182,6 +182,55 @@ jobs:
           done
           find app/src/main/res -name "ic_launcher*.png" | head -20
 
+
+      # 固定簽名：debug 與 release 都用同一把金鑰，而且金鑰檔跟著倉庫走。
+      # 以前每次 CI 都用 runner 臨時生成的 debug.keystore，兩次建置的簽名不同，
+      # 車機上更新就會出現 INSTALL_FAILED_UPDATE_INCOMPATIBLE，只能先移除再裝。
+      # 固定簽名：debug 與 release 都用同一把金鑰，而且金鑰檔跟著倉庫走。
+      # 以前每次 CI 都用 runner 臨時生成的 debug.keystore，兩次建置簽名不同，
+      # 車機上更新就會出現 INSTALL_FAILED_UPDATE_INCOMPATIBLE，只能先移除再裝。
+      - name: Stable signing config
+        working-directory: folia/android
+        shell: bash
+        run: |
+          set -e
+          cp ../../folia-release.jks ../folia-release.jks
+          python3 - app/build.gradle <<'PY'
+          import re, os, sys
+          path = sys.argv[1]
+          src = open(path).read()
+          run_number = int(os.environ.get('GITHUB_RUN_NUMBER', '0') or 0)
+
+          signing = """    signingConfigs {
+        folia {
+            storeFile file("../../folia-release.jks")
+            storePassword "folia-car-2026"
+            keyAlias "folia"
+            keyPassword "folia-car-2026"
+        }
+    }
+"""
+          if 'signingConfigs {' not in src:
+              src = src.replace('android {', 'android {\n' + signing, 1)
+
+          # versionCode 必須單調遞增，否則同樣會逼使用者先移除再裝。
+          src = re.sub(r'versionCode\s+\d+', 'versionCode ' + str(1000 + run_number), src, count=1)
+
+          build_types = re.search(r'buildTypes\s*{', src)
+          if build_types:
+              body_start = build_types.end()
+              if 'debug {' not in src[body_start:]:
+                  src = src[:body_start] + """
+        debug {
+            signingConfig signingConfigs.folia
+        }""" + src[body_start:]
+          # release 已經存在，只補一行，避免重複定義同一個 buildType。
+          src = re.sub(r'(release\s*{)', r'\1\n            signingConfig signingConfigs.folia', src, count=1)
+          open(path, 'w').write(src)
+          print(src[src.index('android {'):src.index('android {') + 800])
+          PY
+          grep -n "versionCode\|signingConfig" app/build.gradle | head -10
+
       - name: Build debug APK (installable)
         working-directory: folia/android
         run: |
@@ -191,12 +240,12 @@ jobs:
           cp app/build/outputs/apk/debug/app-debug.apk ../../Folia-debug.apk
           ls -lh ../../Folia-debug.apk
 
-      - name: Build release APK (unsigned)
+      - name: Build release APK (signed with the stable key)
         working-directory: folia/android
         run: |
           ./gradlew assembleRelease --no-daemon --stacktrace || echo "release build failed, debug apk is still usable"
-          find app/build/outputs/apk/release -name "*.apk" -exec cp {} ../../Folia-release-unsigned.apk \; || true
-          ls -lh ../../Folia-release-unsigned.apk 2>/dev/null || true
+          find app/build/outputs/apk/release -name "*.apk" -exec cp {} ../../Folia-release.apk \; || true
+          ls -lh ../../Folia-release.apk 2>/dev/null || true
 
       - name: Report APK facts
         run: |
@@ -213,7 +262,7 @@ jobs:
           name: Folia-apk
           path: |
             Folia-debug.apk
-            Folia-release-unsigned.apk
+            Folia-release.apk
           if-no-files-found: error
 
       - name: Publish to release
@@ -224,4 +273,4 @@ jobs:
           prerelease: true
           files: |
             Folia-debug.apk
-            Folia-release-unsigned.apk
+            Folia-release.apk

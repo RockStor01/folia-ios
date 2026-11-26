@@ -21,7 +21,7 @@ index 39ec48c..114cb4d 100644
      <script src="/runtime-config.js"></script>
    <script type="importmap">
 diff --git a/package.json b/package.json
-index 6976461..fdf4958 100644
+index 6976461..cf92c50 100644
 --- a/package.json
 +++ b/package.json
 @@ -8,7 +8,7 @@
@@ -29,7 +29,7 @@ index 6976461..fdf4958 100644
    },
    "private": true,
 -  "version": "0.8.0",
-+  "version": "0.9.9",
++  "version": "0.9.10",
    "license": "AGPL-3.0",
    "type": "module",
    "main": "electron/main.cjs",
@@ -955,12 +955,12 @@ index 5de4bf3..af66827 100644
      );
  };
 diff --git a/src/components/modal/newFeaturesRelease.ts b/src/components/modal/newFeaturesRelease.ts
-index e49a39c..e0d9b39 100644
+index e49a39c..a9559cd 100644
 --- a/src/components/modal/newFeaturesRelease.ts
 +++ b/src/components/modal/newFeaturesRelease.ts
 @@ -1,4 +1,4 @@
 -import { ListMusic, MessageSquareText, Puzzle, SlidersVertical, Sparkles, Store } from 'lucide-react';
-+import { FileAudio, KeyRound, Languages, ListChecks, Music2, ShieldCheck, Type } from 'lucide-react';
++import { FileAudio, KeyRound, Languages, ListChecks, Music2, RefreshCw, ShieldCheck, Type } from 'lucide-react';
  import type { LucideIcon } from 'lucide-react';
  
  // src/components/modal/newFeaturesRelease.ts
@@ -973,13 +973,13 @@ index e49a39c..e0d9b39 100644
      /** 重大更新：介绍上方显示「<代号> Update · 重大更新」标签；代号不翻译，文案在 help.majorUpdateLabel。
       *  servicePack：同一重大更新的热修复版，标签改成「<代号> Update SP<n> · 重大更新」，文案在 help.servicePackLabel。 */
      majorUpdate?: { codename: string; servicePack?: number };
-@@ -18,14 +20,9 @@ type NewFeaturesRelease = {
+@@ -18,14 +20,10 @@ type NewFeaturesRelease = {
  
  // Defines the current release's cards; their localized text lives under i18nKey in every locale.
  export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
 -    i18nKey: 'releaseNotes.v0_8_0',
 -    majorUpdate: { codename: 'Severance' },
-+    i18nKey: 'releaseNotes.v0_9_9',
++    i18nKey: 'releaseNotes.v0_9_10',
      features: [
 -        { id: 'sourceMods', icon: Puzzle },
 -        { id: 'modMarket', icon: Store },
@@ -987,9 +987,10 @@ index e49a39c..e0d9b39 100644
 -        { id: 'moments', icon: MessageSquareText },
 -        { id: 'stemMixer', icon: SlidersVertical },
 -        { id: 'moreDetails', icon: Sparkles },
++        { id: 'seamlessUpdate', icon: RefreshCw },
 +        { id: 'fileLyrics', icon: Music2 },
      ],
-+    fixes: ['encoding', 'id3size', 'lazy', 'cache'],
++    fixes: ['sameKey', 'monotonic', 'debugRelease', 'oneTime'],
  };
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
@@ -1201,7 +1202,7 @@ index 92620c2..04852d7 100644
      general,
      interaction,
 diff --git a/src/components/modal/userGuideContent.ts b/src/components/modal/userGuideContent.ts
-index a8b5aa7..b036d75 100644
+index a8b5aa7..a991a08 100644
 --- a/src/components/modal/userGuideContent.ts
 +++ b/src/components/modal/userGuideContent.ts
 @@ -13,7 +13,7 @@ export type UserGuideShortcut = {
@@ -1209,7 +1210,7 @@ index a8b5aa7..b036d75 100644
  
  export const USER_GUIDE_PAGE_COUNT = 7;
 -export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.8.0';
-+export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.9.9';
++export const USER_GUIDE_AUTO_OPEN_VERSION: string | null = '0.9.10';
  
  export type HelpTabShortcut = {
      id: string;
@@ -1705,7 +1706,7 @@ index 2f367df..361d5da 100644
              enabled
              && window.electron?.requestTranscodeFallback
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..4c684ae 100644
+index 86f3b6d..25e0ec7 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -1899,10 +1900,27 @@ index 86f3b6d..4c684ae 100644
      "minimizeToTray": "Minimize to tray",
      "closeToTray": "Close window to tray",
      "closeToTrayDesc": "The close button hides the window to the tray instead of quitting",
-@@ -4513,6 +4504,139 @@ export default {
+@@ -4513,6 +4504,156 @@ export default {
      "noDescription": "No description available",
    },
    "releaseNotes": {
++    "v0_9_10": {
++      "intro": "Starting with 0.9.10, Android updates install over the old app. It used to be impossible because every CI run generated a fresh debug keystore, and a changed signature makes Android refuse the update.",
++      "seamlessUpdate": {
++        "title": "Updates no longer need uninstalling",
++        "description": "The debug and release APKs are now both signed with one fixed key that lives in the repository, and versionCode rises with every build (1000 + CI run number). On the same device any build installs over the previous one: no more INSTALL_FAILED_UPDATE_INCOMPATIBLE and no version-downgrade refusal.",
++      },
++      "fileLyrics": {
++        "title": "Lyrics from the previous build",
++        "description": "The linked-mode lyrics work added in 0.9.9 stays: sidecar .lrc/.vtt plus embedded lyrics read the way Aurora does it.",
++      },
++      "fixes": {
++        "sameKey": "The signing key is fixed (folia-release.jks, RSA 2048, 10000 days) instead of generated per CI run.",
++        "monotonic": "versionCode is based on the CI run number, so each build is higher than the last and Android treats it as an upgrade.",
++        "debugRelease": "Folia-debug.apk and Folia-release.apk now share one signature, so either can replace the other.",
++        "oneTime": "Moving from 0.9.9 (old throwaway key) to this build still needs one uninstall; after that, never again."
++      }
++    },
 +    "v0_9_9": {
 +      "intro": "0.9.9 brings lyrics to local songs on the car unit: the lyric page now reads them from the files — a .lrc next to the track, or lyrics embedded in the audio (ID3 USLT, FLAC LYRICS, M4A ©lyr). This is how Aurora shows lyrics.",
 +      "fileLyrics": {
@@ -2039,7 +2057,7 @@ index 86f3b6d..4c684ae 100644
      "v0_7_0": {
        "intro": "Here are the new features and improvements in version 0.7.0.",
        "temperaVisualExpansion": {
-@@ -5228,6 +5352,10 @@ export default {
+@@ -5228,6 +5369,10 @@ export default {
      "capsuleOpensPalette": "Click to open the command palette",
    },
    "localMusic": {
@@ -2050,7 +2068,7 @@ index 86f3b6d..4c684ae 100644
      "foldersAndPlaylists": "Folders",
      "albums": "Albums",
      "artists": "Artists",
-@@ -5242,8 +5370,34 @@ export default {
+@@ -5242,8 +5387,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -2085,7 +2103,7 @@ index 86f3b6d..4c684ae 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6207,13 @@ export default {
+@@ -6053,8 +6224,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -2101,13 +2119,30 @@ index 86f3b6d..4c684ae 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/in.ts b/src/i18n/locales/in.ts
-index fac0d47..5d93228 100644
+index fac0d47..0e58b10 100644
 --- a/src/i18n/locales/in.ts
 +++ b/src/i18n/locales/in.ts
-@@ -4513,6 +4513,56 @@ export default {
+@@ -4513,6 +4513,73 @@ export default {
      "noDescription": "Tidak ada deskripsi tersedia"
    },
    "releaseNotes": {
++    "v0_9_10": {
++      "intro": "Mulai 0.9.10, pembaruan Android bisa dipasang menimpa aplikasi lama. Sebelumnya tidak bisa karena setiap CI membuat debug keystore baru, dan tanda tangan yang berubah membuat Android menolak pembaruan.",
++      "seamlessUpdate": {
++        "title": "Pembaruan tanpa mencopot aplikasi",
++        "description": "APK debug dan release kini ditandatangani satu kunci tetap yang tersimpan di repositori, dan versionCode naik setiap build (1000 + nomor run CI). Di perangkat yang sama build mana pun bisa menimpa build sebelumnya.",
++      },
++      "fileLyrics": {
++        "title": "Lirik dari versi sebelumnya",
++        "description": "Pembacaan lirik lagu lokal 0.9.9 tetap ada: .lrc/.vtt di folder yang sama plus lirik tertanam, seperti Aurora.",
++      },
++      "fixes": {
++        "sameKey": "Kunci tanda tangan tetap (folia-release.jks, RSA 2048, 10000 hari), bukan dibuat tiap run CI.",
++        "monotonic": "versionCode mengikuti nomor run CI sehingga selalu lebih tinggi dari versi sebelumnya.",
++        "debugRelease": "Folia-debug.apk dan Folia-release.apk memakai tanda tangan yang sama, bisa saling menimpa.",
++        "oneTime": "Dari 0.9.9 (kunci lama sementara) ke build ini masih perlu satu kali copot; setelah itu tidak lagi."
++      }
++    },
 +    "v0_9_9": {
 +      "intro": "0.9.9 menghadirkan lirik untuk lagu lokal di head unit: halaman lirik kini membacanya dari berkas — .lrc di samping lagu, atau lirik tertanam (ID3 USLT, FLAC LYRICS, M4A ©lyr). Beginilah Aurora menampilkan lirik.",
 +      "fileLyrics": {
@@ -2162,7 +2197,7 @@ index fac0d47..5d93228 100644
        "intro": "Berikut fitur baru dan peningkatan di versi 0.7.0.",
        "temperaVisualExpansion": {
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..d50532f 100644
+index 0067e9a..7265cd2 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -2294,10 +2329,27 @@ index 0067e9a..d50532f 100644
      "minimizeToTray": "最小化到托盘",
      "closeToTray": "关闭窗口时隐藏到托盘",
      "closeToTrayDesc": "点关闭按钮时不退出，隐藏到托盘继续播放",
-@@ -4513,6 +4575,139 @@ export default {
+@@ -4513,6 +4575,156 @@ export default {
      "noDescription": "暂无详细介绍",
    },
    "releaseNotes": {
++    "v0_9_10": {
++      "intro": "0.9.10 起，安卓版的更新可以直接覆盖安装，不用再先移除旧 App。之前做不到是因为每次 CI 都用临时生成的 debug 金钥签名，签名一变，系统就拒绝更新。",
++      "seamlessUpdate": {
++        "title": "更新不用先移除 App",
++        "description": "debug 与 release 两种 APK 现在都用同一把固定金钥签名，金钥档跟着仓库走，版本号（versionCode）随每次构建单调递增（1000 + CI 运行号）。同一支手机上，任何一版都可以直接覆盖上一版：不会再出现 INSTALL_FAILED_UPDATE_INCOMPATIBLE，也不会出现版本降级被拒。",
++      },
++      "fileLyrics": {
++        "title": "歌词显示保持上一版",
++        "description": "0.9.9 加上、这一版继续保留的车机本地歌歌词读取：同文件夹 .lrc／.vtt 与音档内嵌歌词，都照 Aurora 的做法。",
++      },
++      "fixes": {
++        "sameKey": "签名金钥固定（folia-release.jks，RSA 2048，有效期 10000 天），不再由 CI 临时生成。",
++        "monotonic": "versionCode 用 CI 运行号叠加，每次都大于上一版，系统才会把它当成升级。",
++        "debugRelease": "Folia-debug.apk 与 Folia-release.apk 现在同一签名，两者可以互相覆盖安装。",
++        "oneTime": "从 0.9.9（旧临时金钥）升到这一版，仍然需要移除一次；这是最后一次。"
++      }
++    },
 +    "v0_9_9": {
 +      "intro": "0.9.9 补上「车机本地歌没有歌词」：歌词页从文件本身读——同文件夹的 .lrc，或音档内嵌的歌词（ID3 USLT、FLAC LYRICS、M4A ©lyr）。Aurora 就是这么显示歌词的。",
 +      "fileLyrics": {
@@ -2434,7 +2486,7 @@ index 0067e9a..d50532f 100644
      "v0_7_0": {
        "intro": "以下是 0.7.0 的新功能与改进",
        "temperaVisualExpansion": {
-@@ -5228,6 +5423,10 @@ export default {
+@@ -5228,6 +5440,10 @@ export default {
      "capsuleOpensPalette": "点一下打开命令面板",
    },
    "localMusic": {
@@ -2445,7 +2497,7 @@ index 0067e9a..d50532f 100644
      "foldersAndPlaylists": "文件夹",
      "albums": "专辑",
      "artists": "艺术家",
-@@ -5242,8 +5441,34 @@ export default {
+@@ -5242,8 +5458,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -2480,7 +2532,7 @@ index 0067e9a..d50532f 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6276,13 @@ export default {
+@@ -6051,8 +6293,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -6553,6 +6605,126 @@ index 64ef098..d4357bc 100644
  
  export type UiZoomStep = typeof UI_ZOOM_STEPS[number];
  
+diff --git a/test/unit/library/app/librarySuiteChoice.test.ts b/test/unit/library/app/librarySuiteChoice.test.ts
+index 9caa83e..cef9a15 100644
+--- a/test/unit/library/app/librarySuiteChoice.test.ts
++++ b/test/unit/library/app/librarySuiteChoice.test.ts
+@@ -176,15 +176,15 @@ describe('whether there is a choice', () => {
+ 
+ // 2026-10-10：首启引导第一页只问网格（经典）与 bravais（无限）；TUI 在测试构建里可用也不出现。
+ describe('first-run onboarding suite page', () => {
+-    it('lists grid and bravais, in that order, and leaves the dev TUI out', () => {
++    it('lists the list view then grid and bravais, in that order', () => {
+         expect(listLibrarySuiteOptions().map(option => option.id)).toContain('tui');
+-        expect(listOnboardingLibrarySuiteIds()).toEqual(['grid', 'bravais']);
++        expect(listOnboardingLibrarySuiteIds()).toEqual(['tui', 'grid', 'bravais']);
+         expect(hasOnboardingLibrarySuiteChoice()).toBe(true);
+     });
+ 
+     it('keeps the fixed order whatever the registry order is, and drops suites the build lacks', () => {
+-        expect(pickOnboardingLibrarySuiteIds(['tui', 'bravais', 'grid'])).toEqual(['grid', 'bravais']);
+-        expect(pickOnboardingLibrarySuiteIds(['grid', 'tui'])).toEqual(['grid']);
++        expect(pickOnboardingLibrarySuiteIds(['grid', 'bravais', 'tui'])).toEqual(['tui', 'grid', 'bravais']);
++        expect(pickOnboardingLibrarySuiteIds(['grid', 'tui'])).toEqual(['tui', 'grid']);
+         expect(pickOnboardingLibrarySuiteIds(['grid'])).toEqual(['grid']);
+     });
+ 
+diff --git a/test/unit/library/bravais/bravaisEmptyWallHint.test.ts b/test/unit/library/bravais/bravaisEmptyWallHint.test.ts
+index 967c627..aa27953 100644
+--- a/test/unit/library/bravais/bravaisEmptyWallHint.test.ts
++++ b/test/unit/library/bravais/bravaisEmptyWallHint.test.ts
+@@ -1,4 +1,4 @@
+-import { describe, expect, it } from 'vitest';
++import { describe, expect, it, vi } from 'vitest';
+ import type { TFunction } from 'i18next';
+ import { computeBravaisFrame, wallHintSpan } from '@/library/suites/bravais/bravaisFrame';
+ import { availableLocalTabLabel, localWallHint, onlineWallHint } from '@/library/suites/bravais/bravaisEmptyWallHint';
+@@ -37,11 +37,25 @@ describe('onlineWallHint', () => {
+ 
+ describe('localWallHint', () => {
+     it('points at the folder import only when the seam menu has it', () => {
+-        expect(localWallHint(true, t)).toEqual({
++        expect(localWallHint({ canImportFolder: true, canPickFiles: false }, t)).toEqual({
+             title: 'libraryBravaisHome.wallHint.localTitle',
+             body: 'libraryBravaisHome.wallHint.localBody {"action":"localMusic.importFolder"}',
++            actions: undefined,
++        });
++        expect(localWallHint({ canImportFolder: false, canPickFiles: false }, t)).toEqual({
++            title: 'libraryBravaisHome.wallHint.localTitle',
++            body: 'libraryBravaisHome.wallHint.localBodyFilesOnly',
++            actions: undefined,
++        });
++    });
++
++    it('puts the file import straight on the empty wall', () => {
++        const onPickFiles = vi.fn();
++        expect(localWallHint({ canImportFolder: false, canPickFiles: true, onPickFiles }, t)).toEqual({
++            title: 'libraryBravaisHome.wallHint.localTitle',
++            body: 'libraryBravaisHome.wallHint.localBodyFilesOnly',
++            actions: [{ label: 'localMusic.importFiles', onClick: onPickFiles, primary: true }],
+         });
+-        expect(localWallHint(false, t)).toEqual({ title: 'libraryBravaisHome.wallHint.localTitle', body: undefined });
+     });
+ 
+     it('only names a local tab that can be opened', () => {
+diff --git a/test/unit/library/core/localHomeModel.test.ts b/test/unit/library/core/localHomeModel.test.ts
+index d4588ef..a574d93 100644
+--- a/test/unit/library/core/localHomeModel.test.ts
++++ b/test/unit/library/core/localHomeModel.test.ts
+@@ -140,6 +140,11 @@ describe('resolveLocalHomeActions', () => {
+         ]);
+     });
+ 
++    it('drops the folder import on devices without a folder picker', () => {
++        // iPhone / 安卓 WebView：按下去什么都不会发生，所以这颗按钮根本不该出现，只留「刷新」。
++        expect(resolveLocalHomeActions({ ...idle, canImportFolder: false }).map(action => action.id)).toEqual(['refresh-folders']);
++    });
++
+     it('a scan shows refresh as scanning', () => {
+         const actions = resolveLocalHomeActions({ ...idle, scan: { active: true, folderName: 'A', totalSongs: 2, completedSongs: 1 } });
+         expect(actions[1]).toMatchObject({ labelKey: 'options.scanning', pending: true, disabled: true });
+diff --git a/test/unit/library/suiteEntries.test.ts b/test/unit/library/suiteEntries.test.ts
+index e6659ec..11dcb59 100644
+--- a/test/unit/library/suiteEntries.test.ts
++++ b/test/unit/library/suiteEntries.test.ts
+@@ -109,9 +109,11 @@ describe('library suite entries', () => {
+         expect(relativeImports.filter(source => !DEFAULT_SUITE_EAGER_IMPORTS.includes(source))).toEqual([]);
+     });
+ 
+-    it('keeps the TUI out of production builds', () => {
++    it('keeps the TUI behind a build flag, on in production too', () => {
++        // 2026-11-25 起车机版把「清單」当主界面：打包给 VITE_LIBRARY_TUI=true，正式构建里同样生效。
+         const source = read(entryOf('tui'));
+-        expect(source).toContain("const ENABLE_TUI = import.meta.env.DEV && import.meta.env.VITE_LIBRARY_TUI === 'true';");
++        expect(source).toContain("const ENABLE_TUI = import.meta.env.VITE_LIBRARY_TUI === 'true';");
++        expect(source).not.toContain('import.meta.env.DEV &&');
+         for (const component of ['LibraryTuiView', 'LibraryTuiHome', 'LibraryTuiArtist', 'LibraryTuiAccount']) {
+             expect(source).toContain(`const ${component} = ENABLE_TUI ? React.lazy(() => import('./${component}')) : null;`);
+         }
+diff --git a/test/unit/library/tuiAvailability.test.ts b/test/unit/library/tuiAvailability.test.ts
+index ec0678e..d8102b0 100644
+--- a/test/unit/library/tuiAvailability.test.ts
++++ b/test/unit/library/tuiAvailability.test.ts
+@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
+ import '@/library/registry';
+ 
+ // test/unit/library/tuiAvailability.test.ts
+-// 真实 entry 与 eager-glob registry 的开发验证门控；覆写 test.env 后重新装配，不用假 manifest 替代行为。
++// 真实 entry 与 eager-glob registry 的门控；覆写 test.env 后重新装配，不用假 manifest 替代行为。
+ // 与 registry.test 一样先在模块装载阶段转换默认网格的依赖，避免全量并发时首次转换占用单项行为的计时。
+ 
+ afterEach(() => {
+@@ -15,7 +15,9 @@ describe('TUI development validation availability', () => {
+         { name: 'a missing opt-in', dev: true, flag: undefined, enabled: false },
+         { name: 'an explicit false opt-in', dev: true, flag: 'false', enabled: false },
+         { name: 'DEV and an explicit true opt-in', dev: true, flag: 'true', enabled: true },
+-        { name: 'production even with the opt-in true', dev: false, flag: 'true', enabled: false },
++        // 2026-11-25：车机版要靠「清單」当主界面，打包时用 VITE_LIBRARY_TUI=true 打开，正式构建里也生效。
++        { name: 'production with the opt-in true', dev: false, flag: 'true', enabled: true },
++        { name: 'production without the opt-in', dev: false, flag: undefined, enabled: false },
+     ])('resolves $name', async ({ dev, flag, enabled }) => {
+         vi.resetModules();
+         vi.stubEnv('DEV', dev);
 diff --git a/test/unit/localSongFileLyrics.test.ts b/test/unit/localSongFileLyrics.test.ts
 new file mode 100644
 index 0000000..4b966b1
