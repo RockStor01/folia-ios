@@ -605,6 +605,89 @@ index 1ea56f3..629323e 100644
              // Folium 2.0 (plan §5.3): every online source's state. The states live in the desktop main process.
              { id: 'sources', icon: Cable, labelKey: 'options.settingsPageSources', electronOnly: true },
          ],
+diff --git a/src/components/modal/settings/pages/AppearancePage.tsx b/src/components/modal/settings/pages/AppearancePage.tsx
+index 1220f0a..07caf7a 100644
+--- a/src/components/modal/settings/pages/AppearancePage.tsx
++++ b/src/components/modal/settings/pages/AppearancePage.tsx
+@@ -4,11 +4,13 @@ import { useShallow } from 'zustand/react/shallow';
+ import { ChosenSceneName } from '../../../scenes/settings/SceneWindow';
+ import { getVisualizerModeLabel } from '../../../visualizer/registry';
+ import { usePlayerChromeSettingsStore } from '../../../../stores/usePlayerChromeSettingsStore';
++import { useDesktopSettingsStore } from '../../../../stores/useDesktopSettingsStore';
+ import { openSettings } from '../../../../stores/useSettingsModalStore';
+ import { useThemeSettingsStore } from '../../../../stores/useThemeSettingsStore';
+ import { useVisualizerSettingsStore } from '../../../../stores/useVisualizerSettingsStore';
+ import { Button, Group, Reveal, Row, Segmented, Toggle, Value, option, type SettingsGroupDef, type SettingsOptionDef } from '../kit';
+ import { settingsAnchorSubview } from '../../../../utils/settingsAnchorModel';
++import { UI_ZOOM_STEPS, readUiZoomStep } from '../../../../utils/uiZoom';
+ import { useSettingsPage } from './settingsPageContext';
+ 
+ // src/components/modal/settings/pages/AppearancePage.tsx
+@@ -19,12 +21,22 @@ import { useSettingsPage } from './settingsPageContext';
+ // The lyric animation workbench and the theme colour editor are the existing overlays; their rows
+ // here only open them.
+ 
++/** 有 Electron 的原生页面缩放就不要这里这一行，否则同一个开关会出现两次。 */
++const HAS_NATIVE_ZOOM = typeof window !== 'undefined' && typeof window.electron?.setPageZoomFactor === 'function';
++
++/** 只列「放大」的几挡：这里是给车机 / 小屏把字调大的地方，缩小交给桌面版的整页缩放。 */
++const SCALE_CHOICES = UI_ZOOM_STEPS.filter(step => step >= 110).map(step => ({ value: String(step), label: `${step}%` }));
++
+ const LYRICS: SettingsGroupDef = { id: 'lyricsRenderer', titleKey: 'options.lyricsRenderer' };
++// 界面缩放（字号）在网页 / iOS / 安卓车机上走 CSS zoom（桌面版的那一行在 DesktopPage，走原生页面缩放）。
++const SCALE: SettingsGroupDef = { id: 'uiScale', titleKey: 'options.settingsHeadingUiScale', available: () => !HAS_NATIVE_ZOOM };
+ const THEME: SettingsGroupDef = { id: 'themePresets', titleKey: 'options.settingsHeadingTheme' };
+ const SONG_THEME: SettingsGroupDef = { id: 'songTheme', titleKey: 'options.settingsHeadingSongTheme' };
+ 
+ const O = {
+     lyricsAnimation: option(LYRICS, 'lyricsAnimationAdjust', 'options.lyricsAnimationAdjust'),
++    // 车机上最常调的一项：9 吋屏把字放大到 125% / 150% 才看得清。
++    uiScale: option(SCALE, 'uiScale', 'options.uiScale'),
+     scene: option(LYRICS, 'scene', 'ui.scene'),
+     // Not a row of its own: it lives in the scene window, so a search for it lands on the group with the scene row.
+     soundTracing: option(LYRICS, 'soundTracing', 'ui.soundTracing'),
+@@ -45,6 +57,12 @@ type DaylightChoice = 'light' | 'dark' | 'system';
+ const AppearancePage: React.FC = () => {
+     const { t } = useTranslation();
+     const { themeControls, onOpenVisPlayground, onOpenThemePark, onOpenSceneWindow } = useSettingsPage();
++    const { uiZoomEnabled, uiZoomStep, handleToggleUiZoom, handleSetUiZoomStep } = useDesktopSettingsStore(useShallow(state => ({
++        uiZoomEnabled: state.uiZoomEnabled,
++        uiZoomStep: state.uiZoomStep,
++        handleToggleUiZoom: state.handleToggleUiZoom,
++        handleSetUiZoomStep: state.handleSetUiZoomStep,
++    })));
+     const { isDaylight, followSystemTheme, setDaylightPreference, setFollowSystemTheme } = useThemeSettingsStore(useShallow(state => ({
+         isDaylight: state.isDaylight,
+         followSystemTheme: state.followSystemTheme,
+@@ -67,6 +85,28 @@ const AppearancePage: React.FC = () => {
+                 </Row>
+             </Group>
+ 
++            {!HAS_NATIVE_ZOOM && (
++                <Group def={SCALE}>
++                    <Row option={O.uiScale} note={t('options.uiScaleDesc')}>
++                        <Segmented<string>
++                            value={uiZoomEnabled ? String(uiZoomStep) : 'off'}
++                            options={[
++                                { value: 'off', label: t('options.uiScaleOff') },
++                                ...SCALE_CHOICES,
++                            ]}
++                            onChange={(choice) => {
++                                if (choice === 'off') {
++                                    handleToggleUiZoom(false);
++                                    return;
++                                }
++                                const step = readUiZoomStep(choice);
++                                if (step) handleSetUiZoomStep(step);
++                            }}
++                        />
++                    </Row>
++                </Group>
++            )}
++
+             <Group def={THEME}>
+                 <Row option={O.daylight} note={t('options.followSystemThemeDesc')}>
+                     <Segmented<DaylightChoice>
 diff --git a/src/components/modal/settings/pages/QualityPage.tsx b/src/components/modal/settings/pages/QualityPage.tsx
 new file mode 100644
 index 0000000..4047bc3
@@ -825,7 +908,7 @@ index 0000000..8e34f78
 +    return rows;
 +};
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..c0bad99 100644
+index 86f3b6d..555691b 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -985,7 +1068,18 @@ index 86f3b6d..c0bad99 100644
      "settingsPageGeneral": "General",
      "settingsPageInteraction": "Shortcuts",
      "settingsPageIntegration": "Connections",
-@@ -5242,8 +5220,13 @@ export default {
+@@ -3336,6 +3314,10 @@ export default {
+     "uiZoom": "Interface zoom",
+     "uiZoomDesc": "Zoom the whole main window by a fixed step. With a large display scale in Windows the window feels cramped; zoom out to see more. The remote control window keeps its size.",
+     "uiZoomStep": "Zoom",
++    "settingsHeadingUiScale": "Interface size",
++    "uiScale": "Text scale",
++    "uiScaleDesc": "Scale the whole interface by a fixed percentage: text, row height and buttons all grow together. 125%-150% usually suits a car head unit or a small screen; 100% is the default size.",
++    "uiScaleOff": "Default (100%)",
+     "minimizeToTray": "Minimize to tray",
+     "closeToTray": "Close window to tray",
+     "closeToTrayDesc": "The close button hides the window to the tray instead of quitting",
+@@ -5242,8 +5224,13 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -999,7 +1093,7 @@ index 86f3b6d..c0bad99 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6036,13 @@ export default {
+@@ -6053,8 +6040,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -1015,7 +1109,7 @@ index 86f3b6d..c0bad99 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..b0165cd 100644
+index 0067e9a..4c00725 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -1105,7 +1199,18 @@ index 0067e9a..b0165cd 100644
      "settingsPageGeneral": "通用",
      "settingsPageInteraction": "快捷操作",
      "settingsPageIntegration": "连接与集成",
-@@ -5242,8 +5290,13 @@ export default {
+@@ -3336,6 +3384,10 @@ export default {
+     "uiZoom": "界面缩放",
+     "uiZoomDesc": "按固定挡位缩放整个主窗口。系统缩放调得大时界面会显得挤，缩小一些能看到更多内容。妙控窗保持原来的大小。",
+     "uiZoomStep": "缩放挡位",
++    "settingsHeadingUiScale": "界面大小",
++    "uiScale": "字号缩放",
++    "uiScaleDesc": "把整个界面按固定比例放大，字、行高、按钮一起变大。车机或小屏上选 125%～150% 通常刚好；100% 就是默认大小。",
++    "uiScaleOff": "默认（100%）",
+     "minimizeToTray": "最小化到托盘",
+     "closeToTray": "关闭窗口时隐藏到托盘",
+     "closeToTrayDesc": "点关闭按钮时不退出，隐藏到托盘继续播放",
+@@ -5242,8 +5294,13 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -1119,7 +1224,7 @@ index 0067e9a..b0165cd 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6104,13 @@ export default {
+@@ -6051,8 +6108,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -3056,6 +3161,68 @@ index 26a0181..1345ea3 100644
      ]);
      await dropDeletedSongsFromPlaylists(uniqueSongIds);
      await Promise.all(Array.from(affectedRoots).map(cleanupDirHandleIfUnused));
+diff --git a/src/services/uiZoomRuntime.ts b/src/services/uiZoomRuntime.ts
+index dce29d6..284324b 100644
+--- a/src/services/uiZoomRuntime.ts
++++ b/src/services/uiZoomRuntime.ts
+@@ -1,26 +1,46 @@
+ import { useDesktopSettingsStore } from '../stores/useDesktopSettingsStore';
+-import { resolveUiZoomFactor } from '../utils/uiZoom';
++import { resolveUiZoomFactor, type UiZoomStep } from '../utils/uiZoom';
+ 
+ // src/services/uiZoomRuntime.ts
+-// 界面缩放（#1264）套到主窗口上：启动时在首屏渲染前套一次，之后跟着设置改。只在桌面版的主窗口装
++// 界面缩放（#1264）套到主窗口上：启动时在首屏渲染前套一次，之后跟着设置改。只在主窗口装
+ // （bootstrap.tsx）；遥控窗口尺寸固定，不缩放。
++//
++// 两条实现：桌面版走 Electon 的原生页面缩放（setPageZoomFactor），整页连同底下的合成一起放大；
++// 网页版 / iOS WKWebView / 安卓车机 WebView 没有这个 API，改用 CSS `zoom` 套在 <html> 上。两者都是
++// 整页等比缩放，元素自己量到的 clientHeight 与行高在同一坐标系里，react-window 的每页行数不用额外换算。
+ 
+ let installed = false;
+ 
+-/** 按当前设置缩放这个窗口，并在开关或挡位改动时跟着改。web 版没有 preload，什么也不做。 */
++/** 按当前设置缩放这个窗口，并在开关或挡位改动时跟着改。 */
+ export const installUiZoom = () => {
++    if (installed) return;
+     const electron = window.electron;
+-    if (installed || !electron?.setPageZoomFactor) return;
++    const initial = useDesktopSettingsStore.getState();
++
++    if (electron?.setPageZoomFactor) {
++        installed = true;
++        // 和窗口现在的缩放比，不和上次设的比：默认菜单的 Ctrl+=/-/0 会绕过设置改掉它，再选一次同一挡要能改回来。
++        // 启动时也一样：同源页面按源记着的缩放（例如以前按过 Ctrl+-）不一样就盖掉。
++        const apply = (enabled: boolean, step: UiZoomStep) => {
++            const factor = resolveUiZoomFactor(enabled, step);
++            if (Math.abs(electron.getPageZoomFactor() - factor) < 0.001) return;
++            electron.setPageZoomFactor(factor);
++            console.info(`[UiZoom] page zoom ${Math.round(factor * 100)}%`);
++        };
++        apply(initial.uiZoomEnabled, initial.uiZoomStep);
++        useDesktopSettingsStore.subscribe(state => apply(state.uiZoomEnabled, state.uiZoomStep));
++        return;
++    }
++
++    if (typeof document === 'undefined') return;
+     installed = true;
+-    // 和窗口现在的缩放比，不和上次设的比：默认菜单的 Ctrl+=/-/0 会绕过设置改掉它，再选一次同一挡要能改回来。
+-    // 启动时也一样：同源页面按源记着的缩放（例如以前按过 Ctrl+-）不一样就盖掉。
+-    const apply = (enabled: boolean, step: Parameters<typeof resolveUiZoomFactor>[1]) => {
++    // 100% 时把属性清掉，而不是写 zoom:1：留着会让后代元素继续以 html 为 zoom 祖先，位置式的
++    // 浮层（设置弹窗、命令面板）在部分 WebView 里会多出一层坐标换算。
++    const apply = (enabled: boolean, step: UiZoomStep) => {
+         const factor = resolveUiZoomFactor(enabled, step);
+-        if (Math.abs(electron.getPageZoomFactor() - factor) < 0.001) return;
+-        electron.setPageZoomFactor(factor);
+-        console.info(`[UiZoom] page zoom ${Math.round(factor * 100)}%`);
++        document.documentElement.style.zoom = factor === 1 ? '' : String(factor);
++        console.info(`[UiZoom] css zoom ${Math.round(factor * 100)}%`);
+     };
+-    const initial = useDesktopSettingsStore.getState();
+     apply(initial.uiZoomEnabled, initial.uiZoomStep);
+     useDesktopSettingsStore.subscribe(state => apply(state.uiZoomEnabled, state.uiZoomStep));
+ };
 diff --git a/src/utils/localMetadataWorkerClient.ts b/src/utils/localMetadataWorkerClient.ts
 index 682f39b..4a54a01 100644
 --- a/src/utils/localMetadataWorkerClient.ts
@@ -3164,124 +3331,17 @@ index 682f39b..4a54a01 100644
          workerCallbacks.set(requestId, result => resolve(result as HashedLocalCoverResult | null));
          worker.postMessage({ type: 'hash-cover', cover, requestId });
      });
-diff --git a/test/unit/library/app/librarySuiteChoice.test.ts b/test/unit/library/app/librarySuiteChoice.test.ts
-index 9caa83e..cef9a15 100644
---- a/test/unit/library/app/librarySuiteChoice.test.ts
-+++ b/test/unit/library/app/librarySuiteChoice.test.ts
-@@ -176,15 +176,15 @@ describe('whether there is a choice', () => {
+diff --git a/src/utils/uiZoom.ts b/src/utils/uiZoom.ts
+index 64ef098..d4357bc 100644
+--- a/src/utils/uiZoom.ts
++++ b/src/utils/uiZoom.ts
+@@ -2,7 +2,8 @@
+ // 界面缩放（#1264）的挡位：主窗口整页按固定的几个百分比缩放，关掉就是 100%。
  
- // 2026-10-10：首启引导第一页只问网格（经典）与 bravais（无限）；TUI 在测试构建里可用也不出现。
- describe('first-run onboarding suite page', () => {
--    it('lists grid and bravais, in that order, and leaves the dev TUI out', () => {
-+    it('lists the list view then grid and bravais, in that order', () => {
-         expect(listLibrarySuiteOptions().map(option => option.id)).toContain('tui');
--        expect(listOnboardingLibrarySuiteIds()).toEqual(['grid', 'bravais']);
-+        expect(listOnboardingLibrarySuiteIds()).toEqual(['tui', 'grid', 'bravais']);
-         expect(hasOnboardingLibrarySuiteChoice()).toBe(true);
-     });
+ /** 可选的挡位（百分比）。100% 不在里面：关掉开关就是 100%。 */
+-export const UI_ZOOM_STEPS = [50, 67, 75, 80, 90, 110, 125, 150] as const;
++// 175% 是给车机 / 小屏补的：9 吋屏上 150% 仍偏小，再往上就轮到外接大屏用不着了。
++export const UI_ZOOM_STEPS = [50, 67, 75, 80, 90, 110, 125, 150, 175] as const;
  
-     it('keeps the fixed order whatever the registry order is, and drops suites the build lacks', () => {
--        expect(pickOnboardingLibrarySuiteIds(['tui', 'bravais', 'grid'])).toEqual(['grid', 'bravais']);
--        expect(pickOnboardingLibrarySuiteIds(['grid', 'tui'])).toEqual(['grid']);
-+        expect(pickOnboardingLibrarySuiteIds(['grid', 'bravais', 'tui'])).toEqual(['tui', 'grid', 'bravais']);
-+        expect(pickOnboardingLibrarySuiteIds(['grid', 'tui'])).toEqual(['tui', 'grid']);
-         expect(pickOnboardingLibrarySuiteIds(['grid'])).toEqual(['grid']);
-     });
+ export type UiZoomStep = typeof UI_ZOOM_STEPS[number];
  
-diff --git a/test/unit/library/bravais/bravaisEmptyWallHint.test.ts b/test/unit/library/bravais/bravaisEmptyWallHint.test.ts
-index 967c627..aa27953 100644
---- a/test/unit/library/bravais/bravaisEmptyWallHint.test.ts
-+++ b/test/unit/library/bravais/bravaisEmptyWallHint.test.ts
-@@ -1,4 +1,4 @@
--import { describe, expect, it } from 'vitest';
-+import { describe, expect, it, vi } from 'vitest';
- import type { TFunction } from 'i18next';
- import { computeBravaisFrame, wallHintSpan } from '@/library/suites/bravais/bravaisFrame';
- import { availableLocalTabLabel, localWallHint, onlineWallHint } from '@/library/suites/bravais/bravaisEmptyWallHint';
-@@ -37,11 +37,25 @@ describe('onlineWallHint', () => {
- 
- describe('localWallHint', () => {
-     it('points at the folder import only when the seam menu has it', () => {
--        expect(localWallHint(true, t)).toEqual({
-+        expect(localWallHint({ canImportFolder: true, canPickFiles: false }, t)).toEqual({
-             title: 'libraryBravaisHome.wallHint.localTitle',
-             body: 'libraryBravaisHome.wallHint.localBody {"action":"localMusic.importFolder"}',
-+            actions: undefined,
-+        });
-+        expect(localWallHint({ canImportFolder: false, canPickFiles: false }, t)).toEqual({
-+            title: 'libraryBravaisHome.wallHint.localTitle',
-+            body: 'libraryBravaisHome.wallHint.localBodyFilesOnly',
-+            actions: undefined,
-+        });
-+    });
-+
-+    it('puts the file import straight on the empty wall', () => {
-+        const onPickFiles = vi.fn();
-+        expect(localWallHint({ canImportFolder: false, canPickFiles: true, onPickFiles }, t)).toEqual({
-+            title: 'libraryBravaisHome.wallHint.localTitle',
-+            body: 'libraryBravaisHome.wallHint.localBodyFilesOnly',
-+            actions: [{ label: 'localMusic.importFiles', onClick: onPickFiles, primary: true }],
-         });
--        expect(localWallHint(false, t)).toEqual({ title: 'libraryBravaisHome.wallHint.localTitle', body: undefined });
-     });
- 
-     it('only names a local tab that can be opened', () => {
-diff --git a/test/unit/library/core/localHomeModel.test.ts b/test/unit/library/core/localHomeModel.test.ts
-index d4588ef..a574d93 100644
---- a/test/unit/library/core/localHomeModel.test.ts
-+++ b/test/unit/library/core/localHomeModel.test.ts
-@@ -140,6 +140,11 @@ describe('resolveLocalHomeActions', () => {
-         ]);
-     });
- 
-+    it('drops the folder import on devices without a folder picker', () => {
-+        // iPhone / 安卓 WebView：按下去什么都不会发生，所以这颗按钮根本不该出现，只留「刷新」。
-+        expect(resolveLocalHomeActions({ ...idle, canImportFolder: false }).map(action => action.id)).toEqual(['refresh-folders']);
-+    });
-+
-     it('a scan shows refresh as scanning', () => {
-         const actions = resolveLocalHomeActions({ ...idle, scan: { active: true, folderName: 'A', totalSongs: 2, completedSongs: 1 } });
-         expect(actions[1]).toMatchObject({ labelKey: 'options.scanning', pending: true, disabled: true });
-diff --git a/test/unit/library/suiteEntries.test.ts b/test/unit/library/suiteEntries.test.ts
-index e6659ec..11dcb59 100644
---- a/test/unit/library/suiteEntries.test.ts
-+++ b/test/unit/library/suiteEntries.test.ts
-@@ -109,9 +109,11 @@ describe('library suite entries', () => {
-         expect(relativeImports.filter(source => !DEFAULT_SUITE_EAGER_IMPORTS.includes(source))).toEqual([]);
-     });
- 
--    it('keeps the TUI out of production builds', () => {
-+    it('keeps the TUI behind a build flag, on in production too', () => {
-+        // 2026-11-25 起车机版把「清單」当主界面：打包给 VITE_LIBRARY_TUI=true，正式构建里同样生效。
-         const source = read(entryOf('tui'));
--        expect(source).toContain("const ENABLE_TUI = import.meta.env.DEV && import.meta.env.VITE_LIBRARY_TUI === 'true';");
-+        expect(source).toContain("const ENABLE_TUI = import.meta.env.VITE_LIBRARY_TUI === 'true';");
-+        expect(source).not.toContain('import.meta.env.DEV &&');
-         for (const component of ['LibraryTuiView', 'LibraryTuiHome', 'LibraryTuiArtist', 'LibraryTuiAccount']) {
-             expect(source).toContain(`const ${component} = ENABLE_TUI ? React.lazy(() => import('./${component}')) : null;`);
-         }
-diff --git a/test/unit/library/tuiAvailability.test.ts b/test/unit/library/tuiAvailability.test.ts
-index ec0678e..d8102b0 100644
---- a/test/unit/library/tuiAvailability.test.ts
-+++ b/test/unit/library/tuiAvailability.test.ts
-@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
- import '@/library/registry';
- 
- // test/unit/library/tuiAvailability.test.ts
--// 真实 entry 与 eager-glob registry 的开发验证门控；覆写 test.env 后重新装配，不用假 manifest 替代行为。
-+// 真实 entry 与 eager-glob registry 的门控；覆写 test.env 后重新装配，不用假 manifest 替代行为。
- // 与 registry.test 一样先在模块装载阶段转换默认网格的依赖，避免全量并发时首次转换占用单项行为的计时。
- 
- afterEach(() => {
-@@ -15,7 +15,9 @@ describe('TUI development validation availability', () => {
-         { name: 'a missing opt-in', dev: true, flag: undefined, enabled: false },
-         { name: 'an explicit false opt-in', dev: true, flag: 'false', enabled: false },
-         { name: 'DEV and an explicit true opt-in', dev: true, flag: 'true', enabled: true },
--        { name: 'production even with the opt-in true', dev: false, flag: 'true', enabled: false },
-+        // 2026-11-25：车机版要靠「清單」当主界面，打包时用 VITE_LIBRARY_TUI=true 打开，正式构建里也生效。
-+        { name: 'production with the opt-in true', dev: false, flag: 'true', enabled: true },
-+        { name: 'production without the opt-in', dev: false, flag: undefined, enabled: false },
-     ])('resolves $name', async ({ dev, flag, enabled }) => {
-         vi.resetModules();
-         vi.stubEnv('DEV', dev);
-# build 1795622315
