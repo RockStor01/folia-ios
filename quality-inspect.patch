@@ -21,7 +21,7 @@ index 39ec48c..114cb4d 100644
      <script src="/runtime-config.js"></script>
    <script type="importmap">
 diff --git a/package.json b/package.json
-index 6976461..dba7622 100644
+index 6976461..fbb63bf 100644
 --- a/package.json
 +++ b/package.json
 @@ -8,7 +8,7 @@
@@ -29,7 +29,7 @@ index 6976461..dba7622 100644
    },
    "private": true,
 -  "version": "0.8.0",
-+  "version": "0.9.17",
++  "version": "0.9.18",
    "license": "AGPL-3.0",
    "type": "module",
    "main": "electron/main.cjs",
@@ -1552,7 +1552,7 @@ index 5de4bf3..af66827 100644
      );
  };
 diff --git a/src/components/modal/newFeaturesRelease.ts b/src/components/modal/newFeaturesRelease.ts
-index e49a39c..a69585e 100644
+index e49a39c..b92b8e2 100644
 --- a/src/components/modal/newFeaturesRelease.ts
 +++ b/src/components/modal/newFeaturesRelease.ts
 @@ -1,4 +1,4 @@
@@ -1576,7 +1576,7 @@ index e49a39c..a69585e 100644
  export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
 -    i18nKey: 'releaseNotes.v0_8_0',
 -    majorUpdate: { codename: 'Severance' },
-+    i18nKey: 'releaseNotes.v0_9_17',
++    i18nKey: 'releaseNotes.v0_9_18',
      features: [
 -        { id: 'sourceMods', icon: Puzzle },
 -        { id: 'modMarket', icon: Store },
@@ -1584,9 +1584,9 @@ index e49a39c..a69585e 100644
 -        { id: 'moments', icon: MessageSquareText },
 -        { id: 'stemMixer', icon: SlidersVertical },
 -        { id: 'moreDetails', icon: Sparkles },
-+        { id: 'losslessCheck', icon: ShieldCheck },
++        { id: 'tagPlaceholder', icon: SpellCheck },
      ],
-+    fixes: ['local', 'spectrum', 'report', 'batch'],
++    fixes: ['question', 'filename', 'backfill'],
  };
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
@@ -2600,7 +2600,7 @@ index 2f367df..361d5da 100644
              enabled
              && window.electron?.requestTranscodeFallback
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..4378cb0 100644
+index 86f3b6d..b7afce2 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -2804,10 +2804,22 @@ index 86f3b6d..4378cb0 100644
      "transcodeFallbackDesc": "Converts tracks that cannot be decoded with FFmpeg. The file is not changed.",
      "playbackFade": "Fade on pause and resume",
      "playbackFadeDesc": "Fades out before pausing and back in on resume.",
-@@ -4513,6 +4506,244 @@ export default {
+@@ -4513,6 +4506,256 @@ export default {
      "noDescription": "No description available",
    },
    "releaseNotes": {
++    "v0_9_18": {
++      "intro": "0.9.18 fixes titles turning into question marks: on some head units the media probe doesn't emit U+FFFD but plain '?'. The bytes are equally gone, so the app re-reads the raw tag bytes from the file and only falls back to the file name as a last resort.",
++      "tagPlaceholder": {
++        "title": "Handling titles that became ?",
++        "description": "Detection is stricter but safer: only an all-question-mark string, three or more consecutive '?', two or more '?' between CJK characters, or a string that is mostly '?' counts as lost. A single question mark (“Are you ok?”) is not touched. When the native probe returns question marks during import, the raw ID3/Vorbis/MP4 bytes are read immediately; if the tags themselves were written as '?', the file name (minus track number and extension) becomes the title. Songs already imported are repaired in the background, 25 per launch.",
++      },
++      "fixes": {
++        "question": "Question-mark corruption is now detected, not just U+FFFD.",
++        "filename": "Falls back to a title derived from the file name, marked titleSource=filename.",
++        "backfill": "Background repair now covers imported songs as well as linked ones.",
++      }
++    },
 +    "v0_9_17": {
 +      "intro": "0.9.17 adds a real-lossless check inside the lossless search panel: a fast header-level screening, an on-device spectrum measurement, and loading a lossless-report.json produced on a PC.",
 +      "losslessCheck": {
@@ -3049,7 +3061,7 @@ index 86f3b6d..4378cb0 100644
      "v0_7_0": {
        "intro": "Here are the new features and improvements in version 0.7.0.",
        "temperaVisualExpansion": {
-@@ -5228,6 +5459,10 @@ export default {
+@@ -5228,6 +5471,10 @@ export default {
      "capsuleOpensPalette": "Click to open the command palette",
    },
    "localMusic": {
@@ -3060,7 +3072,7 @@ index 86f3b6d..4378cb0 100644
      "foldersAndPlaylists": "Folders",
      "albums": "Albums",
      "artists": "Artists",
-@@ -5242,8 +5477,34 @@ export default {
+@@ -5242,8 +5489,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -3095,7 +3107,7 @@ index 86f3b6d..4378cb0 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6314,13 @@ export default {
+@@ -6053,8 +6326,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -3111,7 +3123,7 @@ index 86f3b6d..4378cb0 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/in.ts b/src/i18n/locales/in.ts
-index fac0d47..fa53e55 100644
+index fac0d47..5b68971 100644
 --- a/src/i18n/locales/in.ts
 +++ b/src/i18n/locales/in.ts
 @@ -2796,6 +2796,7 @@ export default {
@@ -3132,10 +3144,22 @@ index fac0d47..fa53e55 100644
      "transcodeFallbackDesc": "Mengonversi trek yang tidak dapat didekode dengan FFmpeg. Berkas tidak diubah.",
      "playbackFade": "Fade saat jeda dan lanjut",
      "playbackFadeDesc": "Fade keluar sebelum jeda dan masuk kembali saat lanjut.",
-@@ -4513,6 +4516,161 @@ export default {
+@@ -4513,6 +4516,173 @@ export default {
      "noDescription": "Tidak ada deskripsi tersedia"
    },
    "releaseNotes": {
++    "v0_9_18": {
++      "intro": "0.9.18 fixes titles turning into question marks: on some head units the media probe doesn't emit U+FFFD but plain '?'. The bytes are equally gone, so the app re-reads the raw tag bytes from the file and only falls back to the file name as a last resort.",
++      "tagPlaceholder": {
++        "title": "Handling titles that became ?",
++        "description": "Detection is stricter but safer: only an all-question-mark string, three or more consecutive '?', two or more '?' between CJK characters, or a string that is mostly '?' counts as lost. A single question mark (“Are you ok?”) is not touched. When the native probe returns question marks during import, the raw ID3/Vorbis/MP4 bytes are read immediately; if the tags themselves were written as '?', the file name (minus track number and extension) becomes the title. Songs already imported are repaired in the background, 25 per launch.",
++      },
++      "fixes": {
++        "question": "Question-mark corruption is now detected, not just U+FFFD.",
++        "filename": "Falls back to a title derived from the file name, marked titleSource=filename.",
++        "backfill": "Background repair now covers imported songs as well as linked ones.",
++      }
++    },
 +    "v0_9_17": {
 +      "intro": "0.9.17 adds a real-lossless check inside the lossless search panel: a fast header-level screening, an on-device spectrum measurement, and loading a lossless-report.json produced on a PC.",
 +      "losslessCheck": {
@@ -3317,7 +3341,7 @@ index 23ebf79..336af7d 100644
      "playbackFade": "Làm mờ khi tạm dừng và tiếp tục",
      "playbackFadeDesc": "Giảm âm dần trước khi tạm dừng và tăng dần khi tiếp tục thay vì ngắt âm đột ngột. Bỏ qua nếu âm thanh không đi qua bộ xử lý âm thanh.",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..b80fb2a 100644
+index 0067e9a..1860120 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -3459,10 +3483,22 @@ index 0067e9a..b80fb2a 100644
      "transcodeFallbackDesc": "遇到无法解码的歌曲时用 FFmpeg 转换，不修改原文件。",
      "playbackFade": "暂停/播放淡入淡出",
      "playbackFadeDesc": "暂停前淡出，恢复时淡入。",
-@@ -4513,6 +4577,244 @@ export default {
+@@ -4513,6 +4577,256 @@ export default {
      "noDescription": "暂无详细介绍",
    },
    "releaseNotes": {
++    "v0_9_18": {
++      "intro": "0.9.18 修「歌名變成問號」：有些車機的媒體探針解不開標籤時不是丟 �，而是直接丟成 ?，位元組一樣救不回來，所以改成回檔案讀原始位元組，讀不出來才用檔名。",
++      "tagPlaceholder": {
++        "title": "歌名變成 ? 的處理",
++        "description": "判斷變嚴也變準：整串只有問號、連續三個以上問號、兩個以上問號夾在中文字之間、或問號佔一半以上，才會被當成壞掉；「你最近好嗎?」這種單一問號不誤判。匯入時若原生探針給的是問號，立刻回檔案讀 ID3／Vorbis／MP4 的原始位元組重解；連原始標籤也被寫成問號，就用檔名（去掉曲目編號與副檔名）當歌名，至少看得出是哪一首。已匯入的舊歌啟動後背景一批 25 首慢慢補。",
++      },
++      "fixes": {
++        "question": "問號型亂碼也納入偵測，不再只認 �。",
++        "filename": "原始標籤救不回來時用檔名推歌名，titleSource 標成 filename。",
++        "backfill": "背景回填改成不分連結／匯入來源，兩種歌都會補。",
++      }
++    },
 +    "v0_9_17": {
 +      "intro": "0.9.17 在「無損搜尋」面板裡加了真無損校驗：先做一次輕量初篩（只讀檔頭、壓縮比與編碼器痕跡），想更確定就當場量頻譜，也可以讀 PC 端產生的 lossless-report.json。",
 +      "losslessCheck": {
@@ -3704,7 +3740,7 @@ index 0067e9a..b80fb2a 100644
      "v0_7_0": {
        "intro": "以下是 0.7.0 的新功能与改进",
        "temperaVisualExpansion": {
-@@ -5228,6 +5530,10 @@ export default {
+@@ -5228,6 +5542,10 @@ export default {
      "capsuleOpensPalette": "点一下打开命令面板",
    },
    "localMusic": {
@@ -3715,7 +3751,7 @@ index 0067e9a..b80fb2a 100644
      "foldersAndPlaylists": "文件夹",
      "albums": "专辑",
      "artists": "艺术家",
-@@ -5242,8 +5548,34 @@ export default {
+@@ -5242,8 +5560,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -3750,7 +3786,7 @@ index 0067e9a..b80fb2a 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6383,13 @@ export default {
+@@ -6051,8 +6395,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -6434,7 +6470,7 @@ index 0000000..df20d8f
 +    }
 +}
 diff --git a/src/services/localMusicService.ts b/src/services/localMusicService.ts
-index 26a0181..4de0da8 100644
+index 26a0181..ac3adc3 100644
 --- a/src/services/localMusicService.ts
 +++ b/src/services/localMusicService.ts
 @@ -30,6 +30,16 @@ import { hasLocalCoverBinary } from './localCoverBinaryStore';
@@ -6527,7 +6563,7 @@ index 26a0181..4de0da8 100644
          audio.src = url;
      });
  }
-@@ -1204,6 +1242,348 @@ export async function importFolder(expectedRootName?: string): Promise<LocalSong
+@@ -1204,6 +1242,353 @@ export async function importFolder(expectedRootName?: string): Promise<LocalSong
      }
  }
  
@@ -6802,6 +6838,11 @@ index 26a0181..4de0da8 100644
 +                    embeddedAlbum = rawTags.album ?? embeddedAlbum;
 +                }
 +            }
++            // v0.9.18：原始標籤也壞掉（位元組真的被丟成 ?／�）時，別把問號當歌名存進曲庫——
++            // 交給檔名推導（extractMetadataFromFilename），至少還看得出是哪一首。
++            if (hasLostChars(embeddedTitle)) embeddedTitle = undefined;
++            if (hasLostChars(embeddedArtist)) embeddedArtist = undefined;
++            if (hasLostChars(embeddedAlbum)) embeddedAlbum = undefined;
 +
 +            const metadata = extractMetadataFromFilename(file.name);
 +            const importedMetadata = buildImportedMetadataSnapshot({
@@ -6876,7 +6917,7 @@ index 26a0181..4de0da8 100644
  /** Imports a folder the caller already holds instead of asking the picker (the dev mock song's OPFS folder). */
  export async function importDirectoryHandle(dirHandle: FileSystemDirectoryHandle): Promise<LocalSong[]> {
      return await runLocalFolderMutation(() => importFolderContents(dirHandle));
-@@ -1614,6 +1994,7 @@ export async function deleteLocalSong(id: string): Promise<void> {
+@@ -1614,6 +1999,7 @@ export async function deleteLocalSong(id: string): Promise<void> {
      await Promise.all([
          dbDeleteLocalSong(id),
          removeCachedCover(`cover_local_${id}`),
@@ -6884,7 +6925,7 @@ index 26a0181..4de0da8 100644
      ]);
  }
  
-@@ -1714,6 +2095,14 @@ async function cleanupDirHandleIfUnused(rootFolderName: string): Promise<void> {
+@@ -1714,6 +2100,14 @@ async function cleanupDirHandleIfUnused(rootFolderName: string): Promise<void> {
  // Get audio blob from local song using fileHandle
  // Returns blob URL if fileHandle exists, null otherwise
  export async function getAudioFromLocalSong(song: LocalSong): Promise<string | null> {
@@ -6899,7 +6940,7 @@ index 26a0181..4de0da8 100644
      const fileHandle = await getAccessibleFileHandle(song);
  
      if (fileHandle) {
-@@ -1738,6 +2127,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
+@@ -1738,6 +2132,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
          }
      }
  
@@ -6916,7 +6957,7 @@ index 26a0181..4de0da8 100644
      // No accessible handle available - permission may need to be restored or the file moved.
      console.warn(`[LocalMusic] No accessible handle for song ${song.id}. Permission restore or re-import is required.`);
      return null;
-@@ -1745,6 +2144,15 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
+@@ -1745,6 +2149,15 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
  
  /** Resolves the current File for playback recovery without changing the song or minting a URL. */
  export async function getFileFromLocalSong(song: LocalSong): Promise<File | null> {
@@ -6932,7 +6973,7 @@ index 26a0181..4de0da8 100644
      const fileHandle = await getAccessibleFileHandle(song);
      if (fileHandle) {
          try {
-@@ -1755,6 +2163,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+@@ -1755,6 +2168,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
          }
      }
  
@@ -6942,7 +6983,7 @@ index 26a0181..4de0da8 100644
      const recoveredHandle = await recoverFileHandleFromPersistedDirectory(song);
      if (!recoveredHandle) return null;
      try {
-@@ -1774,14 +2185,22 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+@@ -1774,14 +2190,22 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
   * from its own handle. Mirrors getAudioFromLocalSong's resolution (accessible handle, else a recover)
   * but returns the ArrayBuffer. Null when no handle can be reached - permission not restored, or moved.
   */
@@ -6968,7 +7009,7 @@ index 26a0181..4de0da8 100644
      } catch (error) {
          console.error('[LocalMusic] Failed to read local bytes:', error);
          fileHandleMap.delete(song.id);
-@@ -1789,6 +2208,44 @@ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuf
+@@ -1789,6 +2213,44 @@ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuf
      }
  }
  
@@ -7013,7 +7054,7 @@ index 26a0181..4de0da8 100644
  // Extracts and persists one song's embedded cover after an explicit playback-time request.
  async function extractAndPersistSongCover(
      song: LocalSong,
-@@ -1880,6 +2337,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
+@@ -1880,6 +2342,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
      await Promise.all([
          dbDeleteLocalSongs(uniqueSongIds),
          ...uniqueSongIds.map(id => removeCachedCover(`cover_local_${id}`)),
@@ -7361,12 +7402,93 @@ index 0000000..72a4528
 +    console.info(`[FileLyrics] hydrated ${song.fileName} from ${payload.origin}`);
 +    return updated;
 +};
+diff --git a/src/services/localSongRawTagBackfill.ts b/src/services/localSongRawTagBackfill.ts
+new file mode 100644
+index 0000000..a950781
+--- /dev/null
++++ b/src/services/localSongRawTagBackfill.ts
+@@ -0,0 +1,75 @@
++// src/services/localSongRawTagBackfill.ts
++// v0.9.18：把「標籤壞成 � 或 ?」的歌，回檔案讀原始位元組補回來。
++//
++// 為什麼要另開一支：localSongRawTags 不能直接 import localMusicService（那邊反過來 import 它，會成環），
++// 所以「怎麼讀位元組」留在這裡，localSongRawTags 只負責解析與決定要不要補。
++// 連結模式走原生 Range（不用把整首讀進來），匯入模式走 FileHandle slice。
++
++import type { LocalSong } from '../types';
++import { getLocalSongs, saveLocalSongs } from './db';
++import { getLocalSongRangeBytes } from './localMusicService';
++import { fetchNativeRange } from './nativeLinkedStorage';
++import { hasLostChars, parseRawTags, planTagPatch, type RawTagStrings } from './localSongRawTags';
++
++/** 檔頭 4 MB 足以蓋住 ID3v2、flac 的 Vorbis comment、m4a 的 moov。 */
++const HEAD_BYTES = 4 * 1024 * 1024;
++/** APEv2、DSF 的內嵌 ID3 貼在檔尾。 */
++const TAIL_BYTES = 512 * 1024;
++
++/** 每次啟動補一批，避免 2000 多首一次讀檔把車機拖住。 */
++const BATCH_SIZE = 25;
++
++const readRange = async (song: LocalSong, startAt: number, byteLength: number): Promise<ArrayBuffer | null> => {
++    if (song.linkedFilePath) return await fetchNativeRange(song.linkedFilePath, byteLength, startAt);
++    return await getLocalSongRangeBytes(song, startAt, byteLength);
++};
++
++export const readSongRawTags = async (song: LocalSong): Promise<RawTagStrings | null> => {
++    try {
++        const head = await readRange(song, 0, HEAD_BYTES);
++        if (head && head.byteLength > 0) {
++            const tags = parseRawTags(new Uint8Array(head), song.fileName);
++            if (tags) return tags;
++        }
++        const size = Math.max(0, song.fileSize || 0);
++        if (size <= 0) return null;
++        const tailLength = Math.min(TAIL_BYTES, size);
++        const tail = await readRange(song, size - tailLength, tailLength);
++        if (!tail || tail.byteLength === 0) return null;
++        return parseRawTags(new Uint8Array(tail), song.fileName);
++    } catch (error) {
++        console.warn('[RawTags] read failed:', song.fileName, error);
++        return null;
++    }
++};
++
++const isLost = (song: LocalSong): boolean => hasLostChars(song.title)
++    || hasLostChars(song.importedMetadata.artistNames.join(''))
++    || hasLostChars(song.importedMetadata.albumName);
++
++/**
++ * 背景回填：只處理「標題／歌手／專輯壞掉」的歌，一批 25 首。
++ * 大小寫與順序不重要，重點是每次啟動都能往前推進一點。
++ */
++export const backfillLostTagSongs = async (batchSize = BATCH_SIZE): Promise<number> => {
++    try {
++        const songs = await getLocalSongs();
++        const targets = songs.filter(isLost).slice(0, batchSize);
++        if (targets.length === 0) return 0;
++        const patched: LocalSong[] = [];
++        for (const song of targets) {
++            const tags = await readSongRawTags(song);
++            if (!tags) continue;
++            const fixed = planTagPatch(song, tags);
++            if (fixed) patched.push(fixed);
++        }
++        if (patched.length === 0) return 0;
++        await saveLocalSongs(patched);
++        window.dispatchEvent(new CustomEvent('folia-local-music-updated'));
++        console.info(`[RawTags] repaired ${patched.length} song(s) from raw tag bytes`);
++        return patched.length;
++    } catch (error) {
++        console.warn('[RawTags] backfill failed', error);
++        return 0;
++    }
++};
 diff --git a/src/services/localSongRawTags.ts b/src/services/localSongRawTags.ts
 new file mode 100644
-index 0000000..368b099
+index 0000000..239300b
 --- /dev/null
 +++ b/src/services/localSongRawTags.ts
-@@ -0,0 +1,361 @@
+@@ -0,0 +1,405 @@
 +// src/services/localSongRawTags.ts
 +// 車機的 MediaMetadataRetriever 會用錯編碼解標籤，整串變成 �（位元組已經被丟掉，事後再修也救不回來）。
 +// 這裡改成自己讀檔案的原始位元組：ID3v2（mp3／wav／aiff／tta／dsf／dff）、VORBIS_COMMENT（flac）、
@@ -7684,49 +7806,93 @@ index 0000000..368b099
 +    return parseRawTags(new Uint8Array(tail), fileName);
 +};
 +
-+/** 一段文字是不是「已經壞掉、救不回來」（含 U+FFFD）。 */
-+export const hasLostChars = (value: string | null | undefined): boolean => Boolean(value && /\ufffd/u.test(value));
++/**
++ * 一段文字是不是「已經壞掉」。
++ * v0.9.18：不只 U+FFFD，問號也算——Android 的 MediaMetadataRetriever 用錯編碼時，
++ * 有些機型是把位元組換成 U+FFFD，有些是直接換成 '?'（同一個位元組被丟掉，事後一樣救不回來）。
++ * 判定刻意保守：連續三個以上的 ?、兩個以上 ? 夾在中文之間、或 ? 佔全長一半以上（且至少 3 個）；
++ * 單一問號與句尾的「真的??」都不算，避免把歌名本身就帶問號的正常檔當成壞檔。
++ */
++const CJK_RANGE = '\u3400-\u9fff\uf900-\ufaff';
++const PLACEHOLDER_RUN = /\?\?\?/u;
++const PLACEHOLDER_BETWEEN_CJK = new RegExp(`[${CJK_RANGE}]\\?\\?+[${CJK_RANGE}]`, 'u');
++/** 單一個問號夾在兩個中文字之間；一個不算（可能是歌名本身的問號），兩個以上就當成被吃掉的字。 */
++const QUESTION_BETWEEN_CJK = new RegExp(`[${CJK_RANGE}](?=\\?[${CJK_RANGE}])`, 'gu');
 +
-+const patchFromRawTags = (song: LocalSong, tags: RawTagStrings): LocalSong | null => {
-+    const meta = song.importedMetadata;
-+    const artistLost = hasLostChars(meta.artistNames.join(''));
-+    const albumLost = hasLostChars(meta.albumName);
-+    if (!hasLostChars(song.title) && !artistLost && !albumLost) return null;
-+    const next: LocalSong = { ...song, importedMetadata: { ...meta } };
-+    if (hasLostChars(song.title) && tags.title) next.title = tags.title;
-+    if (artistLost && tags.artist) next.importedMetadata.artistNames = [tags.artist];
-+    if (albumLost && tags.album) next.importedMetadata.albumName = tags.album;
-+    return next;
++export const hasLostChars = (value: string | null | undefined): boolean => {
++    if (!value) return false;
++    if (/\ufffd/u.test(value)) return true;
++    const trimmed = value.trim();
++    // 整串只有問號（「?」「????」）幾乎不可能是一個正常歌名。
++    if (/^\?+$/u.test(trimmed)) return true;
++    const questionMarks = (value.match(/\?/g) ?? []).length;
++    if (questionMarks === 0) return false;
++    if (PLACEHOLDER_RUN.test(value)) return true;
++    // 開頭就是兩個以上問號：正常歌名不會這樣起頭（句尾的「真的??」仍然放行）。
++    if (/^\?\?/u.test(trimmed)) return true;
++    if (PLACEHOLDER_BETWEEN_CJK.test(value)) return true;
++    if (questionMarks >= 2) {
++        const between = value.match(QUESTION_BETWEEN_CJK) ?? [];
++        if (between.length >= 2) return true;
++    }
++    // 半數以上是問號，且整串夠長（太短像「真的??」這種正常寫法不判）
++    return questionMarks >= 2 && trimmed.length >= 5 && questionMarks / trimmed.length >= 0.5;
 +};
 +
 +/**
-+ * 已經匯入、標題卻含 � 的連結歌：回檔案讀原始標籤補回來。
-+ * 每次啟動只補一小批（25 首），避免 2200 首一次讀檔把車機拖住。
++ * 標題救不回來時，退而用檔名（去掉副檔名、開頭的曲目編號、底線）。
++ * 檔名本身也壞掉就回空字串，呼叫端不要拿它去覆蓋。
 + */
-+export const backfillLinkedSongLostTags = async (): Promise<void> => {
-+    try {
-+        const songs = await getLocalSongs();
-+        const targets = songs
-+            .filter(song => Boolean(song.linkedFilePath)
-+                && (hasLostChars(song.title)
-+                    || hasLostChars(song.importedMetadata.artistNames.join(''))
-+                    || hasLostChars(song.importedMetadata.albumName)))
-+            .slice(0, 25);
-+        if (targets.length === 0) return;
-+        const patched: LocalSong[] = [];
-+        for (const song of targets) {
-+            const tags = await readLinkedSongRawTags(song.linkedFilePath as string, song.fileName, song.fileSize);
-+            if (!tags) continue;
-+            const fixed = patchFromRawTags(song, tags);
-+            if (fixed) patched.push(fixed);
++export const fileNameToTitle = (fileName: string): string => {
++    const stem = (fileName ?? '').replace(/\.([a-z0-9]{2,5})$/iu, '');
++    const title = stem
++        .replace(/^\[\d+\]\s*/u, '')
++        .replace(/^\d{1,3}[.\-_\s]+/u, '')
++        .replace(/_+/gu, ' ')
++        .replace(/\s{2,}/gu, ' ')
++        .trim();
++    if (!title || hasLostChars(title)) return '';
++    return title;
++};
++
++/**
++ * 決定一首歌要怎麼補：原始標籤優先，標籤也壞掉就退到檔名（只補標題，歌手／專輯沒有檔名可退）。
++ * 回 null = 沒東西可改，呼叫端不要白寫一次 DB。
++ */
++export const planTagPatch = (song: LocalSong, tags: RawTagStrings): LocalSong | null => {
++    const meta = song.importedMetadata;
++    const titleLost = hasLostChars(song.title);
++    const artistLost = hasLostChars(meta.artistNames.join(''));
++    const albumLost = hasLostChars(meta.albumName);
++    if (!titleLost && !artistLost && !albumLost) return null;
++
++    const next: LocalSong = { ...song, importedMetadata: { ...meta } };
++    let changed = false;
++
++    if (titleLost) {
++        if (tags.title && !hasLostChars(tags.title)) {
++            next.title = tags.title;
++            next.importedMetadata.title = tags.title;
++            changed = true;
++        } else {
++            const fromFileName = fileNameToTitle(song.fileName);
++            if (fromFileName) {
++                next.title = fromFileName;
++                next.importedMetadata.title = fromFileName;
++                next.importedMetadata.titleSource = 'filename';
++                changed = true;
++            }
 +        }
-+        if (patched.length === 0) return;
-+        await saveLocalSongs(patched);
-+        window.dispatchEvent(new CustomEvent('folia-local-music-updated'));
-+        console.info(`[RawTags] repaired ${patched.length} linked song(s) from raw tag bytes`);
-+    } catch (error) {
-+        console.warn('[RawTags] backfill failed', error);
 +    }
++    if (artistLost && tags.artist && !hasLostChars(tags.artist)) {
++        next.importedMetadata.artistNames = [tags.artist];
++        changed = true;
++    }
++    if (albumLost && tags.album && !hasLostChars(tags.album)) {
++        next.importedMetadata.albumName = tags.album;
++        changed = true;
++    }
++    return changed ? next : null;
 +};
 diff --git a/src/services/musicbrainzSearch.ts b/src/services/musicbrainzSearch.ts
 new file mode 100644
@@ -8125,7 +8291,7 @@ index 0000000..345d36f
 +    }
 +};
 diff --git a/src/services/repositories/localSongRepository.ts b/src/services/repositories/localSongRepository.ts
-index 595b81c..d3fa0af 100644
+index 595b81c..2465e98 100644
 --- a/src/services/repositories/localSongRepository.ts
 +++ b/src/services/repositories/localSongRepository.ts
 @@ -3,12 +3,15 @@ import { isBlob } from '../../utils/blobGuards';
@@ -8171,12 +8337,12 @@ index 595b81c..d3fa0af 100644
 -  migrateStoredLocalSongs(await appDatabase.local_music.toArray())
 -);
 +let rawTagBackfillStarted = false;
-+/** 標題含 � 的連結歌：背景回檔案讀原始標籤（每批 25 首，跑一次就好）。 */
++/** 標題壞成 � 或 ? 的歌：背景回檔案讀原始標籤（每批 25 首，一次啟動只跑一輪）。 */
 +const scheduleRawTagBackfill = (): void => {
 +  if (rawTagBackfillStarted) return;
 +  rawTagBackfillStarted = true;
-+  void import('../localSongRawTags')
-+    .then(module => module.backfillLinkedSongLostTags())
++  void import('../localSongRawTagBackfill')
++    .then(module => module.backfillLostTagSongs())
 +    .catch(error => console.warn('[RawTags] backfill import failed', error));
 +};
 +
@@ -9508,6 +9674,98 @@ index 89340da..b05172a 100644
    "folia_playback_fade_enabled",
    "folia_playback_source",
    "folia_ponder_seen",
+diff --git a/test/unit/tagPlaceholder.test.ts b/test/unit/tagPlaceholder.test.ts
+new file mode 100644
+index 0000000..9615b49
+--- /dev/null
++++ b/test/unit/tagPlaceholder.test.ts
+@@ -0,0 +1,86 @@
++import { describe, expect, it } from 'vitest';
++import { fileNameToTitle, hasLostChars, planTagPatch } from '@/services/localSongRawTags';
++import type { LocalSong } from '@/types';
++
++// test/unit/tagPlaceholder.test.ts
++// v0.9.18：有些機型把解不開的標籤位元組換成 '?'（而不是 �）。這裡驗「怎麼算壞掉」與「壞掉後補什麼」。
++
++type SongOverrides = Partial<Omit<LocalSong, 'importedMetadata'>> & { importedMetadata?: Partial<LocalSong['importedMetadata']> };
++
++const song = (overrides: SongOverrides = {}): LocalSong => {
++    const base: LocalSong = {
++        id: 'x',
++        fileName: '01 - 晴天.flac',
++        filePath: 'x',
++        duration: 0,
++        fileSize: 100,
++        mimeType: 'audio/flac',
++        addedAt: 0,
++        title: '晴天',
++        titleOrigin: 'import',
++        importedMetadata: { title: '晴天', titleSource: 'embedded', artistNames: ['周杰倫'], albumName: '范特西' },
++    } as LocalSong;
++    return {
++        ...base,
++        ...overrides,
++        importedMetadata: { ...base.importedMetadata, ...(overrides.importedMetadata ?? {}) },
++    } as LocalSong;
++};
++
++describe('hasLostChars', () => {
++    it('正常中文與單一問號不算壞', () => {
++        expect(hasLostChars('晴天')).toBe(false);
++        expect(hasLostChars('你最近好嗎?')).toBe(false);
++        expect(hasLostChars('真的??')).toBe(false);
++        expect(hasLostChars('周?倫')).toBe(false);
++        expect(hasLostChars('')).toBe(false);
++        expect(hasLostChars(undefined)).toBe(false);
++    });
++
++    it('問號型亂碼算壞', () => {
++        expect(hasLostChars('?')).toBe(true);
++        expect(hasLostChars('???')).toBe(true);
++        expect(hasLostChars('周杰倫 - ????')).toBe(true);
++        expect(hasLostChars('周?杰?倫')).toBe(true);
++        expect(hasLostChars('??晴天')).toBe(true);
++    });
++
++    it('U+FFFD 仍然算壞', () => {
++        expect(hasLostChars('晴\uFFFD天')).toBe(true);
++    });
++});
++
++describe('fileNameToTitle', () => {
++    it('去掉副檔名、曲目編號與底線', () => {
++        expect(fileNameToTitle('01 - 晴天.flac')).toBe('晴天');
++        expect(fileNameToTitle('12.夜曲.flac')).toBe('夜曲');
++        expect(fileNameToTitle('[03] 東風破.flac')).toBe('東風破');
++        expect(fileNameToTitle('周杰倫_-_晴天.flac')).toBe('周杰倫 - 晴天');
++    });
++
++    it('檔名本身也壞掉時回空字串', () => {
++        expect(fileNameToTitle('????.flac')).toBe('');
++    });
++});
++
++describe('planTagPatch', () => {
++    it('原始標籤可用就用標籤', () => {
++        const target = song({ title: '????', importedMetadata: { title: '????' } });
++        const fixed = planTagPatch(target, { title: '晴天', artist: '周杰倫' });
++        expect(fixed?.title).toBe('晴天');
++        expect(fixed?.importedMetadata.title).toBe('晴天');
++        expect(fixed?.importedMetadata.artistNames).toEqual(['周杰倫']);
++    });
++
++    it('原始標籤也是壞的，退到檔名', () => {
++        const target = song({ title: '????', importedMetadata: { title: '????' } });
++        const fixed = planTagPatch(target, { title: '???', artist: '???' });
++        expect(fixed?.title).toBe('晴天');
++        expect(fixed?.importedMetadata.titleSource).toBe('filename');
++        expect(fixed?.importedMetadata.artistNames).toEqual(['周杰倫']);
++    });
++
++    it('沒壞就不動', () => {
++        expect(planTagPatch(song(), { title: '晴天' })).toBeNull();
++    });
++});
 diff --git a/test/unit/textEncodingRepair.test.ts b/test/unit/textEncodingRepair.test.ts
 new file mode 100644
 index 0000000..659414d
