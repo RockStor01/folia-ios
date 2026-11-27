@@ -988,6 +988,15 @@ public class FoliaNativeStorage {
                 result.put("error", "file not readable");
                 return result.toString();
             }
+            // DSD／APE／WavPack／TAK／TTA：MediaExtractor 連容器都認不得，有的 ROM 在 setDataSource 或
+            // createDecoderByType 就直接在原生層 SIGSEGV（Java 抓不到 Throwable，整個 App 閃退）。
+            // 所以先擋在門口，回一個明確的錯誤給頁面去顯示，不要把它丟進解碼器碰運氣。
+            String lowerPath = filePath.toLowerCase(java.util.Locale.US);
+            if (lowerPath.matches(".*\\.(dsf|dff|ape|wv|tak|tta)$")) {
+                result.put("state", "failed");
+                result.put("error", "unsupported-format");
+                return result.toString();
+            }
             String key = sha1(filePath + "|" + source.length() + "|" + source.lastModified());
             File target = new File(wavCacheDir(), key + ".wav");
             String url = "http://127.0.0.1:" + port + "/f/" + Base64Url.encode(target.getAbsolutePath());

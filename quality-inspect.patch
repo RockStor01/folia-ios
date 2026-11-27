@@ -1552,7 +1552,7 @@ index 5de4bf3..af66827 100644
      );
  };
 diff --git a/src/components/modal/newFeaturesRelease.ts b/src/components/modal/newFeaturesRelease.ts
-index e49a39c..b92b8e2 100644
+index e49a39c..27cb66d 100644
 --- a/src/components/modal/newFeaturesRelease.ts
 +++ b/src/components/modal/newFeaturesRelease.ts
 @@ -1,4 +1,4 @@
@@ -1570,7 +1570,7 @@ index e49a39c..b92b8e2 100644
      /** 重大更新：介绍上方显示「<代号> Update · 重大更新」标签；代号不翻译，文案在 help.majorUpdateLabel。
       *  servicePack：同一重大更新的热修复版，标签改成「<代号> Update SP<n> · 重大更新」，文案在 help.servicePackLabel。 */
      majorUpdate?: { codename: string; servicePack?: number };
-@@ -18,14 +20,9 @@ type NewFeaturesRelease = {
+@@ -18,14 +20,10 @@ type NewFeaturesRelease = {
  
  // Defines the current release's cards; their localized text lives under i18nKey in every locale.
  export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
@@ -1585,8 +1585,9 @@ index e49a39c..b92b8e2 100644
 -        { id: 'stemMixer', icon: SlidersVertical },
 -        { id: 'moreDetails', icon: Sparkles },
 +        { id: 'tagPlaceholder', icon: SpellCheck },
++        { id: 'undecodable', icon: FileAudio },
      ],
-+    fixes: ['question', 'filename', 'backfill'],
++    fixes: ['question', 'filename', 'backfill', 'dsd'],
  };
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
@@ -2486,10 +2487,10 @@ index 0000000..c69bf5d
 +    return rows;
 +};
 diff --git a/src/hooks/useTranscodeFallback.ts b/src/hooks/useTranscodeFallback.ts
-index 2f367df..361d5da 100644
+index 2f367df..197931e 100644
 --- a/src/hooks/useTranscodeFallback.ts
 +++ b/src/hooks/useTranscodeFallback.ts
-@@ -6,6 +6,7 @@ import type { PlaybackRecoveryTarget } from '../types/playbackRecovery';
+@@ -6,10 +6,12 @@ import type { PlaybackRecoveryTarget } from '../types/playbackRecovery';
  import { classifyMediaElementFailure } from '../services/playbackRecovery/mediaFailureClassifier';
  import { cancelPlayableTranscode, startPlayableTranscode } from '../services/playbackRecovery/playableSourceService';
  import { registerPlaybackRepresentation } from '../services/playbackRecovery/representationRegistry';
@@ -2497,7 +2498,12 @@ index 2f367df..361d5da 100644
  import { useAudioSettingsStore } from '../stores/useAudioSettingsStore';
  import { setStatusMessage } from '../stores/useStatusMessageStore';
  import { usePlaybackStore } from '../stores/usePlaybackStore';
-@@ -51,6 +52,8 @@ export function useTranscodeFallback({
+ import { getPlaybackSongKey, isLocalPlaybackSong, isNavidromePlaybackSong } from '../utils/appPlaybackGuards';
++import { isUnsupportedOnDevice, unsupportedFormatLabel } from '../utils/deviceDecodeSupport';
+ import i18n from '../i18n/config';
+ 
+ // Coordinates asynchronous recovery ownership without rebuilding the playback graph or song state.
+@@ -51,6 +53,8 @@ export function useTranscodeFallback({
      // effect re-arms the warm deck with the same URL on every timeupdate, so a track FFmpeg cannot
      // decode would otherwise respawn a failing job several times a second for the whole arm window.
      const failedRepresentationsRef = useRef(new Set<string>());
@@ -2506,18 +2512,28 @@ index 2f367df..361d5da 100644
  
      useEffect(() => {
          generationRef.current += 1;
-@@ -75,6 +78,92 @@ export function useTranscodeFallback({
+@@ -75,6 +79,102 @@ export function useTranscodeFallback({
          }
  
          const song = target.song;
 +        if (!song) return false;
 +
 +        // 車機（Android APK）沒有 electron 的 FFmpeg：改用原生 MediaCodec 把系統解得開、
-+        // WebView 卻解不開的格式（ALAC／APE／WMA／DSF／DFF／TTA…）轉成 WAV，換掉 src 就好。
-+        // 這就是「效仿 Aurora」的那一段：能不能播取決於車機自己的解碼器，而不是 WebView 的。
-+        const linkedPath = isLocalPlaybackSong(song)
-+            ? localSongs.find(entry => entry.id === song.localRef.songId)?.linkedFilePath
++        // WebView 卻解不開的格式（ALAC／WMA…）轉成 WAV，換掉 src 就好。
++        const localSong = isLocalPlaybackSong(song)
++            ? localSongs.find(entry => entry.id === song.localRef.songId)
 +            : undefined;
++        const linkedPath = localSong?.linkedFilePath;
++
++        // DSD／APE／WavPack／TAK／TTA：MediaExtractor 連容器都認不得，有的 ROM 直接在原生層 SIGSEGV，
++        // JS 接不到錯誤，使用者看到的就是閃退。這裡先擋掉，回一句看得懂的話再跳歌。
++        if (localSong && isUnsupportedOnDevice(localSong.fileName)) {
++            const format = unsupportedFormatLabel(localSong.fileName);
++            setStatusMessage({ type: 'error', text: i18n.t('status.undecodableFormat', { format }) });
++            if (target.role === 'warm') clearFailedWarmSource(element, failedSource);
++            else skipAfterPlaybackFailure();
++            return true;
++        }
 +        const canUseNative = Boolean(
 +            enabled
 +            && !window.electron?.requestTranscodeFallback
@@ -2600,7 +2616,7 @@ index 2f367df..361d5da 100644
              enabled
              && window.electron?.requestTranscodeFallback
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..b7afce2 100644
+index 86f3b6d..ff55050 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -2761,7 +2777,15 @@ index 86f3b6d..b7afce2 100644
      "homeTreeHints": "←→ fold",
      "homeBatchHints": "Ins select · {{mod}}+A all · {{mod}}+Enter play · {{mod}}+Shift+Enter queue",
      "homeSelection": "{{count}} selected · {{tracks}} songs",
-@@ -2796,6 +2775,7 @@ export default {
+@@ -934,6 +913,7 @@ export default {
+     "transcodeFallbackStarting": "Converting unsupported audio for playback...",
+     "transcodeFallbackReady": "Audio converted; resuming playback",
+     "transcodeFallbackFailed": "Audio conversion failed",
++    "undecodableFormat": "This device has no decoder for {{format}} (DSD / APE / TAK); convert it to FLAC on a PC first",
+     "lyricsSourceSwitched": "Lyrics source switched",
+     "lyricFileIssueShifted": "Translations in the lyric file for \"{{title}}\" are off by one line. See the Folder tab of the player panel for a fix",
+     "clearedManualLyrics": "Cleared manually matched/uploaded lyrics",
+@@ -2796,6 +2776,7 @@ export default {
      "settingsPageHome": "Home & playlists",
      "settingsPagePlayback": "Playback",
      "settingsPageLyrics": "Lyrics",
@@ -2769,7 +2793,7 @@ index 86f3b6d..b7afce2 100644
      "settingsPageGeneral": "General",
      "settingsPageInteraction": "Shortcuts",
      "settingsPageIntegration": "Connections",
-@@ -3125,6 +3105,13 @@ export default {
+@@ -3125,6 +3106,13 @@ export default {
      "memoryByProcess": "By process",
      "memorySeriesUnavailable": "Not reported on this platform",
      "reduceMotionSection": "Reduce motion",
@@ -2783,7 +2807,7 @@ index 86f3b6d..b7afce2 100644
      "reduceMotionSectionDesc": "Folia plays full animation by default. Turn an item on to reduce motion there.",
      "reduceMotionFollowSystem": "Follow system setting",
      "reduceMotionFollowSystemDesc": "The system's animation setting decides all motion",
-@@ -3336,6 +3323,10 @@ export default {
+@@ -3336,6 +3324,10 @@ export default {
      "uiZoom": "Interface zoom",
      "uiZoomDesc": "Zoom the whole main window by a fixed step. With a large display scale in Windows the window feels cramped; zoom out to see more. The remote control window keeps its size.",
      "uiZoomStep": "Zoom",
@@ -2794,7 +2818,7 @@ index 86f3b6d..b7afce2 100644
      "minimizeToTray": "Minimize to tray",
      "closeToTray": "Close window to tray",
      "closeToTrayDesc": "The close button hides the window to the tray instead of quitting",
-@@ -4201,7 +4192,9 @@ export default {
+@@ -4201,7 +4193,9 @@ export default {
      "invalidJsonFormat": "Invalid JSON format",
      "pasteJsonHere": "Paste JSON here...",
      "settingsHeadingSound": "Sound & devices",
@@ -2804,7 +2828,7 @@ index 86f3b6d..b7afce2 100644
      "transcodeFallbackDesc": "Converts tracks that cannot be decoded with FFmpeg. The file is not changed.",
      "playbackFade": "Fade on pause and resume",
      "playbackFadeDesc": "Fades out before pausing and back in on resume.",
-@@ -4513,6 +4506,256 @@ export default {
+@@ -4513,6 +4507,261 @@ export default {
      "noDescription": "No description available",
    },
    "releaseNotes": {
@@ -2814,7 +2838,12 @@ index 86f3b6d..b7afce2 100644
 +        "title": "Handling titles that became ?",
 +        "description": "Detection is stricter but safer: only an all-question-mark string, three or more consecutive '?', two or more '?' between CJK characters, or a string that is mostly '?' counts as lost. A single question mark (“Are you ok?”) is not touched. When the native probe returns question marks during import, the raw ID3/Vorbis/MP4 bytes are read immediately; if the tags themselves were written as '?', the file name (minus track number and extension) becomes the title. Songs already imported are repaired in the background, 25 per launch.",
 +      },
++      "undecodable": {
++        "title": "DSD / APE no longer crash the app",
++        "description": "The head unit's MediaExtractor does not recognise dsf/dff/ape/wv/tak/tta, and on some ROMs it fails inside the native layer where JS cannot catch it — the symptom is tapping a song and Folia closing itself. This build blocks it in three places: resolving the playback source returns a plain “no decoder for this format” message, the native transcode entry rejects the format without ever touching MediaExtractor, and the playback-failure fallback no longer retries transcoding. The trade-off is honest: these formats simply will not play on the head unit — convert them to FLAC on a PC first.",
++      },
 +      "fixes": {
++        "dsd": "DSD/APE/TAK containers now show a message and skip instead of going into the decoder.",
 +        "question": "Question-mark corruption is now detected, not just U+FFFD.",
 +        "filename": "Falls back to a title derived from the file name, marked titleSource=filename.",
 +        "backfill": "Background repair now covers imported songs as well as linked ones.",
@@ -3061,7 +3090,7 @@ index 86f3b6d..b7afce2 100644
      "v0_7_0": {
        "intro": "Here are the new features and improvements in version 0.7.0.",
        "temperaVisualExpansion": {
-@@ -5228,6 +5471,10 @@ export default {
+@@ -5228,6 +5477,10 @@ export default {
      "capsuleOpensPalette": "Click to open the command palette",
    },
    "localMusic": {
@@ -3072,7 +3101,7 @@ index 86f3b6d..b7afce2 100644
      "foldersAndPlaylists": "Folders",
      "albums": "Albums",
      "artists": "Artists",
-@@ -5242,8 +5489,34 @@ export default {
+@@ -5242,8 +5495,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -3107,7 +3136,7 @@ index 86f3b6d..b7afce2 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6326,13 @@ export default {
+@@ -6053,8 +6332,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -3123,10 +3152,18 @@ index 86f3b6d..b7afce2 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/in.ts b/src/i18n/locales/in.ts
-index fac0d47..5b68971 100644
+index fac0d47..dac89c8 100644
 --- a/src/i18n/locales/in.ts
 +++ b/src/i18n/locales/in.ts
-@@ -2796,6 +2796,7 @@ export default {
+@@ -934,6 +934,7 @@ export default {
+     "transcodeFallbackStarting": "Mengonversi audio yang tidak didukung untuk pemutaran...",
+     "transcodeFallbackReady": "Audio selesai dikonversi; melanjutkan pemutaran",
+     "transcodeFallbackFailed": "Konversi audio gagal",
++    "undecodableFormat": "Perangkat ini tidak punya dekoder untuk {{format}} (DSD / APE / TAK); konversikan ke FLAC di PC dulu",
+     "lyricsSourceSwitched": "Sumber lirik diganti",
+     "lyricFileIssueShifted": "Terjemahan di file lirik \"{{title}}\" bergeser satu baris. Lihat tab Folder di panel pemutar untuk cara memperbaikinya",
+     "clearedManualLyrics": "Lirik yang dicocokkan/diunggah manual dihapus",
+@@ -2796,6 +2797,7 @@ export default {
      "settingsPageHome": "Beranda & playlist",
      "settingsPagePlayback": "Pemutaran",
      "settingsPageLyrics": "Lirik",
@@ -3134,7 +3171,7 @@ index fac0d47..5b68971 100644
      "settingsPageGeneral": "Umum",
      "settingsPageInteraction": "Pintasan",
      "settingsPageIntegration": "Koneksi & integrasi",
-@@ -4201,7 +4202,9 @@ export default {
+@@ -4201,7 +4203,9 @@ export default {
      "invalidJsonFormat": "Format JSON tidak valid",
      "pasteJsonHere": "Tempel JSON di sini...",
      "settingsHeadingSound": "Suara & perangkat",
@@ -3144,7 +3181,7 @@ index fac0d47..5b68971 100644
      "transcodeFallbackDesc": "Mengonversi trek yang tidak dapat didekode dengan FFmpeg. Berkas tidak diubah.",
      "playbackFade": "Fade saat jeda dan lanjut",
      "playbackFadeDesc": "Fade keluar sebelum jeda dan masuk kembali saat lanjut.",
-@@ -4513,6 +4516,173 @@ export default {
+@@ -4513,6 +4517,178 @@ export default {
      "noDescription": "Tidak ada deskripsi tersedia"
    },
    "releaseNotes": {
@@ -3154,7 +3191,12 @@ index fac0d47..5b68971 100644
 +        "title": "Handling titles that became ?",
 +        "description": "Detection is stricter but safer: only an all-question-mark string, three or more consecutive '?', two or more '?' between CJK characters, or a string that is mostly '?' counts as lost. A single question mark (“Are you ok?”) is not touched. When the native probe returns question marks during import, the raw ID3/Vorbis/MP4 bytes are read immediately; if the tags themselves were written as '?', the file name (minus track number and extension) becomes the title. Songs already imported are repaired in the background, 25 per launch.",
 +      },
++      "undecodable": {
++        "title": "DSD / APE tidak lagi membuat aplikasi crash",
++        "description": "MediaExtractor head unit tidak mengenali dsf/dff/ape/wv/tak/tta, dan di sebagian ROM kegagalannya terjadi di lapisan native yang tidak bisa ditangkap JS — gejalanya menekan lagu lalu Folia tertutup sendiri. Versi ini memblokirnya di tiga tempat: sumber pemutaran mengembalikan pesan “tidak ada dekoder untuk format ini”, pintu transcode native menolak formatnya tanpa menyentuh MediaExtractor, dan jalur fallback kegagalan pemutaran tidak mencoba transcode lagi. Konsekuensinya jujur: format ini memang tidak bisa diputar di head unit — konversikan ke FLAC di PC dulu.",
++      },
 +      "fixes": {
++        "dsd": "Kontainer DSD/APE/TAK kini menampilkan pesan lalu dilewati, tidak masuk ke dekoder.",
 +        "question": "Question-mark corruption is now detected, not just U+FFFD.",
 +        "filename": "Falls back to a title derived from the file name, marked titleSource=filename.",
 +        "backfill": "Background repair now covers imported songs as well as linked ones.",
@@ -3341,7 +3383,7 @@ index 23ebf79..336af7d 100644
      "playbackFade": "Làm mờ khi tạm dừng và tiếp tục",
      "playbackFadeDesc": "Giảm âm dần trước khi tạm dừng và tăng dần khi tiếp tục thay vì ngắt âm đột ngột. Bỏ qua nếu âm thanh không đi qua bộ xử lý âm thanh.",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..1860120 100644
+index 0067e9a..1c3ffef 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -3432,7 +3474,15 @@ index 0067e9a..1860120 100644
      "homeTreeHints": "←→ 折叠",
      "homeBatchHints": "Ins 选中 · {{mod}}+A 全选 · {{mod}}+Enter 播放 · {{mod}}+Shift+Enter 入队",
      "homeSelection": "已选 {{count}} 项 · {{tracks}} 首",
-@@ -2583,6 +2632,7 @@ export default {
+@@ -934,6 +983,7 @@ export default {
+     "transcodeFallbackStarting": "正在转换当前无法解码的音频...",
+     "transcodeFallbackReady": "音频转换完成，正在恢复播放",
+     "transcodeFallbackFailed": "音频转换失败",
++    "undecodableFormat": "{{format}} 这种格式车机没有解码器（DSD／APE／TAK 这类），先在电脑上转成 FLAC 再放进来",
+     "lyricsSourceSwitched": "歌词来源已切换",
+     "lyricFileIssueShifted": "「{{title}}」的歌词文件译文错位了一句，修复办法见播放面板的「本地」页",
+     "clearedManualLyrics": "已清除手动匹配/上传的歌词",
+@@ -2583,6 +2633,7 @@ export default {
      "communityQqHint": "{{number}} · 点击复制群号",
      "qqGroupNumberCopied": "群号已复制",
      "releaseNotes": "版本更新",
@@ -3440,7 +3490,7 @@ index 0067e9a..1860120 100644
      "releaseNotesDescription": "查看这个版本带来的变化",
      "majorUpdateLabel": "{{codename}} Update · 重大更新",
      "servicePackLabel": "{{codename}} Update SP{{servicePack}} · 重大更新",
-@@ -2796,6 +2846,7 @@ export default {
+@@ -2796,6 +2847,7 @@ export default {
      "settingsPageHome": "主页与歌单",
      "settingsPagePlayback": "播放控制",
      "settingsPageLyrics": "歌词",
@@ -3448,7 +3498,7 @@ index 0067e9a..1860120 100644
      "settingsPageGeneral": "通用",
      "settingsPageInteraction": "快捷操作",
      "settingsPageIntegration": "连接与集成",
-@@ -3125,6 +3176,13 @@ export default {
+@@ -3125,6 +3177,13 @@ export default {
      "memoryByProcess": "分进程",
      "memorySeriesUnavailable": "当前系统不提供这个数据",
      "reduceMotionSection": "降低动态效果",
@@ -3462,7 +3512,7 @@ index 0067e9a..1860120 100644
      "reduceMotionSectionDesc": "Folia 默认播放完整动画。打开某一项，那一处的动效就会降低。",
      "reduceMotionFollowSystem": "跟随系统设置",
      "reduceMotionFollowSystemDesc": "由系统的动画设置决定全部动效",
-@@ -3336,6 +3394,10 @@ export default {
+@@ -3336,6 +3395,10 @@ export default {
      "uiZoom": "界面缩放",
      "uiZoomDesc": "按固定挡位缩放整个主窗口。系统缩放调得大时界面会显得挤，缩小一些能看到更多内容。妙控窗保持原来的大小。",
      "uiZoomStep": "缩放挡位",
@@ -3473,7 +3523,7 @@ index 0067e9a..1860120 100644
      "minimizeToTray": "最小化到托盘",
      "closeToTray": "关闭窗口时隐藏到托盘",
      "closeToTrayDesc": "点关闭按钮时不退出，隐藏到托盘继续播放",
-@@ -4201,7 +4263,9 @@ export default {
+@@ -4201,7 +4264,9 @@ export default {
      "invalidJsonFormat": "无效的 JSON 格式",
      "pasteJsonHere": "在此粘贴 JSON...",
      "settingsHeadingSound": "声音与设备",
@@ -3483,7 +3533,7 @@ index 0067e9a..1860120 100644
      "transcodeFallbackDesc": "遇到无法解码的歌曲时用 FFmpeg 转换，不修改原文件。",
      "playbackFade": "暂停/播放淡入淡出",
      "playbackFadeDesc": "暂停前淡出，恢复时淡入。",
-@@ -4513,6 +4577,256 @@ export default {
+@@ -4513,6 +4578,261 @@ export default {
      "noDescription": "暂无详细介绍",
    },
    "releaseNotes": {
@@ -3493,7 +3543,12 @@ index 0067e9a..1860120 100644
 +        "title": "歌名變成 ? 的處理",
 +        "description": "判斷變嚴也變準：整串只有問號、連續三個以上問號、兩個以上問號夾在中文字之間、或問號佔一半以上，才會被當成壞掉；「你最近好嗎?」這種單一問號不誤判。匯入時若原生探針給的是問號，立刻回檔案讀 ID3／Vorbis／MP4 的原始位元組重解；連原始標籤也被寫成問號，就用檔名（去掉曲目編號與副檔名）當歌名，至少看得出是哪一首。已匯入的舊歌啟動後背景一批 25 首慢慢補。",
 +      },
++      "undecodable": {
++        "title": "DSD／APE 不再讓 App 閃退",
++        "description": "車機的 MediaExtractor 認不得 dsf／dff／ape／wv／tak／tta 這幾種容器，有些 ROM 一碰就在原生層崩掉，JS 接不到錯誤，看起來就是「點這首歌 → Folia 直接關掉」。這版在三個地方一起擋：取播放來源時就回一句「車機沒有這個格式的解碼器」、原生轉碼入口直接拒絕（不去碰 MediaExtractor）、音檔播放失敗的兜底路徑也不再嘗試轉碼。代價是這些格式在車機上就是放不了——要聽請先在電腦轉成 FLAC。",
++      },
 +      "fixes": {
++        "dsd": "DSD／APE／TAK 這類容器在車機上改成一句提示後跳過，不再進解碼器。",
 +        "question": "問號型亂碼也納入偵測，不再只認 �。",
 +        "filename": "原始標籤救不回來時用檔名推歌名，titleSource 標成 filename。",
 +        "backfill": "背景回填改成不分連結／匯入來源，兩種歌都會補。",
@@ -3740,7 +3795,7 @@ index 0067e9a..1860120 100644
      "v0_7_0": {
        "intro": "以下是 0.7.0 的新功能与改进",
        "temperaVisualExpansion": {
-@@ -5228,6 +5542,10 @@ export default {
+@@ -5228,6 +5548,10 @@ export default {
      "capsuleOpensPalette": "点一下打开命令面板",
    },
    "localMusic": {
@@ -3751,7 +3806,7 @@ index 0067e9a..1860120 100644
      "foldersAndPlaylists": "文件夹",
      "albums": "专辑",
      "artists": "艺术家",
-@@ -5242,8 +5560,34 @@ export default {
+@@ -5242,8 +5566,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -3786,7 +3841,7 @@ index 0067e9a..1860120 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6395,13 @@ export default {
+@@ -6051,8 +6401,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -6470,10 +6525,10 @@ index 0000000..df20d8f
 +    }
 +}
 diff --git a/src/services/localMusicService.ts b/src/services/localMusicService.ts
-index 26a0181..ac3adc3 100644
+index 26a0181..93fa7be 100644
 --- a/src/services/localMusicService.ts
 +++ b/src/services/localMusicService.ts
-@@ -30,6 +30,16 @@ import { hasLocalCoverBinary } from './localCoverBinaryStore';
+@@ -30,6 +30,17 @@ import { hasLocalCoverBinary } from './localCoverBinaryStore';
  import { hasLocalSongCover } from '../utils/localSongCover';
  import { createFoliaIgnoreMatcher, isIgnoredByFoliaMatchers, type FoliaIgnoreMatcher } from '../utils/foliaIgnore';
  import { getLocalLibraryAvailability } from './localLibraryAvailability';
@@ -6487,10 +6542,11 @@ index 26a0181..ac3adc3 100644
 +    type NativeStorageFile,
 +} from './nativeLinkedStorage';
 +import { hasLostChars, readLinkedSongRawTags } from './localSongRawTags';
++import { isUnsupportedOnDevice, unsupportedFormatLabel } from '../utils/deviceDecodeSupport';
  import { useLyricSettingsStore } from '../stores/useLyricSettingsStore';
  import { getLocalLyricFilePriority, isSameLocalLyricFormatOrder, normalizeLocalLyricFormatOrder, type LocalLyricFileFormat } from '../utils/lyrics/localLyricFormatOrder';
  import { readLyricFile } from '../utils/lyrics/lyricFileDecoding';
-@@ -152,7 +162,7 @@ const localCoverAssetRequestMap = new Map<string, Promise<LocalSong>>();
+@@ -152,7 +163,7 @@ const localCoverAssetRequestMap = new Map<string, Promise<LocalSong>>();
  const songsWithoutEmbeddedCover = new Map<string, string>();
  const BROWSER_AUDIO_EXTENSIONS = /\.(mp3|flac|m4a|wav|ogg|opus|aac)$/i;
  const ELECTRON_FALLBACK_AUDIO_EXTENSIONS = /\.(alac|ape|wv|tta|wma|aif|aiff|caf|dsf|dff)$/i;
@@ -6499,7 +6555,7 @@ index 26a0181..ac3adc3 100644
  const LYRIC_EXTENSIONS = /\.(lrc|vtt|ttml|qrc|yrc|krc|fia)$/i;
  const TRANSLATION_LYRIC_EXTENSIONS = /\.t\.(lrc|vtt)$/i;
  const IMPORT_CONCURRENCY = 6;
-@@ -296,8 +306,21 @@ export function extractMetadataFromFilename(fileName: string): { title?: string;
+@@ -296,8 +307,21 @@ export function extractMetadataFromFilename(fileName: string): { title?: string;
      };
  }
  
@@ -6521,7 +6577,7 @@ index 26a0181..ac3adc3 100644
      const playbackInput = await repairFlacMetadata(file, true);
      return new Promise((resolve) => {
          const audio = new Audio();
-@@ -307,17 +330,32 @@ async function getAudioDuration(file: File): Promise<number> {
+@@ -307,17 +331,32 @@ async function getAudioDuration(file: File): Promise<number> {
              return;
          }
  
@@ -6563,7 +6619,7 @@ index 26a0181..ac3adc3 100644
          audio.src = url;
      });
  }
-@@ -1204,6 +1242,353 @@ export async function importFolder(expectedRootName?: string): Promise<LocalSong
+@@ -1204,6 +1243,353 @@ export async function importFolder(expectedRootName?: string): Promise<LocalSong
      }
  }
  
@@ -6917,7 +6973,7 @@ index 26a0181..ac3adc3 100644
  /** Imports a folder the caller already holds instead of asking the picker (the dev mock song's OPFS folder). */
  export async function importDirectoryHandle(dirHandle: FileSystemDirectoryHandle): Promise<LocalSong[]> {
      return await runLocalFolderMutation(() => importFolderContents(dirHandle));
-@@ -1614,6 +1999,7 @@ export async function deleteLocalSong(id: string): Promise<void> {
+@@ -1614,6 +2000,7 @@ export async function deleteLocalSong(id: string): Promise<void> {
      await Promise.all([
          dbDeleteLocalSong(id),
          removeCachedCover(`cover_local_${id}`),
@@ -6925,10 +6981,16 @@ index 26a0181..ac3adc3 100644
      ]);
  }
  
-@@ -1714,6 +2100,14 @@ async function cleanupDirHandleIfUnused(rootFolderName: string): Promise<void> {
+@@ -1714,6 +2101,20 @@ async function cleanupDirHandleIfUnused(rootFolderName: string): Promise<void> {
  // Get audio blob from local song using fileHandle
  // Returns blob URL if fileHandle exists, null otherwise
  export async function getAudioFromLocalSong(song: LocalSong): Promise<string | null> {
++    // DSD／APE／WavPack／TAK／TTA 這台裝置根本沒有解碼器：不要把它交給 <audio>，也不要進原生轉碼。
++    // （有的 ROM 讓 MediaExtractor 碰到 DSD 直接在原生層崩掉，JS 接不到，整個 App 閃退。）
++    if (isUnsupportedOnDevice(song.fileName)) {
++        setStatusMessage({ type: 'error', text: i18n.t('status.undecodableFormat', { format: unsupportedFormatLabel(song.fileName) }) });
++        return null;
++    }
 +    // 連結模式：bytes 不在 App 裡，直接給 <audio> 原生層的 http 位址（支援 Range，邊播邊讀）。
 +    // 這條要擺最前面——連結的歌本來就沒有 FileHandle，也沒有 imported 副本。
 +    if (song.linkedFilePath) {
@@ -6940,7 +7002,7 @@ index 26a0181..ac3adc3 100644
      const fileHandle = await getAccessibleFileHandle(song);
  
      if (fileHandle) {
-@@ -1738,6 +2132,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
+@@ -1738,6 +2139,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
          }
      }
  
@@ -6957,7 +7019,7 @@ index 26a0181..ac3adc3 100644
      // No accessible handle available - permission may need to be restored or the file moved.
      console.warn(`[LocalMusic] No accessible handle for song ${song.id}. Permission restore or re-import is required.`);
      return null;
-@@ -1745,6 +2149,15 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
+@@ -1745,6 +2156,15 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
  
  /** Resolves the current File for playback recovery without changing the song or minting a URL. */
  export async function getFileFromLocalSong(song: LocalSong): Promise<File | null> {
@@ -6973,7 +7035,7 @@ index 26a0181..ac3adc3 100644
      const fileHandle = await getAccessibleFileHandle(song);
      if (fileHandle) {
          try {
-@@ -1755,6 +2168,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+@@ -1755,6 +2175,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
          }
      }
  
@@ -6983,7 +7045,7 @@ index 26a0181..ac3adc3 100644
      const recoveredHandle = await recoverFileHandleFromPersistedDirectory(song);
      if (!recoveredHandle) return null;
      try {
-@@ -1774,14 +2190,22 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+@@ -1774,14 +2197,22 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
   * from its own handle. Mirrors getAudioFromLocalSong's resolution (accessible handle, else a recover)
   * but returns the ArrayBuffer. Null when no handle can be reached - permission not restored, or moved.
   */
@@ -7009,7 +7071,7 @@ index 26a0181..ac3adc3 100644
      } catch (error) {
          console.error('[LocalMusic] Failed to read local bytes:', error);
          fileHandleMap.delete(song.id);
-@@ -1789,6 +2213,44 @@ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuf
+@@ -1789,6 +2220,44 @@ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuf
      }
  }
  
@@ -7054,7 +7116,7 @@ index 26a0181..ac3adc3 100644
  // Extracts and persists one song's embedded cover after an explicit playback-time request.
  async function extractAndPersistSongCover(
      song: LocalSong,
-@@ -1880,6 +2342,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
+@@ -1880,6 +2349,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
      await Promise.all([
          dbDeleteLocalSongs(uniqueSongIds),
          ...uniqueSongIds.map(id => removeCachedCover(`cover_local_${id}`)),
@@ -8499,6 +8561,49 @@ index 7dcb74b..041c411 100644
    bitrate?: number; // bps
    addedAt: number; // timestamp
  
+diff --git a/src/utils/deviceDecodeSupport.ts b/src/utils/deviceDecodeSupport.ts
+new file mode 100644
+index 0000000..7412b5d
+--- /dev/null
++++ b/src/utils/deviceDecodeSupport.ts
+@@ -0,0 +1,37 @@
++// src/utils/deviceDecodeSupport.ts
++// 哪些容器「這台裝置」根本沒有解碼器（v0.9.18）。
++//
++// WebView 的 <audio> 只認 Chromium 內建的 FLAC／WAV／MP3／AAC／Ogg。
++// ALAC、APE、WavPack、TAK、TTA、DSD 這幾種要靠原生 MediaCodec 兜底轉 WAV，
++// 但 Android 的 MediaExtractor 連容器都認不得（DSD 更是 1-bit 串流，MediaCodec 沒有解碼器），
++// 有些 ROM 在 setDataSource／createDecoderByType 就直接在原生層 SIGSEGV——JS 抓不到 Throwable，
++// 使用者看到的就是「點播放 → Folia 閃退」。
++//
++// 所以這些格式在 JS 與原生兩邊都先擋掉，回一句看得懂的話，而不是把它丟進解碼器碰運氣。
++
++/** MediaExtractor／MediaCodec 都認不得、硬解會炸的容器。 */
++const UNSUPPORTED_ON_DEVICE = /\.(dsf|dff|ape|wv|tak|tta)$/i;
++
++/** 這種檔案在這台裝置上是不是根本解不開（只能先在 PC 轉成 FLAC／WAV）。 */
++export const isUnsupportedOnDevice = (fileName: string | null | undefined): boolean =>
++    Boolean(fileName && UNSUPPORTED_ON_DEVICE.test(fileName));
++
++/** 給使用者看的格式名：a.dsf → DSD。 */
++export const unsupportedFormatLabel = (fileName: string | null | undefined): string => {
++    const extension = (fileName ?? '').match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() ?? '';
++    switch (extension) {
++        case 'dsf':
++        case 'dff':
++            return 'DSD';
++        case 'ape':
++            return 'APE';
++        case 'wv':
++            return 'WavPack';
++        case 'tak':
++            return 'TAK';
++        case 'tta':
++            return 'TTA';
++        default:
++            return extension ? extension.toUpperCase() : '這個格式';
++    }
++};
 diff --git a/src/utils/localMetadataWorkerClient.ts b/src/utils/localMetadataWorkerClient.ts
 index 682f39b..202d7a4 100644
 --- a/src/utils/localMetadataWorkerClient.ts
@@ -9101,6 +9206,48 @@ index 64ef098..d4357bc 100644
  
  export type UiZoomStep = typeof UI_ZOOM_STEPS[number];
  
+diff --git a/test/unit/deviceDecodeSupport.test.ts b/test/unit/deviceDecodeSupport.test.ts
+new file mode 100644
+index 0000000..1086303
+--- /dev/null
++++ b/test/unit/deviceDecodeSupport.test.ts
+@@ -0,0 +1,36 @@
++import { describe, expect, it } from 'vitest';
++import { isUnsupportedOnDevice, unsupportedFormatLabel } from '@/utils/deviceDecodeSupport';
++
++// test/unit/deviceDecodeSupport.test.ts
++// v0.9.18：車機沒有解碼器的容器要在 JS 先擋掉，否則 MediaExtractor 碰到 DSD 可能在原生層崩掉。
++
++describe('deviceDecodeSupport', () => {
++    it('把 DSD／APE／WavPack／TAK／TTA 認成解不開', () => {
++        for (const name of ['a.dsf', 'b.DFF', 'c.ape', 'd.wv', 'e.tak', 'f.tta']) {
++            expect(isUnsupportedOnDevice(name)).toBe(true);
++        }
++    });
++
++    it('FLAC／WAV／ALAC／MP3 仍然照常播', () => {
++        for (const name of ['a.flac', 'b.wav', 'c.m4a', 'd.mp3', 'e.aiff']) {
++            expect(isUnsupportedOnDevice(name)).toBe(false);
++        }
++    });
++
++    it('空值不算，也不因為路徑片段誤判', () => {
++        expect(isUnsupportedOnDevice(undefined)).toBe(false);
++        expect(isUnsupportedOnDevice('')).toBe(false);
++        expect(isUnsupportedOnDevice('曲目.dsforce.flac')).toBe(false);
++    });
++
++    it('格式標籤給使用者看得懂的名字', () => {
++        expect(unsupportedFormatLabel('專輯/track01.dsf')).toBe('DSD');
++        expect(unsupportedFormatLabel('x.DFF')).toBe('DSD');
++        expect(unsupportedFormatLabel('x.ape')).toBe('APE');
++        expect(unsupportedFormatLabel('x.wv')).toBe('WavPack');
++        expect(unsupportedFormatLabel('x.tak')).toBe('TAK');
++        expect(unsupportedFormatLabel('x.tta')).toBe('TTA');
++        expect(unsupportedFormatLabel('x.bin')).toBe('BIN');
++        expect(unsupportedFormatLabel(undefined)).toBe('這個格式');
++    });
++});
 diff --git a/test/unit/library/app/librarySuiteChoice.test.ts b/test/unit/library/app/librarySuiteChoice.test.ts
 index 9caa83e..cef9a15 100644
 --- a/test/unit/library/app/librarySuiteChoice.test.ts
