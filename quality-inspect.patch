@@ -21,7 +21,7 @@ index 39ec48c..114cb4d 100644
      <script src="/runtime-config.js"></script>
    <script type="importmap">
 diff --git a/package.json b/package.json
-index 6976461..76a6fa2 100644
+index 6976461..dba7622 100644
 --- a/package.json
 +++ b/package.json
 @@ -8,7 +8,7 @@
@@ -29,7 +29,7 @@ index 6976461..76a6fa2 100644
    },
    "private": true,
 -  "version": "0.8.0",
-+  "version": "0.9.16",
++  "version": "0.9.17",
    "license": "AGPL-3.0",
    "type": "module",
    "main": "electron/main.cjs",
@@ -1030,21 +1030,31 @@ index 0000000..8719e05
 +export default LinkedFolderPicker;
 diff --git a/src/components/lossless-search/LosslessSearchHost.tsx b/src/components/lossless-search/LosslessSearchHost.tsx
 new file mode 100644
-index 0000000..9f885d2
+index 0000000..a5c3a41
 --- /dev/null
 +++ b/src/components/lossless-search/LosslessSearchHost.tsx
-@@ -0,0 +1,181 @@
-+import React, { useCallback, useEffect, useMemo, useState } from 'react';
-+import { Search, Sparkles, X } from 'lucide-react';
+@@ -0,0 +1,466 @@
++import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
++import { AlertTriangle, CheckCircle2, FileJson, Search, Sparkles, X } from 'lucide-react';
 +import type { LocalSong } from '../../types';
 +import { getLocalSongs, saveLocalSong } from '../../services/db';
-+import { getCachedQuality } from '../../services/audioQuality/localQualityIndex';
++import { getCachedQuality, measureLocalQuality } from '../../services/audioQuality/localQualityIndex';
++import { analyzeLosslessSuspect, type LosslessSuspect } from '../../services/audioQuality/losslessSuspect';
++import {
++    autoLoadLosslessReport,
++    findReportEntry,
++    loadLosslessReportAt,
++    savedReportPath,
++    type LosslessReportEntry,
++} from '../../services/audioQuality/losslessReport';
 +import { searchMusicBrainzRecordings, type MusicBrainzMatch } from '../../services/musicbrainzSearch';
 +import { useLosslessSearchStore } from './useLosslessSearchStore';
 +
 +// src/components/lossless-search/LosslessSearchHost.tsx
 +// 車機／手機上的「無損搜尋」面板：只在曲庫裡挑無損檔（不連網抓音檔），
 +// 並且可以拿歌名＋歌手去 MusicBrainz 補回正確的歌名／歌手／專輯（只查文字資料）。
++// v0.9.17 加上「真無損校驗」：輕量初篩（檔頭＋壓縮比＋編碼器痕跡）、頻譜量測（解 20 秒量截止點），
++// 以及讀取 PC 端產生的 lossless-report.json。
 +
 +/** 副檔名就能肯定是無損的容器（m4a 可能是 AAC，所以只認 alac）。 */
 +const LOSSLESS_EXTENSIONS = /\.(flac|wav|aiff?|alac|ape|wv|tta|tak|dsf|dff|caf)$/i;
@@ -1069,17 +1079,122 @@ index 0000000..9f885d2
 +
 +const artistText = (song: LocalSong): string => song.importedMetadata.artistNames.join(' / ');
 +
++type BadgeTone = 'good' | 'bad' | 'warn' | 'muted';
++
++interface VerdictView {
++    label: string;
++    tone: BadgeTone;
++    detail?: string;
++    source: 'report' | 'spectrum' | 'local' | 'none';
++}
++
++const toneClass: Record<BadgeTone, string> = {
++    good: 'bg-emerald-500/15 text-emerald-300',
++    bad: 'bg-rose-500/15 text-rose-300',
++    warn: 'bg-amber-500/15 text-amber-300',
++    muted: 'bg-white/10 text-white/55',
++};
++
++/** 報告 > 頻譜量測 > 輕量初篩，三者只留最可信的一個。 */
++const verdictOf = (
++    song: LocalSong,
++    report: LosslessReportEntry | undefined,
++    localCheck: LosslessSuspect | 'loading' | undefined,
++): VerdictView => {
++    if (report) {
++        if (report.verdict === 'trueLossless') {
++            return {
++                label: '真無損',
++                tone: 'good',
++                detail: report.cutoffHz ? `內容到 ${(report.cutoffHz / 1000).toFixed(1)} kHz` : undefined,
++                source: 'report',
++            };
++        }
++        if (report.verdict === 'fakeLossless') {
++            return {
++                label: '假無損',
++                tone: 'bad',
++                detail: report.cutoffHz ? `內容只到 ${(report.cutoffHz / 1000).toFixed(1)} kHz` : undefined,
++                source: 'report',
++            };
++        }
++        if (report.verdict === 'suspect') {
++            return { label: '可疑', tone: 'warn', detail: report.notes?.[0], source: 'report' };
++        }
++        return { label: '報告：無法判斷', tone: 'muted', detail: report.notes?.[0], source: 'report' };
++    }
++
++    const cached = getCachedQuality(song.id);
++    if (cached?.verdict === 'trueLossless') return { label: '真無損（已量頻譜）', tone: 'good', source: 'spectrum' };
++    if (cached?.verdict === 'fakeLossless') return { label: '假無損（已量頻譜）', tone: 'bad', source: 'spectrum' };
++    if (cached?.verdict === 'unknown') return { label: '頻譜量不到', tone: 'muted', source: 'spectrum' };
++
++    if (localCheck === 'loading') return { label: '校驗中…', tone: 'muted', source: 'local' };
++    if (localCheck?.verdict === 'suspect') {
++        return { label: '疑似轉檔', tone: 'warn', detail: localCheck.reasons[0], source: 'local' };
++    }
++    if (localCheck?.verdict === 'clean') {
++        return {
++            label: '未見可疑',
++            tone: 'good',
++            detail: localCheck.ratio ? `壓縮比 ${(localCheck.ratio * 100).toFixed(0)}%` : undefined,
++            source: 'local',
++        };
++    }
++    if (localCheck?.verdict === 'unknown') return { label: '讀不到檔頭', tone: 'muted', source: 'local' };
++    return { label: '未校驗', tone: 'muted', source: 'none' };
++};
++
++const VerdictBadge: React.FC<{ view: VerdictView }> = ({ view }) => (
++    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] ${toneClass[view.tone]}`}>
++        {view.tone === 'bad' ? <AlertTriangle size={12} /> : view.tone === 'good' ? <CheckCircle2 size={12} /> : null}
++        {view.label}
++        {view.detail ? <span className="opacity-70">· {view.detail}</span> : null}
++    </span>
++);
++
 +const LosslessSearchHost: React.FC = () => {
 +    const isOpen = useLosslessSearchStore(state => state.isOpen);
 +    const close = useLosslessSearchStore(state => state.close);
 +    const [songs, setSongs] = useState<LocalSong[]>([]);
 +    const [query, setQuery] = useState('');
 +    const [matches, setMatches] = useState<Record<string, MusicBrainzMatch[] | 'loading' | 'empty'>>({});
++    const [checks, setChecks] = useState<Record<string, LosslessSuspect | 'loading'>>({});
++    const [measuring, setMeasuring] = useState<Record<string, 'loading' | 'failed'>>({});
++    const [tick, setTick] = useState(0);
++    const [onlySuspect, setOnlySuspect] = useState(false);
++    const [reportCount, setReportCount] = useState(0);
++    const [reportPath, setReportPath] = useState(() => savedReportPath());
++    const [reportMessage, setReportMessage] = useState('');
++    const [reportLoading, setReportLoading] = useState(false);
++    const [showReportBox, setShowReportBox] = useState(false);
++    const [batch, setBatch] = useState<{ done: number; total: number } | null>(null);
++    const batchCancelled = useRef(false);
 +
 +    useEffect(() => {
 +        if (!isOpen) return;
 +        let alive = true;
 +        void getLocalSongs().then(list => { if (alive) setSongs(list); });
++        return () => { alive = false; };
++    }, [isOpen]);
++
++    // 開面板時自動在幾個常見路徑找報告；找不到不吵，工具列只顯示「沒有 PC 報告」。
++    useEffect(() => {
++        if (!isOpen) return;
++        let alive = true;
++        setReportLoading(true);
++        void autoLoadLosslessReport().then(result => {
++            if (!alive) return;
++            setReportLoading(false);
++            if (result.report) {
++                setReportCount(result.report.entries.length);
++                setReportPath(result.path ?? '');
++                setReportMessage(`已載入 ${result.report.entries.length} 筆`);
++                setTick(value => value + 1);
++            } else {
++                setReportCount(0);
++            }
++        });
 +        return () => { alive = false; };
 +    }, [isOpen]);
 +
@@ -1092,18 +1207,33 @@ index 0000000..9f885d2
 +        return () => window.removeEventListener('keydown', onKeyDown);
 +    }, [isOpen, close]);
 +
++    // 關面板就取消批次掃描，不要讓它在背景繼續吃 CPU。
++    useEffect(() => {
++        if (!isOpen) batchCancelled.current = true;
++    }, [isOpen]);
++
 +    const losslessSongs = useMemo(() => songs.filter(isLossless), [songs]);
 +
 +    const results = useMemo(() => {
++        void tick; // 頻譜量測／報告載入完成後要重算徽章
 +        const needle = query.trim().toLowerCase();
-+        if (!needle) return losslessSongs.slice(0, 200);
-+        const hits = losslessSongs.filter(song => {
-+            const haystack = [song.title, artistText(song), song.importedMetadata.albumName ?? '', song.fileName]
-+                .join('\n').toLowerCase();
-+            return haystack.includes(needle);
++        const base = needle
++            ? losslessSongs.filter(song => {
++                const haystack = [song.title, artistText(song), song.importedMetadata.albumName ?? '', song.fileName]
++                    .join('\n').toLowerCase();
++                return haystack.includes(needle);
++            })
++            : losslessSongs;
++        if (!onlySuspect) return base.slice(0, 200);
++        const filtered = base.filter(song => {
++            const entry = findReportEntry(song);
++            if (entry) return entry.verdict === 'fakeLossless' || entry.verdict === 'suspect';
++            const checked = checks[song.id];
++            if (checked && checked !== 'loading') return (checked as LosslessSuspect).verdict === 'suspect';
++            return getCachedQuality(song.id)?.verdict === 'fakeLossless';
 +        });
-+        return hits.slice(0, 200);
-+    }, [losslessSongs, query]);
++        return filtered.slice(0, 200);
++    }, [losslessSongs, query, onlySuspect, checks, tick]);
 +
 +    const lookup = useCallback(async (song: LocalSong) => {
 +        setMatches(prev => ({ ...prev, [song.id]: 'loading' }));
@@ -1125,11 +1255,69 @@ index 0000000..9f885d2
 +        setMatches(prev => ({ ...prev, [song.id]: [{ ...match }] }));
 +    }, []);
 +
++    const runLocalCheck = useCallback(async (song: LocalSong) => {
++        setChecks(prev => ({ ...prev, [song.id]: 'loading' }));
++        const result = await analyzeLosslessSuspect(song);
++        setChecks(prev => ({ ...prev, [song.id]: result }));
++    }, []);
++
++    const runMeasure = useCallback(async (song: LocalSong) => {
++        setMeasuring(prev => ({ ...prev, [song.id]: 'loading' }));
++        try {
++            const entry = await measureLocalQuality(song);
++            setMeasuring(prev => {
++                const next = { ...prev };
++                if (!entry || !entry.verdict) next[song.id] = 'failed';
++                else delete next[song.id];
++                return next;
++            });
++        } catch {
++            setMeasuring(prev => ({ ...prev, [song.id]: 'failed' }));
++        } finally {
++            setTick(value => value + 1);
++        }
++    }, []);
++
++    const runBatch = useCallback(async () => {
++        if (batch) {
++            batchCancelled.current = true;
++            return;
++        }
++        batchCancelled.current = false;
++        const targets = losslessSongs.slice(0, 500).filter(song => !checks[song.id] && !findReportEntry(song));
++        setBatch({ done: 0, total: targets.length });
++        let done = 0;
++        for (const song of targets) {
++            if (batchCancelled.current) break;
++            const result = await analyzeLosslessSuspect(song);
++            setChecks(prev => ({ ...prev, [song.id]: result }));
++            done += 1;
++            setBatch({ done, total: targets.length });
++            // 讓出主執行緒：車機的 WebView 若被這串迴圈霸佔，觸控會卡。
++            await new Promise(resolve => setTimeout(resolve, 0));
++        }
++        setBatch(null);
++    }, [batch, checks, losslessSongs]);
++
++    const applyReportPath = useCallback(async () => {
++        setReportLoading(true);
++        const result = await loadLosslessReportAt(reportPath);
++        setReportLoading(false);
++        if (result.report) {
++            setReportCount(result.report.entries.length);
++            setReportPath(result.path ?? reportPath);
++            setReportMessage(`已載入 ${result.report.entries.length} 筆`);
++            setTick(value => value + 1);
++        } else {
++            setReportMessage(result.error ?? '讀取失敗');
++        }
++    }, [reportPath]);
++
 +    if (!isOpen) return null;
 +
 +    return (
 +        <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/55 backdrop-blur-sm p-3">
-+            <div className="flex h-full max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0b0b0e]/95 text-white shadow-2xl">
++            <div className="flex h-full max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0b0b0e]/95 text-white shadow-2xl">
 +                <div className="flex items-center gap-3 border-b border-white/10 px-5 py-3">
 +                    <Search size={18} className="shrink-0 opacity-60" />
 +                    <input
@@ -1147,14 +1335,71 @@ index 0000000..9f885d2
 +                    </button>
 +                </div>
 +
++                <div className="flex flex-wrap items-center gap-2 border-b border-white/10 px-5 py-2 text-xs">
++                    <button
++                        type="button"
++                        onClick={() => void runBatch()}
++                        className={`rounded-full border px-3 py-1.5 ${batch ? 'border-rose-400/40 text-rose-300' : 'border-white/15 hover:bg-white/10'}`}
++                    >
++                        {batch ? `停止（${batch.done}/${batch.total}）` : '全庫輕量校驗'}
++                    </button>
++                    <button
++                        type="button"
++                        onClick={() => setOnlySuspect(value => !value)}
++                        className={`rounded-full border px-3 py-1.5 ${onlySuspect ? 'border-amber-400/50 text-amber-300' : 'border-white/15 hover:bg-white/10'}`}
++                    >
++                        只看可疑
++                    </button>
++                    <button
++                        type="button"
++                        onClick={() => setShowReportBox(value => !value)}
++                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 ${reportCount ? 'bg-emerald-500/15 text-emerald-300' : 'bg-white/10 text-white/55'}`}
++                    >
++                        <FileJson size={12} />
++                        {reportLoading ? '讀報告中…' : reportCount ? `PC 報告 ${reportCount} 筆` : '沒有 PC 報告'}
++                    </button>
++                    <span className="opacity-45">輕量校驗＝讀檔頭＋壓縮比＋編碼器痕跡，不解碼也不判死</span>
++                </div>
++
++                {showReportBox && (
++                    <div className="border-b border-white/10 bg-white/[0.03] px-5 py-3 text-xs">
++                        <div className="mb-2 opacity-60">
++                            把 PC 上跑「無損體檢.py」產生的 lossless-report.json 放到車機（Music／Download 底下會自動找到），
++                            或直接填完整路徑。
++                        </div>
++                        <div className="flex items-center gap-2">
++                            <input
++                                value={reportPath}
++                                onChange={event => setReportPath(event.target.value)}
++                                placeholder="/storage/emulated/0/Music/lossless-report.json"
++                                className="min-w-0 flex-1 rounded-xl border border-white/15 bg-black/30 px-3 py-2 outline-none placeholder:opacity-35"
++                            />
++                            <button
++                                type="button"
++                                onClick={() => void applyReportPath()}
++                                className="shrink-0 rounded-xl border border-white/15 px-3 py-2 hover:bg-white/10"
++                            >
++                                讀取
++                            </button>
++                        </div>
++                        {reportMessage && <div className="mt-2 opacity-60">{reportMessage}</div>}
++                    </div>
++                )}
++
 +                <div className="min-h-0 flex-1 overflow-y-auto">
 +                    {results.length === 0 && (
 +                        <div className="p-8 text-center text-sm opacity-60">
-+                            {losslessSongs.length === 0 ? '曲庫裡還沒有無損檔（FLAC／WAV／ALAC／APE 等）' : '沒有符合的無損歌曲'}
++                            {losslessSongs.length === 0
++                                ? '曲庫裡還沒有無損檔（FLAC／WAV／ALAC／APE 等）'
++                                : onlySuspect ? '沒有被判為可疑的檔案' : '沒有符合的無損歌曲'}
 +                        </div>
 +                    )}
 +                    {results.map(song => {
 +                        const match = matches[song.id];
++                        const report = findReportEntry(song);
++                        const checked = checks[song.id];
++                        const view = verdictOf(song, report, checked);
++                        const measuringState = measuring[song.id];
 +                        return (
 +                            <div key={song.id} className="border-b border-white/5 px-5 py-3">
 +                                <div className="flex items-start gap-3">
@@ -1164,18 +1409,57 @@ index 0000000..9f885d2
 +                                            {artistText(song) || '未知歌手'}
 +                                            {song.importedMetadata.albumName ? ` · ${song.importedMetadata.albumName}` : ''}
 +                                        </div>
-+                                        <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] text-emerald-300">
-+                                            {qualityLabel(song)}
++                                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
++                                            <span className="inline-flex items-center rounded-full bg-white/10 px-2 py-0.5 text-[11px]">
++                                                {qualityLabel(song)}
++                                            </span>
++                                            <VerdictBadge view={view} />
 +                                        </div>
 +                                    </div>
-+                                    <button
-+                                        type="button"
-+                                        onClick={() => void lookup(song)}
-+                                        className="shrink-0 rounded-full border border-white/15 px-3 py-1.5 text-xs hover:bg-white/10"
-+                                    >
-+                                        {match === 'loading' ? '查詢中…' : '線上配對標籤'}
-+                                    </button>
++                                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
++                                        <button
++                                            type="button"
++                                            onClick={() => void runLocalCheck(song)}
++                                            className="rounded-full border border-white/15 px-3 py-1.5 text-xs hover:bg-white/10"
++                                        >
++                                            {checked === 'loading' ? '校驗中…' : '校驗'}
++                                        </button>
++                                        <button
++                                            type="button"
++                                            onClick={() => void runMeasure(song)}
++                                            className="rounded-full border border-white/15 px-3 py-1.5 text-xs hover:bg-white/10"
++                                        >
++                                            {measuringState === 'loading' ? '量測中…' : measuringState === 'failed' ? '量不到' : '量頻譜'}
++                                        </button>
++                                        <button
++                                            type="button"
++                                            onClick={() => void lookup(song)}
++                                            className="rounded-full border border-white/15 px-3 py-1.5 text-xs hover:bg-white/10"
++                                        >
++                                            {match === 'loading' ? '查詢中…' : '線上配對標籤'}
++                                        </button>
++                                    </div>
 +                                </div>
++
++                                {checked && checked !== 'loading' && (checked.reasons.length > 0 || checked.notes.length > 0) && (
++                                    <div className="mt-2 rounded-2xl bg-white/5 p-2 text-[11px] leading-relaxed">
++                                        {checked.reasons.map(reason => (
++                                            <div key={reason} className="text-amber-300/90">・{reason}</div>
++                                        ))}
++                                        {checked.notes.map(note => (
++                                            <div key={note} className="opacity-55">・{note}</div>
++                                        ))}
++                                    </div>
++                                )}
++
++                                {report && (report.notes?.length || report.cutoffHz) && (
++                                    <div className="mt-2 text-[11px] opacity-60">
++                                        PC 報告：
++                                        {report.cutoffHz ? `內容到 ${(report.cutoffHz / 1000).toFixed(1)} kHz` : '無頻譜資料'}
++                                        {report.nyquistHz ? `（Nyquist ${(report.nyquistHz / 1000).toFixed(1)} kHz）` : ''}
++                                        {report.notes?.length ? ` · ${report.notes.join('；')}` : ''}
++                                    </div>
++                                )}
 +
 +                                {Array.isArray(match) && (
 +                                    <div className="mt-2 space-y-1.5 rounded-2xl bg-white/5 p-2">
@@ -1207,7 +1491,8 @@ index 0000000..9f885d2
 +                </div>
 +
 +                <div className="border-t border-white/10 px-5 py-2 text-[11px] opacity-45">
-+                    只搜尋本機曲庫裡的無損檔；「線上配對標籤」只查 MusicBrainz 的文字資料，不下載任何音檔。
++                    只搜尋本機曲庫裡的無損檔；校驗只讀檔頭與壓縮比、「量頻譜」只解 20 秒在裝置上算，
++                    「線上配對標籤」只查 MusicBrainz 的文字資料。全程不下載任何音檔。
 +                </div>
 +            </div>
 +        </div>
@@ -1267,7 +1552,7 @@ index 5de4bf3..af66827 100644
      );
  };
 diff --git a/src/components/modal/newFeaturesRelease.ts b/src/components/modal/newFeaturesRelease.ts
-index e49a39c..f0524fb 100644
+index e49a39c..a69585e 100644
 --- a/src/components/modal/newFeaturesRelease.ts
 +++ b/src/components/modal/newFeaturesRelease.ts
 @@ -1,4 +1,4 @@
@@ -1291,7 +1576,7 @@ index e49a39c..f0524fb 100644
  export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
 -    i18nKey: 'releaseNotes.v0_8_0',
 -    majorUpdate: { codename: 'Severance' },
-+    i18nKey: 'releaseNotes.v0_9_16',
++    i18nKey: 'releaseNotes.v0_9_17',
      features: [
 -        { id: 'sourceMods', icon: Puzzle },
 -        { id: 'modMarket', icon: Store },
@@ -1299,9 +1584,9 @@ index e49a39c..f0524fb 100644
 -        { id: 'moments', icon: MessageSquareText },
 -        { id: 'stemMixer', icon: SlidersVertical },
 -        { id: 'moreDetails', icon: Sparkles },
-+        { id: 'losslessSearch', icon: Search },
++        { id: 'losslessCheck', icon: ShieldCheck },
      ],
-+    fixes: ['panel', 'mb', 'offline'],
++    fixes: ['local', 'spectrum', 'report', 'batch'],
  };
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
@@ -2315,7 +2600,7 @@ index 2f367df..361d5da 100644
              enabled
              && window.electron?.requestTranscodeFallback
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..8ee3966 100644
+index 86f3b6d..4378cb0 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -2519,10 +2804,23 @@ index 86f3b6d..8ee3966 100644
      "transcodeFallbackDesc": "Converts tracks that cannot be decoded with FFmpeg. The file is not changed.",
      "playbackFade": "Fade on pause and resume",
      "playbackFadeDesc": "Fades out before pausing and back in on resume.",
-@@ -4513,6 +4506,231 @@ export default {
+@@ -4513,6 +4506,244 @@ export default {
      "noDescription": "No description available",
    },
    "releaseNotes": {
++    "v0_9_17": {
++      "intro": "0.9.17 adds a real-lossless check inside the lossless search panel: a fast header-level screening, an on-device spectrum measurement, and loading a lossless-report.json produced on a PC.",
++      "losslessCheck": {
++        "title": "Check whether your lossless files are really lossless",
++        "description": "Every row gets a badge: true lossless / fake lossless / suspected transcode / unchecked. The lightweight check reads only a few hundred KB from the head and tail — tens of milliseconds per file — so “check whole library” can sweep everything. It never condemns a file: it only lists evidence such as an impossibly low compression ratio, leftover LAME/FFmpeg encoder strings, an empty FLAC audio MD5, or a WAV whose data chunk is actually MP3 frames. For a firmer answer press “Measure spectrum”: decode 20 seconds and measure where the content really ends — a 128 kbps MP3 wrapped in FLAC gets flagged. A lossless-report.json generated by the PC script is auto-loaded from Music/Download and overrides the in-app screening.",
++      },
++      "fixes": {
++        "local": "Lightweight check: header, compression ratio, encoder strings, empty FLAC MD5, MP3 bitstream inside WAV — reads a few hundred KB only.",
++        "spectrum": "Each song can be measured on its own; the result goes into the quality cache and the library quality column updates.",
++        "report": "Reads the PC lossless-report.json: auto-detected in Music/Download/Documents or typed manually, matched by file name plus size.",
++        "batch": "“Check whole library” sweeps up to 500 songs and can be stopped anytime; “only suspicious” filters them out.",
++      }
++    },
 +    "v0_9_16": {
 +      "intro": "0.9.16 adds a lossless search panel: open it from the command palette by typing “lossless”, it lists only lossless files already in your library, and can fill in correct title/artist/album from MusicBrainz.",
 +      "losslessSearch": {
@@ -2751,7 +3049,7 @@ index 86f3b6d..8ee3966 100644
      "v0_7_0": {
        "intro": "Here are the new features and improvements in version 0.7.0.",
        "temperaVisualExpansion": {
-@@ -5228,6 +5446,10 @@ export default {
+@@ -5228,6 +5459,10 @@ export default {
      "capsuleOpensPalette": "Click to open the command palette",
    },
    "localMusic": {
@@ -2762,7 +3060,7 @@ index 86f3b6d..8ee3966 100644
      "foldersAndPlaylists": "Folders",
      "albums": "Albums",
      "artists": "Artists",
-@@ -5242,8 +5464,34 @@ export default {
+@@ -5242,8 +5477,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -2797,7 +3095,7 @@ index 86f3b6d..8ee3966 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6301,13 @@ export default {
+@@ -6053,8 +6314,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -2813,7 +3111,7 @@ index 86f3b6d..8ee3966 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/in.ts b/src/i18n/locales/in.ts
-index fac0d47..c9cbbe2 100644
+index fac0d47..fa53e55 100644
 --- a/src/i18n/locales/in.ts
 +++ b/src/i18n/locales/in.ts
 @@ -2796,6 +2796,7 @@ export default {
@@ -2834,10 +3132,23 @@ index fac0d47..c9cbbe2 100644
      "transcodeFallbackDesc": "Mengonversi trek yang tidak dapat didekode dengan FFmpeg. Berkas tidak diubah.",
      "playbackFade": "Fade saat jeda dan lanjut",
      "playbackFadeDesc": "Fade keluar sebelum jeda dan masuk kembali saat lanjut.",
-@@ -4513,6 +4516,148 @@ export default {
+@@ -4513,6 +4516,161 @@ export default {
      "noDescription": "Tidak ada deskripsi tersedia"
    },
    "releaseNotes": {
++    "v0_9_17": {
++      "intro": "0.9.17 adds a real-lossless check inside the lossless search panel: a fast header-level screening, an on-device spectrum measurement, and loading a lossless-report.json produced on a PC.",
++      "losslessCheck": {
++        "title": "Check whether your lossless files are really lossless",
++        "description": "Every row gets a badge: true lossless / fake lossless / suspected transcode / unchecked. The lightweight check reads only a few hundred KB from the head and tail — tens of milliseconds per file — so “check whole library” can sweep everything. It never condemns a file: it only lists evidence such as an impossibly low compression ratio, leftover LAME/FFmpeg encoder strings, an empty FLAC audio MD5, or a WAV whose data chunk is actually MP3 frames. For a firmer answer press “Measure spectrum”: decode 20 seconds and measure where the content really ends — a 128 kbps MP3 wrapped in FLAC gets flagged. A lossless-report.json generated by the PC script is auto-loaded from Music/Download and overrides the in-app screening.",
++      },
++      "fixes": {
++        "local": "Lightweight check: header, compression ratio, encoder strings, empty FLAC MD5, MP3 bitstream inside WAV — reads a few hundred KB only.",
++        "spectrum": "Each song can be measured on its own; the result goes into the quality cache and the library quality column updates.",
++        "report": "Reads the PC lossless-report.json: auto-detected in Music/Download/Documents or typed manually, matched by file name plus size.",
++        "batch": "“Check whole library” sweeps up to 500 songs and can be stopped anytime; “only suspicious” filters them out.",
++      }
++    },
 +    "v0_9_16": {
 +      "intro": "0.9.16 adds a lossless search panel: open it from the command palette by typing “lossless”, it lists only lossless files already in your library, and can fill in correct title/artist/album from MusicBrainz.",
 +      "losslessSearch": {
@@ -3006,7 +3317,7 @@ index 23ebf79..336af7d 100644
      "playbackFade": "Làm mờ khi tạm dừng và tiếp tục",
      "playbackFadeDesc": "Giảm âm dần trước khi tạm dừng và tăng dần khi tiếp tục thay vì ngắt âm đột ngột. Bỏ qua nếu âm thanh không đi qua bộ xử lý âm thanh.",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..2ebf753 100644
+index 0067e9a..b80fb2a 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -3148,10 +3459,23 @@ index 0067e9a..2ebf753 100644
      "transcodeFallbackDesc": "遇到无法解码的歌曲时用 FFmpeg 转换，不修改原文件。",
      "playbackFade": "暂停/播放淡入淡出",
      "playbackFadeDesc": "暂停前淡出，恢复时淡入。",
-@@ -4513,6 +4577,231 @@ export default {
+@@ -4513,6 +4577,244 @@ export default {
      "noDescription": "暂无详细介绍",
    },
    "releaseNotes": {
++    "v0_9_17": {
++      "intro": "0.9.17 在「無損搜尋」面板裡加了真無損校驗：先做一次輕量初篩（只讀檔頭、壓縮比與編碼器痕跡），想更確定就當場量頻譜，也可以讀 PC 端產生的 lossless-report.json。",
++      "losslessCheck": {
++        "title": "校驗你的無損是不是真的",
++        "description": "每首歌多一顆徽章：真無損／假無損／疑似轉檔／未校驗。輕量校驗只讀開頭與結尾幾百 KB，幾十毫秒一首，所以「全庫輕量校驗」可以整個曲庫跑一遍；它不會判死，只把「壓縮比低到不可能」「檔案裡留著 LAME／FFmpeg 編碼器字串」「FLAC 音訊指紋是空的」「WAV 資料區其實是 MP3」這些證據列出來。想更準就按「量頻譜」：解 20 秒、量內容延伸到幾 kHz，128 kbps 的 MP3 裝進 flac 會被標成假無損。PC 端跑一次無損體檢.py 產生的 lossless-report.json，丟進 Music／Download 就自動載入，報告的判定優先於 App 自己的初篩。",
++      },
++      "fixes": {
++        "local": "輕量校驗：檔頭＋壓縮比＋編碼器字串＋FLAC 空指紋＋WAV 裡的 MP3 位元流，只讀幾百 KB，不會卡。",
++        "spectrum": "每首可單獨「量頻譜」，結果直接寫進音質快取，清單的音質欄也會跟著更新。",
++        "report": "讀取 PC 端 lossless-report.json：Music／Download／Documents 會自動找，也可以手動填路徑，配對用檔名＋檔案大小。",
++        "batch": "「全庫輕量校驗」一次掃 500 首，可隨時停止；「只看可疑」把被判可疑的挑出來。",
++      }
++    },
 +    "v0_9_16": {
 +      "intro": "0.9.16 加了「無損搜尋」面板：命令面板打「無損」就能開，只列本機曲庫裡的無損檔，還能一鍵用 MusicBrainz 把歌名／歌手／專輯補回正確寫法。",
 +      "losslessSearch": {
@@ -3380,7 +3704,7 @@ index 0067e9a..2ebf753 100644
      "v0_7_0": {
        "intro": "以下是 0.7.0 的新功能与改进",
        "temperaVisualExpansion": {
-@@ -5228,6 +5517,10 @@ export default {
+@@ -5228,6 +5530,10 @@ export default {
      "capsuleOpensPalette": "点一下打开命令面板",
    },
    "localMusic": {
@@ -3391,7 +3715,7 @@ index 0067e9a..2ebf753 100644
      "foldersAndPlaylists": "文件夹",
      "albums": "专辑",
      "artists": "艺术家",
-@@ -5242,8 +5535,34 @@ export default {
+@@ -5242,8 +5548,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -3426,7 +3750,7 @@ index 0067e9a..2ebf753 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6370,13 @@ export default {
+@@ -6051,8 +6383,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -4980,6 +5304,421 @@ index 0000000..3f6a43b
 +
 +/** songId → LocalSong（列表只有 id，量測要整首 LocalSong）。 */
 +export const resolveLocalSong = async (songId: string): Promise<LocalSong | undefined> => getLocalSong(songId);
+diff --git a/src/services/audioQuality/losslessReport.ts b/src/services/audioQuality/losslessReport.ts
+new file mode 100644
+index 0000000..ca3f4ef
+--- /dev/null
++++ b/src/services/audioQuality/losslessReport.ts
+@@ -0,0 +1,200 @@
++// src/services/audioQuality/losslessReport.ts
++// 讀 PC 端產生的 lossless-report.json（v0.9.17）。
++//
++// 為什麼要外部報告：App 只有 WKWebView / WebView，塞不進 ffmpeg（APK 會胖 20 MB、授權會傳染、TAK 還是解不了）。
++// 所以做法是「PC 端用完整 ffmpeg／sox 慢慢算，App 只當顯示器」：
++//   1. PC 上用「無損體檢.py」對音樂資料夾跑一次，輸出 lossless-report.json；
++//   2. 把 JSON 丟到車機的音樂資料夾（或 Download）；
++//   3. 面板自動在幾個常見路徑找它，也可以手動貼路徑。
++// 報告裡的判定優先級高於 App 自己的輕量初篩，因為它真的解碼量過頻譜。
++
++import type { LocalSong } from '../../types';
++import { fetchNativeRange, isLinkedStorageSupported } from '../nativeLinkedStorage';
++
++export type ReportVerdict = 'trueLossless' | 'fakeLossless' | 'suspect' | 'unknown';
++
++export interface LosslessReportEntry {
++    name: string;
++    path?: string;
++    size?: number;
++    codec?: string;
++    sampleRate?: number;
++    bitDepth?: number;
++    durationSec?: number;
++    ratio?: number | null;
++    cutoffHz?: number | null;
++    nyquistHz?: number | null;
++    transitionHz?: number | null;
++    encoder?: string | null;
++    verdict: ReportVerdict;
++    notes?: string[];
++}
++
++export interface LosslessReport {
++    version?: number;
++    generatedAt?: string;
++    tool?: string;
++    entries: LosslessReportEntry[];
++}
++
++const REPORT_PATH_KEY = 'folia.losslessReportPath:v1';
++
++/** 面板會自動試的常見位置（Android 外部儲存）。 */
++export const DEFAULT_REPORT_PATHS = [
++    '/storage/emulated/0/Music/lossless-report.json',
++    '/storage/emulated/0/Download/lossless-report.json',
++    '/storage/emulated/0/Documents/lossless-report.json',
++    '/storage/emulated/0/lossless-report.json',
++    '/sdcard/lossless-report.json',
++];
++
++const VERDICTS: ReportVerdict[] = ['trueLossless', 'fakeLossless', 'suspect', 'unknown'];
++
++const normalizeVerdict = (value: unknown): ReportVerdict => (
++    typeof value === 'string' && (VERDICTS as string[]).includes(value)
++        ? value as ReportVerdict
++        : 'unknown'
++);
++
++const baseName = (value: string): string => {
++    const parts = value.split(/[\\/]/);
++    return (parts[parts.length - 1] ?? value).toLowerCase();
++};
++
++let index = new Map<string, LosslessReportEntry>();
++let indexed: LosslessReport | null = null;
++
++export const parseLosslessReport = (text: string): LosslessReport | null => {
++    let raw: unknown;
++    try {
++        raw = JSON.parse(text);
++    } catch {
++        return null;
++    }
++    if (!raw || typeof raw !== 'object') return null;
++    const record = raw as Record<string, unknown>;
++    const list = Array.isArray(record.entries) ? record.entries : Array.isArray(record.files) ? record.files : null;
++    if (!list) return null;
++    const entries: LosslessReportEntry[] = [];
++    for (const item of list) {
++        if (!item || typeof item !== 'object') continue;
++        const entry = item as Record<string, unknown>;
++        const name = typeof entry.name === 'string' ? entry.name : typeof entry.path === 'string' ? entry.path : '';
++        if (!name) continue;
++        entries.push({
++            name,
++            path: typeof entry.path === 'string' ? entry.path : undefined,
++            size: typeof entry.size === 'number' ? entry.size : undefined,
++            codec: typeof entry.codec === 'string' ? entry.codec : undefined,
++            sampleRate: typeof entry.sampleRate === 'number' ? entry.sampleRate : undefined,
++            bitDepth: typeof entry.bitDepth === 'number' ? entry.bitDepth : undefined,
++            durationSec: typeof entry.durationSec === 'number' ? entry.durationSec : undefined,
++            ratio: typeof entry.ratio === 'number' ? entry.ratio : null,
++            cutoffHz: typeof entry.cutoffHz === 'number' ? entry.cutoffHz : null,
++            nyquistHz: typeof entry.nyquistHz === 'number' ? entry.nyquistHz : null,
++            transitionHz: typeof entry.transitionHz === 'number' ? entry.transitionHz : null,
++            encoder: typeof entry.encoder === 'string' ? entry.encoder : null,
++            verdict: normalizeVerdict(entry.verdict),
++            notes: Array.isArray(entry.notes) ? entry.notes.filter(note => typeof note === 'string') as string[] : [],
++        });
++    }
++    return {
++        version: typeof record.version === 'number' ? record.version : undefined,
++        generatedAt: typeof record.generatedAt === 'string' ? record.generatedAt : undefined,
++        tool: typeof record.tool === 'string' ? record.tool : undefined,
++        entries,
++    };
++};
++
++/** 報告索引：以檔名（不分大小寫）配對，同名多筆時用檔案大小再挑一次。 */
++export const indexLosslessReport = (report: LosslessReport | null): void => {
++    indexed = report;
++    index = new Map();
++    if (!report) return;
++    for (const entry of report.entries) {
++        const key = baseName(entry.name);
++        const group = index.get(key);
++        if (!group) index.set(key, entry);
++        else if (group.size && entry.size === group.size) index.set(key, entry);
++    }
++};
++
++export const getIndexedReport = (): LosslessReport | null => indexed;
++export const getReportEntryCount = (): number => indexed?.entries.length ?? 0;
++
++export const findReportEntry = (song: LocalSong): LosslessReportEntry | undefined => {
++    const key = baseName(song.fileName);
++    const hit = index.get(key);
++    if (!hit) return undefined;
++    // 同名不同大小（不同版本、不同轉檔）視為沒配到，寧可空著也不要錯標。
++    if (hit.size && song.fileSize && Math.abs(hit.size - song.fileSize) > 1024) return undefined;
++    return hit;
++};
++
++export const savedReportPath = (): string => {
++    try {
++        return localStorage.getItem(REPORT_PATH_KEY) ?? '';
++    } catch {
++        return '';
++    }
++};
++
++export const rememberReportPath = (path: string): void => {
++    try {
++        if (path) localStorage.setItem(REPORT_PATH_KEY, path);
++        else localStorage.removeItem(REPORT_PATH_KEY);
++    } catch {
++        // 無痕模式寫不進去，不影響本次載入。
++    }
++};
++
++export interface LoadReportResult {
++    report?: LosslessReport;
++    path?: string;
++    error?: string;
++}
++
++const readTextAtPath = async (path: string): Promise<string | null> => {
++    if (!isLinkedStorageSupported()) return null;
++    // 報告通常幾百 KB；上限開到 8 MB，超大的話只讀前 8 MB 也能配對。
++    const bytes = await fetchNativeRange(path, 8 * 1024 * 1024, 0);
++    if (!bytes || bytes.byteLength === 0) return null;
++    return new TextDecoder('utf-8').decode(bytes);
++};
++
++/** 依序試幾個常見路徑；找到第一份能解析的就停。 */
++export const autoLoadLosslessReport = async (): Promise<LoadReportResult> => {
++    const remembered = savedReportPath();
++    const candidates = [remembered, ...DEFAULT_REPORT_PATHS].filter(Boolean);
++    for (const path of candidates) {
++        try {
++            const text = await readTextAtPath(path);
++            if (!text) continue;
++            const report = parseLosslessReport(text);
++            if (!report) continue;
++            indexLosslessReport(report);
++            rememberReportPath(path);
++            return { report, path };
++        } catch (error) {
++            console.warn('[LosslessReport] read failed:', path, error);
++        }
++    }
++    return { error: '沒找到 lossless-report.json（可用下面的路徑欄位手動指定）' };
++};
++
++export const loadLosslessReportAt = async (path: string): Promise<LoadReportResult> => {
++    const trimmed = path.trim();
++    if (!trimmed) return { error: '請先填報告路徑' };
++    if (!isLinkedStorageSupported()) return { error: '目前不是車機／Android 連結模式，讀不到外部檔案' };
++    try {
++        const text = await readTextAtPath(trimmed);
++        if (!text) return { error: '讀不到這個檔案（路徑錯、權限不足或檔案是空的）' };
++        const report = parseLosslessReport(text);
++        if (!report) return { error: '這個檔案不是可解析的 lossless-report.json' };
++        indexLosslessReport(report);
++        rememberReportPath(trimmed);
++        return { report, path: trimmed };
++    } catch (error) {
++        return { error: `讀取失敗：${error instanceof Error ? error.message : String(error)}` };
++    }
++};
+diff --git a/src/services/audioQuality/losslessSuspect.ts b/src/services/audioQuality/losslessSuspect.ts
+new file mode 100644
+index 0000000..d694a64
+--- /dev/null
++++ b/src/services/audioQuality/losslessSuspect.ts
+@@ -0,0 +1,203 @@
++// src/services/audioQuality/losslessSuspect.ts
++// 「假無損」的輕量初篩（v0.9.17）。
++//
++// 跟 measureLocalQuality 的分工：
++//   - 這裡只讀檔頭＋檔尾共幾百 KB，不解碼、不做 FFT，一首幾十毫秒，所以可以對整個曲庫跑一遍；
++//   - 真正的頻譜量測（解 20 秒、量截止點）還是走 measureLocalQuality，慢但準。
++//
++// 這支模組的結論只有「未見可疑／可疑／無法判斷」三種，**永遠不會判死**，
++// 因為壓縮比與編碼器字串都只是間接證據：真正的結論要嘛來自頻譜，要嘛來自 PC 端產生的 lossless-report.json。
++
++import type { LocalSong } from '../../types';
++import { getLocalSongHeaderBytes, getLocalSongRangeBytes } from '../localMusicService';
++import { probeContainer, type ContainerProbe } from './qualityProbe';
++
++/** 檔頭讀 512 KB：少數 flac 前面壓著大封面，64 KB 會讀不到 STREAMINFO。 */
++const HEAD_BYTES = 512 * 1024;
++/** 檔尾讀 256 KB：APEv2 footer、DSF 的內嵌 ID3 都貼在後面。 */
++const TAIL_BYTES = 256 * 1024;
++
++export type LosslessSuspectVerdict = 'clean' | 'suspect' | 'unknown';
++
++export interface LosslessSuspect {
++    verdict: LosslessSuspectVerdict;
++    /** 可疑證據，按嚴重度排；介面上取第一條顯示。 */
++    reasons: string[];
++    /** 只提到「偏低」但不構成可疑的觀察，不影響 verdict。 */
++    notes: string[];
++    /** 實際壓縮比（檔案大小 ÷ 未壓縮 PCM 大小）；量不到時為 null。 */
++    ratio: number | null;
++    /** 檔頭／檔尾掃到的轉檔工具痕跡。 */
++    encoder: string | null;
++}
++
++const EMPTY: LosslessSuspect = { verdict: 'unknown', reasons: [], notes: [], ratio: null, encoder: null };
++
++/**
++ * 已知的轉檔工具字串。
++ * strong：有損編碼器的名字，出現在無損檔裡幾乎只能是「mp3／aac 轉 flac」；
++ * weak：通用容器工具（例如用 ffmpeg 把 WAV 轉 FLAC 也會留 Lavf），本身不代表有損，只寫成備註。
++ */
++const ENCODER_MARKERS: Array<{ pattern: RegExp; label: string; strength: 'strong' | 'weak' }> = [
++    { pattern: /libmp3lame|lame3\.|lame\d|\blame\b/i, label: 'LAME（MP3 編碼器）', strength: 'strong' },
++    { pattern: /libfaac|\bfaac\b|faac\s?\d/i, label: 'FAAC（AAC 編碼器）', strength: 'strong' },
++    { pattern: /qaac|quicktime\s?aac/i, label: 'qaac（AAC 編碼器）', strength: 'strong' },
++    { pattern: /nero\s?aac|helix|besweet|\bgogo\b/i, label: 'Nero／Helix／BeSweet 轉檔工具', strength: 'strong' },
++    { pattern: /libavcodec|lavf\d|l\\avf|ffmpeg/i, label: 'FFmpeg／libavcodec', strength: 'weak' },
++    { pattern: /tmpgenc|\bavs\b/i, label: 'TMPGEnc／AVS 轉檔工具', strength: 'weak' },
++];
++
++const latin = (bytes: Uint8Array): string => {
++    let text = '';
++    // 逐段 decode 避免超大字串；512 KB 一次 decode 在行動端也可接受。
++    const chunk = 64 * 1024;
++    for (let offset = 0; offset < bytes.length; offset += chunk) {
++        text += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunk, bytes.length)));
++    }
++    return text;
++};
++
++const findEncoderMarker = (text: string): { label: string; raw: string; strength: 'strong' | 'weak' } | null => {
++    for (const { pattern, label, strength } of ENCODER_MARKERS) {
++        const match = text.match(pattern);
++        if (match) return { label, raw: match[0], strength };
++    }
++    return null;
++};
++
++/** WAV／AIFF 裡塞的其實是 MP3 位元流：找到 data／SSND 區塊，看它的第一個 frame 是否有 MPEG 同步字。 */
++const mp3StreamInsidePcmContainer = (bytes: Uint8Array, marker: 'data' | 'SSND'): string | null => {
++    const limit = Math.min(bytes.length - 12, 8 * 1024 * 1024);
++    for (let i = 8; i < limit; i += 1) {
++        if (
++            bytes[i] === marker.charCodeAt(0)
++            && bytes[i + 1] === marker.charCodeAt(1)
++            && bytes[i + 2] === marker.charCodeAt(2)
++            && bytes[i + 3] === marker.charCodeAt(3)
++        ) {
++            const start = i + 8 + (marker === 'SSND' ? 8 : 0);
++            if (start + 2 >= bytes.length) return null;
++            const b0 = bytes[start];
++            const b1 = bytes[start + 1];
++            if (b0 === 0xff && (b1 & 0xe0) === 0xe0) return 'MPEG 音訊同步字';
++            if (b0 === 0x49 && b1 === 0x44 && bytes[start + 2] === 0x33) return 'ID3 標頭';
++            return null;
++        }
++    }
++    return null;
++};
++
++/** FLAC 的 STREAMINFO 尾端 16 bytes 是未壓縮音訊的 MD5；全零代表沒收完／串流寫入。 */
++const flacHasEmptyAudioMd5 = (bytes: Uint8Array): boolean => {
++    if (bytes.length < 42) return false;
++    if (bytes[0] !== 0x66 || bytes[1] !== 0x4c || bytes[2] !== 0x61 || bytes[3] !== 0x43) return false;
++    for (let i = 26; i < 42; i += 1) if (bytes[i] !== 0) return false;
++    return true;
++};
++
++const ratioOf = (fileSize: number, probe: ContainerProbe | null): number | null => {
++    if (!fileSize || !probe || !probe.durationSec || !probe.sampleRate) return null;
++    const channels = probe.channels || 2;
++    const bits = probe.bitDepth || 16;
++    const rawBytes = probe.durationSec * probe.sampleRate * channels * (bits / 8);
++    if (!Number.isFinite(rawBytes) || rawBytes <= 0) return null;
++    return fileSize / rawBytes;
++};
++
++const ratioMessage = (ratio: number, codec: string): { suspect: string | null; note: string | null } => {
++    const percent = `${(ratio * 100).toFixed(0)}%`;
++    // WAV／AIFF／DSD 是不壓縮的，正常應該接近 100%；低太多代表音訊被截短或塞的是壓縮位元流。
++    if (codec === 'wav' || codec === 'aiff' || codec === 'aifc' || codec === 'dsd') {
++        if (ratio < 0.6) return { suspect: `未壓縮容器的實際資料只佔 ${percent}，音訊疑似被截短或替換`, note: null };
++        if (ratio < 0.9) return { suspect: null, note: `實際資料佔 ${percent}，比標準未壓縮檔小` };
++        return { suspect: null, note: null };
++    }
++    // FLAC／ALAC／APE／WavPack 的壓縮比通常 0.4～0.8；掉到 0.28 以下幾乎不可能是原生無損。
++    if (ratio < 0.28) return { suspect: `壓縮比只有 ${percent}，原生無損壓不到這麼小`, note: null };
++    if (ratio < 0.4) return { suspect: null, note: `壓縮比 ${percent} 偏低，但仍在無損可能範圍` };
++    if (ratio > 1.02) return { suspect: `檔案比未壓縮的 PCM 還大（${percent}），可能夾了大量非音訊資料`, note: null };
++    return { suspect: null, note: null };
++};
++
++/**
++ * 純函式版：手上已經有檔頭／檔尾位元組時直接算，不碰檔案系統（單元測試走這條）。
++ */
++export const evaluateLosslessBytes = (
++    options: { head: ArrayBuffer; tail?: ArrayBuffer | null; fileName: string; fileSize: number },
++): LosslessSuspect => {
++    const { head, tail, fileName, fileSize } = options;
++    const headBytes = new Uint8Array(head);
++    const tailBytes = tail ? new Uint8Array(tail) : null;
++    const reasons: string[] = [];
++    const notes: string[] = [];
++    const probe = probeContainer(head);
++    const extension = (fileName.match(/\.([a-z0-9]+)$/i)?.[1] ?? '').toLowerCase();
++
++    const marker = findEncoderMarker(latin(headBytes) + (tailBytes ? latin(tailBytes) : ''));
++    const encoder = marker ? marker.raw : null;
++    if (marker && marker.strength === 'strong') {
++        reasons.push(`檔案裡有「${marker.label}」的編碼器字串（${marker.raw}），通常是轉檔留下來的`);
++    } else if (marker) {
++        notes.push(`有「${marker.label}」的工具痕跡，但這類工具也可能只是無損轉無損`);
++    }
++
++    if (extension === 'flac' && flacHasEmptyAudioMd5(headBytes)) {
++        reasons.push('FLAC 的音訊指紋（MD5）是空的，通常是邊轉邊寫、沒寫完的檔案');
++    }
++
++    if (extension === 'wav') {
++        const inside = mp3StreamInsidePcmContainer(headBytes, 'data');
++        if (inside) reasons.push(`這個 WAV 的資料區其實是 MP3 位元流（開頭是${inside}）`);
++    }
++    if (extension === 'aif' || extension === 'aiff' || extension === 'aifc') {
++        const inside = mp3StreamInsidePcmContainer(headBytes, 'SSND');
++        if (inside) reasons.push(`這個 AIFF 的資料區其實是 MP3 位元流（開頭是${inside}）`);
++    }
++
++    if (!probe) {
++        return { verdict: reasons.length ? 'suspect' : 'unknown', reasons, notes, ratio: null, encoder };
++    }
++    if (!probe.sampleRate) notes.push('檔頭讀不到取樣率');
++    if (probe.bitDepth > 32) notes.push(`位深 ${probe.bitDepth} 不合理`);
++
++    const ratio = ratioOf(fileSize, probe);
++    if (ratio !== null) {
++        const message = ratioMessage(ratio, probe.codec);
++        if (message.suspect) reasons.push(message.suspect);
++        if (message.note) notes.push(message.note);
++    }
++
++    return {
++        verdict: reasons.length ? 'suspect' : 'clean',
++        reasons,
++        notes,
++        ratio,
++        encoder,
++    };
++};
++
++/**
++ * 對一首歌做輕量初篩。讀不到檔案（權限掉了、檔案搬走）回 `unknown`，呼叫端不必分辨原因。
++ */
++export const analyzeLosslessSuspect = async (song: LocalSong): Promise<LosslessSuspect> => {
++    const fileSize = Math.max(0, song.fileSize || 0);
++
++    let head: ArrayBuffer | null = null;
++    try {
++        head = await getLocalSongHeaderBytes(song, HEAD_BYTES);
++    } catch (error) {
++        console.warn('[LosslessSuspect] header read failed:', song.fileName, error);
++    }
++    if (!head || head.byteLength < 16) return EMPTY;
++    let tail: ArrayBuffer | null = null;
++    if (fileSize > HEAD_BYTES + TAIL_BYTES) {
++        try {
++            const bytes = await getLocalSongRangeBytes(song, fileSize - TAIL_BYTES, TAIL_BYTES);
++            if (bytes && bytes.byteLength > 0) tail = bytes;
++        } catch {
++            tail = null;
++        }
++    }
++
++    return evaluateLosslessBytes({ head, tail, fileName: song.fileName, fileSize });
++};
 diff --git a/src/services/audioQuality/qualityProbe.ts b/src/services/audioQuality/qualityProbe.ts
 new file mode 100644
 index 0000000..09351ac
@@ -8573,6 +9312,175 @@ index 0000000..9c6a9f4
 +        const id3 = tag([...frame('TIT2', [3, ...utf8('晴天')])], 4);
 +        const bytes = Uint8Array.from([0x44, 0x53, 0x44, 0x20, 0, 0, 0, 0, ...Array.from({ length: 24 }, () => 0), ...Array.from(id3)]);
 +        expect(parseRawTags(bytes, 'd.dsf')?.title).toBe('晴天');
++    });
++});
+diff --git a/test/unit/losslessCheck.test.ts b/test/unit/losslessCheck.test.ts
+new file mode 100644
+index 0000000..c85cda7
+--- /dev/null
++++ b/test/unit/losslessCheck.test.ts
+@@ -0,0 +1,163 @@
++import { describe, expect, it } from 'vitest';
++import { evaluateLosslessBytes } from '@/services/audioQuality/losslessSuspect';
++import {
++    findReportEntry,
++    indexLosslessReport,
++    parseLosslessReport,
++} from '@/services/audioQuality/losslessReport';
++import type { LocalSong } from '@/types';
++
++// test/unit/losslessCheck.test.ts
++// v0.9.17 的真無損校驗：輕量初篩（檔頭／壓縮比／編碼器痕跡）與外部報告配對。
++
++const buildFlac = (options: { sampleRate?: number; bitDepth?: number; totalSamples?: number; md5Zero?: boolean } = {}): Uint8Array => {
++    const sampleRate = options.sampleRate ?? 44100;
++    const bitDepth = options.bitDepth ?? 16;
++    const totalSamples = options.totalSamples ?? sampleRate * 3;
++    const bytes = new Uint8Array(42);
++    bytes.set([0x66, 0x4c, 0x61, 0x43], 0); // fLaC
++    bytes[4] = 0x80; // last block, type 0 = STREAMINFO
++    bytes[5] = 0;
++    bytes[6] = 0;
++    bytes[7] = 34;
++    const depth = bitDepth - 1;
++    bytes[18] = (sampleRate >>> 12) & 0xff;
++    bytes[19] = (sampleRate >>> 4) & 0xff;
++    bytes[20] = ((sampleRate & 0x0f) << 4) | (1 << 1) | ((depth >> 4) & 0x01); // 2 channels
++    bytes[21] = ((depth & 0x0f) << 4) | (Math.floor(totalSamples / 2 ** 32) & 0x0f);
++    bytes[22] = (totalSamples >>> 24) & 0xff;
++    bytes[23] = (totalSamples >>> 16) & 0xff;
++    bytes[24] = (totalSamples >>> 8) & 0xff;
++    bytes[25] = totalSamples & 0xff;
++    if (!options.md5Zero) for (let i = 26; i < 42; i += 1) bytes[i] = i;
++    return bytes;
++};
++
++const rawBytesOfFlac = (sampleRate: number, bitDepth: number, totalSamples: number): number =>
++    totalSamples * 2 * (bitDepth / 8);
++
++const buildWav = (payloadHead: number[]): Uint8Array => {
++    const dataBytes = 44;
++    const bytes = new Uint8Array(44 + dataBytes);
++    const ascii = (text: string, offset: number) => {
++        for (let i = 0; i < text.length; i += 1) bytes[offset + i] = text.charCodeAt(i);
++    };
++    ascii('RIFF', 0);
++    const riffSize = bytes.length - 8;
++    bytes[4] = riffSize & 0xff; bytes[5] = (riffSize >> 8) & 0xff; bytes[6] = (riffSize >> 16) & 0xff; bytes[7] = (riffSize >> 24) & 0xff;
++    ascii('WAVE', 8);
++    ascii('fmt ', 12);
++    bytes.set([16, 0, 0, 0], 16);
++    bytes.set([1, 0, 2, 0], 20); // PCM, 2 channels
++    bytes.set([0x44, 0xac, 0, 0], 24); // 44100
++    bytes.set([0x10, 0xb1, 0x02, 0], 28); // byte rate
++    bytes.set([4, 0, 16, 0], 32); // block align, 16 bit
++    ascii('data', 36);
++    bytes.set([dataBytes & 0xff, 0, 0, 0], 40);
++    bytes.set(payloadHead, 44);
++    return bytes;
++};
++
++describe('evaluateLosslessBytes', () => {
++    it('正常壓縮的 FLAC 不算可疑', () => {
++        const head = buildFlac();
++        const result = evaluateLosslessBytes({
++            head: head.buffer as ArrayBuffer,
++            fileName: '晴天.flac',
++            fileSize: Math.round(rawBytesOfFlac(44100, 16, 132300) * 0.55),
++        });
++        expect(result.verdict).toBe('clean');
++        expect(result.reasons).toHaveLength(0);
++        expect(result.ratio).toBeGreaterThan(0.4);
++    });
++
++    it('壓縮比低到不可能時判可疑', () => {
++        const result = evaluateLosslessBytes({
++            head: buildFlac().buffer as ArrayBuffer,
++            fileName: '夜曲.flac',
++            fileSize: Math.round(rawBytesOfFlac(44100, 16, 132300) * 0.18),
++        });
++        expect(result.verdict).toBe('suspect');
++        expect(result.reasons.join('')).toContain('壓縮比');
++    });
++
++    it('檔裡留著 LAME 字串就判可疑', () => {
++        const head = buildFlac();
++        const merged = new Uint8Array(head.length + 64);
++        merged.set(head, 0);
++        merged.set(Array.from('LAME3.100').map(char => char.charCodeAt(0)), head.length);
++        const result = evaluateLosslessBytes({
++            head: merged.buffer as ArrayBuffer,
++            fileName: 'a.flac',
++            fileSize: Math.round(rawBytesOfFlac(44100, 16, 132300) * 0.55),
++        });
++        expect(result.verdict).toBe('suspect');
++        expect(result.encoder).toMatch(/LAME/i);
++    });
++
++    it('FLAC 音訊 MD5 全零時判可疑', () => {
++        const result = evaluateLosslessBytes({
++            head: buildFlac({ md5Zero: true }).buffer as ArrayBuffer,
++            fileName: 'b.flac',
++            fileSize: Math.round(rawBytesOfFlac(44100, 16, 132300) * 0.55),
++        });
++        expect(result.verdict).toBe('suspect');
++        expect(result.reasons.join('')).toContain('MD5');
++    });
++
++    it('WAV 的 data 區開始是 MP3 同步字就判可疑', () => {
++        const wav = buildWav([0xff, 0xfb, 0x90, 0x00]);
++        const result = evaluateLosslessBytes({
++            head: wav.buffer as ArrayBuffer,
++            fileName: 'c.wav',
++            fileSize: wav.length,
++        });
++        expect(result.verdict).toBe('suspect');
++        expect(result.reasons.join('')).toContain('MP3');
++    });
++
++    it('小於 16 bytes 的位元組由呼叫端擋掉，這裡對空檔寬鬆處理', () => {
++        const result = evaluateLosslessBytes({ head: new ArrayBuffer(8), fileName: 'empty.flac', fileSize: 0 });
++        expect(result.verdict).toBe('unknown');
++    });
++});
++
++describe('losslessReport', () => {
++    const text = JSON.stringify({
++        version: 1,
++        generatedAt: '2026-11-26T00:00:00Z',
++        tool: 'lossless_report.py',
++        entries: [
++            { name: '晴天.flac', size: 30_000_000, verdict: 'trueLossless', cutoffHz: 21000, nyquistHz: 22050 },
++            { name: '夜曲.flac', size: 20_000_000, verdict: 'fakeLossless', cutoffHz: 16000, nyquistHz: 22050, notes: ['高頻斷崖'] },
++            { name: 'bad', verdict: 'whatever' },
++        ],
++    });
++
++    const song = (fileName: string, fileSize: number): LocalSong => ({
++        id: fileName,
++        fileName,
++        fileSize,
++        title: fileName,
++        importedMetadata: { artistNames: ['周杰倫'], albumName: '范特西' },
++    }) as unknown as LocalSong;
++
++    it('解析報告並把未知判定降級成 unknown', () => {
++        const report = parseLosslessReport(text);
++        expect(report?.entries).toHaveLength(3);
++        expect(report?.entries[2].verdict).toBe('unknown');
++    });
++
++    it('無法解析的內容回 null', () => {
++        expect(parseLosslessReport('not json')).toBeNull();
++        expect(parseLosslessReport('{"foo":1}')).toBeNull();
++    });
++
++    it('用檔名配對，同名但大小差很多時不配', () => {
++        indexLosslessReport(parseLosslessReport(text));
++        expect(findReportEntry(song('晴天.flac', 30_000_000))?.verdict).toBe('trueLossless');
++        expect(findReportEntry(song('/music/晴天.flac', 30_000_100))?.verdict).toBe('trueLossless');
++        expect(findReportEntry(song('晴天.flac', 12_000_000))).toBeUndefined();
++        expect(findReportEntry(song('不存在.flac', 1))).toBeUndefined();
 +    });
 +});
 diff --git a/test/unit/settings/settingsNavModel.test.ts b/test/unit/settings/settingsNavModel.test.ts
