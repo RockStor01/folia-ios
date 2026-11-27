@@ -21,7 +21,7 @@ index 39ec48c..114cb4d 100644
      <script src="/runtime-config.js"></script>
    <script type="importmap">
 diff --git a/package.json b/package.json
-index 6976461..eb619da 100644
+index 6976461..71dfa1d 100644
 --- a/package.json
 +++ b/package.json
 @@ -8,7 +8,7 @@
@@ -29,7 +29,7 @@ index 6976461..eb619da 100644
    },
    "private": true,
 -  "version": "0.8.0",
-+  "version": "0.9.20",
++  "version": "0.9.21",
    "license": "AGPL-3.0",
    "type": "module",
    "main": "electron/main.cjs",
@@ -1568,7 +1568,7 @@ index 5de4bf3..af66827 100644
      );
  };
 diff --git a/src/components/modal/newFeaturesRelease.ts b/src/components/modal/newFeaturesRelease.ts
-index e49a39c..4fb6c1c 100644
+index e49a39c..2393ce3 100644
 --- a/src/components/modal/newFeaturesRelease.ts
 +++ b/src/components/modal/newFeaturesRelease.ts
 @@ -1,4 +1,4 @@
@@ -1586,13 +1586,13 @@ index e49a39c..4fb6c1c 100644
      /** 重大更新：介绍上方显示「<代号> Update · 重大更新」标签；代号不翻译，文案在 help.majorUpdateLabel。
       *  servicePack：同一重大更新的热修复版，标签改成「<代号> Update SP<n> · 重大更新」，文案在 help.servicePackLabel。 */
      majorUpdate?: { codename: string; servicePack?: number };
-@@ -18,14 +20,9 @@ type NewFeaturesRelease = {
+@@ -18,14 +20,10 @@ type NewFeaturesRelease = {
  
  // Defines the current release's cards; their localized text lives under i18nKey in every locale.
  export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
 -    i18nKey: 'releaseNotes.v0_8_0',
 -    majorUpdate: { codename: 'Severance' },
-+    i18nKey: 'releaseNotes.v0_9_20',
++    i18nKey: 'releaseNotes.v0_9_21',
      features: [
 -        { id: 'sourceMods', icon: Puzzle },
 -        { id: 'modMarket', icon: Store },
@@ -1600,9 +1600,10 @@ index e49a39c..4fb6c1c 100644
 -        { id: 'moments', icon: MessageSquareText },
 -        { id: 'stemMixer', icon: SlidersVertical },
 -        { id: 'moreDetails', icon: Sparkles },
-+        { id: 'fastLyricMatch', icon: Zap },
++        { id: 'dsdSubstitute', icon: FileAudio },
++        { id: 'tagRepair', icon: SpellCheck },
      ],
-+    fixes: ['parallel', 'cache', 'dedupe', 'amll'],
++    fixes: ['substitute', 'queue', 'filename', 'manual'],
  };
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
@@ -2121,6 +2122,81 @@ index 0000000..4047bc3
 +};
 +
 +export default QualityPage;
+diff --git a/src/components/modal/settings/pages/StoragePage.tsx b/src/components/modal/settings/pages/StoragePage.tsx
+index df9e459..3cd6954 100644
+--- a/src/components/modal/settings/pages/StoragePage.tsx
++++ b/src/components/modal/settings/pages/StoragePage.tsx
+@@ -7,11 +7,12 @@ import { openCommandPaletteCommand } from '../../../../stores/useAppViewStore';
+ import { useAudioSettingsStore } from '../../../../stores/useAudioSettingsStore';
+ import { closeSettings } from '../../../../stores/useSettingsModalStore';
+ import { Button, CopyValue, FoldedGroup, Group, Row, Select, Toggle, Value, useSettingsKitTheme, type SettingsOptionDef } from '../kit';
++import { setStatusMessage } from '../../../../stores/useStatusMessageStore';
+ import { useSettingsPage } from './settingsPageContext';
+ import ConfigTransferRows from './storage/ConfigTransferRows';
+ import FolderWatchGroup from './storage/FolderWatchGroup';
+ import SongNotesTransferRows from './storage/SongNotesTransferRows';
+-import { BACKUP, CACHE_ROWS, CACHES, MEDIA, O } from './storage/options';
++import { BACKUP, CACHE_ROWS, CACHES, MEDIA, O, REPAIR } from './storage/options';
+ 
+ // src/components/modal/settings/pages/StoragePage.tsx
+ // The 存储与备份 page: what Folia keeps on disk and how to carry its look to another Folia. The
+@@ -36,6 +37,33 @@ const StoragePage: React.FC = () => {
+     const cacheLimitGb = useAudioSettingsStore(state => state.mediaCacheLimitGb);
+     const setCacheLimitGb = useAudioSettingsStore(state => state.handleSetMediaCacheLimitGb);
+     const [clearingAll, setClearingAll] = useState<'no' | 'asking' | 'running'>('no');
++    // 全库扫一遍标签要几十秒，所以给个进度与「再跑一遍」两个状态。
++    const [repairing, setRepairing] = useState(false);
++    const [repairDone, setRepairDone] = useState<{ scanned: number; fixed: number } | null>(null);
++
++    const repairLostTitles = async () => {
++        if (repairing) return;
++        setRepairing(true);
++        setRepairDone(null);
++        try {
++            const { repairLostTags, resetLostTagRepairAttempts } = await import('../../../../services/localSongRawTagBackfill');
++            // 手动按下就当作用户要重来：连上次试过的也再读一遍。
++            resetLostTagRepairAttempts();
++            const result = await repairLostTags({
++                includeAttempted: true,
++                onProgress: (done, total) => {
++                    setStatusMessage({ type: 'info', text: t('options.repairLostTitlesProgress', { done, total }) });
++                },
++            });
++            setRepairDone(result);
++            setStatusMessage({
++                type: result.fixed > 0 ? 'success' : 'info',
++                text: t('options.repairLostTitlesDone', { fixed: result.fixed, scanned: result.scanned }),
++            });
++        } finally {
++            setRepairing(false);
++        }
++    };
+ 
+     // Everything the app stored goes, so it starts again from an empty state — except song comments
+     // (FoliaSongNotesDB), which the user chose to keep (2026-11-24); the confirm text says so.
+@@ -110,6 +138,22 @@ const StoragePage: React.FC = () => {
+                 ))}
+             </Group>
+ 
++            <Group def={REPAIR}>
++                <Row
++                    option={O.repairLostTitles}
++                    note={t('options.repairLostTitlesDesc')}
++                    onClick={() => void repairLostTitles()}
++                >
++                    <Value>
++                        {repairing
++                            ? t('options.repairLostTitlesRunning')
++                            : repairDone
++                                ? t('options.repairLostTitlesDoneShort', { fixed: repairDone.fixed })
++                                : t('options.repairLostTitlesAction')}
++                    </Value>
++                </Row>
++            </Group>
++
+             <FolderWatchGroup />
+ 
+             <FoldedGroup def={BACKUP}>
 diff --git a/src/components/modal/settings/pages/index.ts b/src/components/modal/settings/pages/index.ts
 index 92620c2..04852d7 100644
 --- a/src/components/modal/settings/pages/index.ts
@@ -2141,6 +2217,27 @@ index 92620c2..04852d7 100644
      sources,
      general,
      interaction,
+diff --git a/src/components/modal/settings/pages/storage/options.ts b/src/components/modal/settings/pages/storage/options.ts
+index 9246cb8..6dcc1f9 100644
+--- a/src/components/modal/settings/pages/storage/options.ts
++++ b/src/components/modal/settings/pages/storage/options.ts
+@@ -10,6 +10,8 @@ export const CACHES: SettingsGroupDef = { id: 'cacheDetails', titleKey: 'options
+ // Drawn only where the browser can watch a folder (FolderWatchGroup).
+ export const WATCH: SettingsGroupDef = { id: 'localLibraryWatch', titleKey: 'options.localLibraryWatch', available: isLocalLibraryAutoScanSupported };
+ export const BACKUP: SettingsGroupDef = { id: 'importExportTitle', titleKey: 'options.importExportTitle' };
++// 本地曲库的修补：标签被车机探针写成 ? 或 � 的歌，回文件读原始字节再补一次（v0.9.21）。
++export const REPAIR: SettingsGroupDef = { id: 'localLibraryRepair', titleKey: 'options.settingsHeadingLocalRepair' };
+ 
+ /** What the app keeps on disk, one row each, in the order they are drawn. */
+ export const CACHE_ROWS = [
+@@ -26,6 +28,7 @@ export const O = {
+     cacheDirectory: option(MEDIA, 'cacheDirectory', 'options.cacheDirectory', { electronOnly: true }),
+     cacheLimit: option(MEDIA, 'mediaCacheLimit', 'options.mediaCacheLimit', { electronOnly: true }),
+     autoScan: option(WATCH, 'localLibraryAutoScan', 'options.localLibraryAutoScan'),
++    repairLostTitles: option(REPAIR, 'repairLostTitles', 'options.repairLostTitles'),
+     exportConfig: option(BACKUP, 'exportConfig', 'options.exportThemeLabel'),
+     importConfig: option(BACKUP, 'importConfig', 'options.importBtn'),
+     // 速记簿「时刻」的导出、导入（SongNotesTransferRows）。模组那一行只在这台设备上有模组的库时画，搜索也照样列出：
 diff --git a/src/components/modal/userGuideContent.ts b/src/components/modal/userGuideContent.ts
 index a8b5aa7..b9a421f 100644
 --- a/src/components/modal/userGuideContent.ts
@@ -2669,7 +2766,7 @@ index 2f367df..197931e 100644
              enabled
              && window.electron?.requestTranscodeFallback
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..2d9f704 100644
+index 86f3b6d..b16e330 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -2839,15 +2936,16 @@ index 86f3b6d..2d9f704 100644
      "autoAiLyricSegmentationOn": "Automatic AI segmentation on",
      "autoAiLyricSegmentationOff": "Automatic AI segmentation off",
      "lyricSourceChanged": "Preferred lyric source switched to {{source}}",
-@@ -934,6 +915,7 @@ export default {
+@@ -934,6 +915,8 @@ export default {
      "transcodeFallbackStarting": "Converting unsupported audio for playback...",
      "transcodeFallbackReady": "Audio converted; resuming playback",
      "transcodeFallbackFailed": "Audio conversion failed",
 +    "undecodableFormat": "This device has no decoder for {{format}} (DSD / APE / TAK); convert it to FLAC on a PC first",
++    "playingDecodableSubstitute": "Playing the converted file of the same name",
      "lyricsSourceSwitched": "Lyrics source switched",
      "lyricFileIssueShifted": "Translations in the lyric file for \"{{title}}\" are off by one line. See the Folder tab of the player panel for a fix",
      "clearedManualLyrics": "Cleared manually matched/uploaded lyrics",
-@@ -2796,6 +2778,7 @@ export default {
+@@ -2796,6 +2779,7 @@ export default {
      "settingsPageHome": "Home & playlists",
      "settingsPagePlayback": "Playback",
      "settingsPageLyrics": "Lyrics",
@@ -2855,7 +2953,7 @@ index 86f3b6d..2d9f704 100644
      "settingsPageGeneral": "General",
      "settingsPageInteraction": "Shortcuts",
      "settingsPageIntegration": "Connections",
-@@ -3125,6 +3108,13 @@ export default {
+@@ -3125,6 +3109,13 @@ export default {
      "memoryByProcess": "By process",
      "memorySeriesUnavailable": "Not reported on this platform",
      "reduceMotionSection": "Reduce motion",
@@ -2869,16 +2967,24 @@ index 86f3b6d..2d9f704 100644
      "reduceMotionSectionDesc": "Folia plays full animation by default. Turn an item on to reduce motion there.",
      "reduceMotionFollowSystem": "Follow system setting",
      "reduceMotionFollowSystemDesc": "The system's animation setting decides all motion",
-@@ -3164,6 +3154,8 @@ export default {
+@@ -3164,6 +3155,16 @@ export default {
      "crossSourceSkipMatchingOnly": "is used only for matching",
      "keepProviderWordTiming": "Keep platform word-timed lyrics",
      "keepProviderWordTimingDesc": "When an Apple Music song comes with word-timed lyrics, they are replaced only if the source chosen in Lyric match priority has word-timed lyrics too; no other source is searched. Turn off to pick among all sources by priority, like any other song.",
++    "settingsHeadingLocalRepair": "Local library repair",
++    "repairLostTitles": "Repair lost titles",
++    "repairLostTitlesDesc": "The head unit writes ? or � into titles and artists it could not decode. This reads the raw tag bytes of every affected file and fixes what can be fixed; when the tags themselves are damaged, the file name becomes the title. Unfixable songs are remembered and skipped next time.",
++    "repairLostTitlesAction": "Repair now",
++    "repairLostTitlesRunning": "Repairing…",
++    "repairLostTitlesProgress": "Repairing titles… {{done}} / {{total}}",
++    "repairLostTitlesDone": "Titles repaired: {{fixed}} of {{scanned}} checked",
++    "repairLostTitlesDoneShort": "{{fixed}} repaired",
 +    "parallelLyricProbe": "Probe lyric sources together",
 +    "parallelLyricProbeDesc": "Ask the first few lyric sources at the same time instead of one after another, so a slow source no longer makes every source after it wait. Uses a few more requests per match; turn off to keep the old one-by-one order.",
      "localLyricsPriority": "Local song lyrics priority",
      "localLyricsPriorityDesc": "Choose which lyrics are used first when a local song also has an online match. Manual lyric source choices are preserved.",
      "localLyricsPriorityLocal": "Local lyrics",
-@@ -3336,6 +3328,10 @@ export default {
+@@ -3336,6 +3337,10 @@ export default {
      "uiZoom": "Interface zoom",
      "uiZoomDesc": "Zoom the whole main window by a fixed step. With a large display scale in Windows the window feels cramped; zoom out to see more. The remote control window keeps its size.",
      "uiZoomStep": "Zoom",
@@ -2889,7 +2995,7 @@ index 86f3b6d..2d9f704 100644
      "minimizeToTray": "Minimize to tray",
      "closeToTray": "Close window to tray",
      "closeToTrayDesc": "The close button hides the window to the tray instead of quitting",
-@@ -4201,7 +4197,9 @@ export default {
+@@ -4201,7 +4206,9 @@ export default {
      "invalidJsonFormat": "Invalid JSON format",
      "pasteJsonHere": "Paste JSON here...",
      "settingsHeadingSound": "Sound & devices",
@@ -2899,10 +3005,27 @@ index 86f3b6d..2d9f704 100644
      "transcodeFallbackDesc": "Converts tracks that cannot be decoded with FFmpeg. The file is not changed.",
      "playbackFade": "Fade on pause and resume",
      "playbackFadeDesc": "Fades out before pausing and back in on resume.",
-@@ -4513,6 +4511,286 @@ export default {
+@@ -4513,6 +4520,303 @@ export default {
      "noDescription": "No description available",
    },
    "releaseNotes": {
++    "v0_9_21": {
++      "intro": "0.9.21 is two things: DSD files still cannot be decoded on the head unit (the system has no DSD decoder at all), so playback now falls back to a same-named FLAC; and the question-mark titles that were left half-repaired last time - the cause was that each repair batch only ever took the first 25 songs, so later songs never got a turn.",
++      "dsdSubstitute": {
++        "title": "DSD plays a same-named FLAC instead",
++        "description": "The head unit's decoder list has no DSD (1-bit) support, and an app cannot work around that. When a .dsf / .dff fails to play, the app now looks for a .flac with the same name in the same folder (then in the library by folder plus name) and plays it: title, lyrics and cover still come from the original entry, only the audio comes from the other file. If neither exists it reports \u201ccannot decode on this device\u201d. A PC script, DSD轉FLAC.py, converts DSD to FLAC in place, so nothing has to be configured on the head unit.",
++      },
++      "tagRepair": {
++        "title": "All question-mark titles repaired in one pass",
++        "description": "The previous repair only ever handled the first 25 songs: every batch took items from the front of the queue, songs that could not be fixed kept their slot forever, and later songs never got a turn; tags that could not be read were skipped outright, so the filename fallback never ran. Now one launch scans the whole library (20 songs per batch, yielding between batches), failures are remembered so they are not retried, and unreadable tags still fall back to the filename. A new row in Settings, \u201cRepair now\u201d, rescans the whole library on demand.",
++      },
++      "fixes": {
++        "substitute": "Same-named FLAC lookups are cached for 60 seconds and the library list for 10, so playback does not rescan storage every time.",
++        "queue": "Question-mark repair scans the whole library once; failed songs are remembered and stop taking up slots.",
++        "filename": "Unreadable tags no longer skip the song; the filename is used for the title.",
++        "manual": "Settings \u2192 Storage \u2192 Repair now rescans every bad title in the library.",
++      }
++    },
 +    "v0_9_20": {
 +      "intro": "0.9.20 makes lyric matching quicker: the sources at the head of the order are asked together instead of one after another, the same words are not searched twice, and the QQ AMLL lookup no longer tries its two ids in sequence.",
 +      "fastLyricMatch": {
@@ -3186,7 +3309,7 @@ index 86f3b6d..2d9f704 100644
      "v0_7_0": {
        "intro": "Here are the new features and improvements in version 0.7.0.",
        "temperaVisualExpansion": {
-@@ -5228,6 +5506,10 @@ export default {
+@@ -5228,6 +5532,10 @@ export default {
      "capsuleOpensPalette": "Click to open the command palette",
    },
    "localMusic": {
@@ -3197,7 +3320,7 @@ index 86f3b6d..2d9f704 100644
      "foldersAndPlaylists": "Folders",
      "albums": "Albums",
      "artists": "Artists",
-@@ -5242,8 +5524,34 @@ export default {
+@@ -5242,8 +5550,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -3232,7 +3355,7 @@ index 86f3b6d..2d9f704 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6361,13 @@ export default {
+@@ -6053,8 +6387,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -3248,7 +3371,7 @@ index 86f3b6d..2d9f704 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/in.ts b/src/i18n/locales/in.ts
-index fac0d47..6b9904e 100644
+index fac0d47..f5174f7 100644
 --- a/src/i18n/locales/in.ts
 +++ b/src/i18n/locales/in.ts
 @@ -703,6 +703,8 @@ export default {
@@ -3260,15 +3383,16 @@ index fac0d47..6b9904e 100644
      "autoAiLyricSegmentationOn": "Segmentasi AI otomatis aktif",
      "autoAiLyricSegmentationOff": "Segmentasi AI otomatis nonaktif",
      "lyricSourceChanged": "Sumber lirik utama diganti ke {{source}}",
-@@ -934,6 +936,7 @@ export default {
+@@ -934,6 +936,8 @@ export default {
      "transcodeFallbackStarting": "Mengonversi audio yang tidak didukung untuk pemutaran...",
      "transcodeFallbackReady": "Audio selesai dikonversi; melanjutkan pemutaran",
      "transcodeFallbackFailed": "Konversi audio gagal",
 +    "undecodableFormat": "Perangkat ini tidak punya dekoder untuk {{format}} (DSD / APE / TAK); konversikan ke FLAC di PC dulu",
++    "playingDecodableSubstitute": "Memutar berkas hasil konversi bernama sama",
      "lyricsSourceSwitched": "Sumber lirik diganti",
      "lyricFileIssueShifted": "Terjemahan di file lirik \"{{title}}\" bergeser satu baris. Lihat tab Folder di panel pemutar untuk cara memperbaikinya",
      "clearedManualLyrics": "Lirik yang dicocokkan/diunggah manual dihapus",
-@@ -2796,6 +2799,7 @@ export default {
+@@ -2796,6 +2800,7 @@ export default {
      "settingsPageHome": "Beranda & playlist",
      "settingsPagePlayback": "Pemutaran",
      "settingsPageLyrics": "Lirik",
@@ -3276,16 +3400,24 @@ index fac0d47..6b9904e 100644
      "settingsPageGeneral": "Umum",
      "settingsPageInteraction": "Pintasan",
      "settingsPageIntegration": "Koneksi & integrasi",
-@@ -3164,6 +3168,8 @@ export default {
+@@ -3164,6 +3169,16 @@ export default {
      "crossSourceSkipMatchingOnly": "hanya dipakai untuk pencocokan",
      "keepProviderWordTiming": "Pertahankan lirik per kata bawaan platform",
      "keepProviderWordTimingDesc": "Saat lagu Apple Music punya lirik per kata bawaan, lirik itu hanya diganti jika sumber yang dipilih di Prioritas pencocokan lirik juga punya lirik per kata; sumber lain tidak dicari. Matikan untuk memilih dari semua sumber sesuai prioritas, seperti lagu lain.",
++    "settingsHeadingLocalRepair": "Perbaikan pustaka lokal",
++    "repairLostTitles": "Perbaiki judul rusak",
++    "repairLostTitlesDesc": "Head unit menuliskan ? atau � pada judul/artis yang gagal dibaca. Fitur ini membaca byte tag mentah tiap berkas dan memperbaiki yang bisa; bila tag-nya sendiri rusak, nama berkas dipakai sebagai judul. Lagu yang tak bisa diperbaiki diingat agar tidak diulang.",
++    "repairLostTitlesAction": "Perbaiki sekarang",
++    "repairLostTitlesRunning": "Memperbaiki…",
++    "repairLostTitlesProgress": "Memperbaiki judul… {{done}} / {{total}}",
++    "repairLostTitlesDone": "Judul diperbaiki: {{fixed}} dari {{scanned}} diperiksa",
++    "repairLostTitlesDoneShort": "{{fixed}} diperbaiki",
 +    "parallelLyricProbe": "Probe sumber lirik bersamaan",
 +    "parallelLyricProbeDesc": "Tanyakan beberapa sumber lirik teratas sekaligus, bukan satu per satu, agar sumber yang lambat tidak membuat sumber setelahnya menunggu. Memakai beberapa permintaan tambahan tiap pencocokan; matikan untuk urutan lama.",
      "localLyricsPriority": "Prioritas lirik lagu lokal",
      "localLyricsPriorityDesc": "Pilih lirik mana yang digunakan pertama kali saat lagu lokal juga memiliki kecocokan online. Pilihan sumber lirik manual tetap dipertahankan.",
      "localLyricsPriorityLocal": "Lirik lokal",
-@@ -4201,7 +4207,9 @@ export default {
+@@ -4201,7 +4216,9 @@ export default {
      "invalidJsonFormat": "Format JSON tidak valid",
      "pasteJsonHere": "Tempel JSON di sini...",
      "settingsHeadingSound": "Suara & perangkat",
@@ -3295,10 +3427,27 @@ index fac0d47..6b9904e 100644
      "transcodeFallbackDesc": "Mengonversi trek yang tidak dapat didekode dengan FFmpeg. Berkas tidak diubah.",
      "playbackFade": "Fade saat jeda dan lanjut",
      "playbackFadeDesc": "Fade keluar sebelum jeda dan masuk kembali saat lanjut.",
-@@ -4513,6 +4521,203 @@ export default {
+@@ -4513,6 +4530,220 @@ export default {
      "noDescription": "Tidak ada deskripsi tersedia"
    },
    "releaseNotes": {
++    "v0_9_21": {
++      "intro": "0.9.21 menangani dua hal: file DSD tetap tidak bisa didekode di head unit (sistemnya tidak punya dekoder DSD sama sekali), jadi pemutaran kini beralih ke FLAC bernama sama; dan judul bertanda tanya yang belum tuntas diperbaiki - penyebabnya adalah setiap batch perbaikan hanya mengambil 25 lagu pertama, sehingga lagu berikutnya tidak pernah kebagian.",
++      "dsdSubstitute": {
++        "title": "DSD diputar lewat FLAC bernama sama",
++        "description": "Daftar dekoder head unit tidak punya DSD (1-bit), dan aplikasi tidak bisa mengakalinya. Saat .dsf / .dff gagal diputar, aplikasi mencari .flac bernama sama di folder yang sama (lalu di pustaka berdasarkan folder dan nama) dan memutarnya; judul, lirik, dan sampul tetap dari entri asli, hanya audionya dari file lain. Kalau keduanya tidak ada, muncul pesan \u201ctidak bisa didekode di perangkat ini\u201d. Skrip PC DSD轉FLAC.py mengubah DSD ke FLAC di tempat, jadi tidak ada yang perlu diatur di head unit.",
++      },
++      "tagRepair": {
++        "title": "Semua judul bertanda tanya diperbaiki sekali jalan",
++        "description": "Perbaikan sebelumnya hanya menangani 25 lagu pertama: setiap batch mengambil dari depan antrean, lagu yang gagal terus menempati slot, dan lagu berikutnya tidak pernah diproses; tag yang tidak terbaca dilewati begitu saja sehingga cadangan nama file tidak pernah jalan. Sekarang sekali peluncuran memindai seluruh pustaka (20 lagu per batch, memberi kesempatan antar batch), kegagalan diingat agar tidak dicoba lagi, dan tag tak terbaca tetap memakai nama file. Ada baris baru di Pengaturan, \u201cPerbaiki sekarang\u201d, untuk memindai ulang seluruh pustaka.",
++      },
++      "fixes": {
++        "substitute": "Pencarian FLAC bernama sama di-cache 60 detik dan daftar pustaka 10 detik, jadi pemutaran tidak memindai penyimpanan terus-menerus.",
++        "queue": "Perbaikan tanda tanya memindai seluruh pustaka sekali; lagu yang gagal diingat dan tidak lagi memakan slot.",
++        "filename": "Tag yang tidak terbaca tidak lagi melewati lagu; nama file dipakai untuk judul.",
++        "manual": "Pengaturan \u2192 Penyimpanan \u2192 Perbaiki sekarang memindai ulang semua judul rusak.",
++      }
++    },
 +    "v0_9_20": {
 +      "intro": "0.9.20 membuat pencocokan lirik lebih cepat: beberapa sumber teratas ditanyakan bersamaan, kata yang sama tidak dicari dua kali, dan pencarian AMLL QQ tidak lagi mencoba dua id secara berurutan.",
 +      "fastLyricMatch": {
@@ -3500,7 +3649,7 @@ index fac0d47..6b9904e 100644
        "intro": "Berikut fitur baru dan peningkatan di versi 0.7.0.",
        "temperaVisualExpansion": {
 diff --git a/src/i18n/locales/vi.ts b/src/i18n/locales/vi.ts
-index 23ebf79..6ad6e9e 100644
+index 23ebf79..ae2a4d5 100644
 --- a/src/i18n/locales/vi.ts
 +++ b/src/i18n/locales/vi.ts
 @@ -703,6 +703,8 @@ export default {
@@ -3512,7 +3661,16 @@ index 23ebf79..6ad6e9e 100644
      "autoAiLyricSegmentationOn": "Đã bật tự tách từ bằng AI",
      "autoAiLyricSegmentationOff": "Đã tắt tự tách từ bằng AI",
      "lyricSourceChanged": "Đã chuyển nguồn lời ưu tiên sang {{source}}",
-@@ -2796,6 +2798,7 @@ export default {
+@@ -934,6 +936,8 @@ export default {
+     "transcodeFallbackStarting": "Đang chuyển mã âm thanh không hỗ trợ...",
+     "transcodeFallbackReady": "Đã chuyển đổi âm thanh; tiếp tục phát",
+     "transcodeFallbackFailed": "Chuyển mã âm thanh thất bại",
++    "undecodableFormat": "Thiết bị này không có bộ giải mã cho {{format}} (DSD / APE / TAK); hãy chuyển sang FLAC trên PC trước",
++    "playingDecodableSubstitute": "Đang phát tệp đã chuyển đổi cùng tên",
+     "lyricsSourceSwitched": "Đã đổi nguồn lời bài hát",
+     "lyricFileIssueShifted": "Bản dịch trong tệp lời của \"{{title}}\" bị lệch một dòng. Xem thẻ Thư mục trong bảng điều khiển để sửa",
+     "clearedManualLyrics": "Đã xóa lời bài hát khớp/tải lên thủ công",
+@@ -2796,6 +2800,7 @@ export default {
      "settingsPageHome": "Trang chủ & Danh sách phát",
      "settingsPagePlayback": "Điều khiển phát lại",
      "settingsPageLyrics": "Lời bài hát",
@@ -3520,16 +3678,24 @@ index 23ebf79..6ad6e9e 100644
      "settingsPageGeneral": "Cài đặt chung",
      "settingsPageInteraction": "Phím tắt & Thao tác nhanh",
      "settingsPageIntegration": "Kết nối & Tích hợp",
-@@ -3164,6 +3167,8 @@ export default {
+@@ -3164,6 +3169,16 @@ export default {
      "crossSourceSkipMatchingOnly": "chỉ dùng để khớp",
      "keepProviderWordTiming": "Giữ lời từng từ có sẵn của nền tảng",
      "keepProviderWordTimingDesc": "Khi bài trên Apple Music có sẵn lời từng từ, chỉ thay lời đó nếu nguồn chọn ở Ưu tiên khớp lời bài hát cũng có lời từng từ; không tìm ở nguồn khác. Tắt để chọn trong mọi nguồn theo thứ tự ưu tiên như các bài khác.",
++    "settingsHeadingLocalRepair": "Sửa chữa thư viện cục bộ",
++    "repairLostTitles": "Sửa tiêu đề bị lỗi",
++    "repairLostTitlesDesc": "Đầu xe ghi ? hoặc � vào tiêu đề/nghệ sĩ không đọc được. Công cụ này đọc lại byte thẻ gốc của từng tệp và sửa những gì sửa được; nếu thẻ đã hỏng, tên tệp được dùng làm tiêu đề. Bài không sửa được sẽ được ghi nhớ để không thử lại.",
++    "repairLostTitlesAction": "Sửa ngay",
++    "repairLostTitlesRunning": "Đang sửa…",
++    "repairLostTitlesProgress": "Đang sửa tiêu đề… {{done}} / {{total}}",
++    "repairLostTitlesDone": "Sửa tiêu đề xong: {{fixed}} trên {{scanned}} đã kiểm tra",
++    "repairLostTitlesDoneShort": "Đã sửa {{fixed}}",
 +    "parallelLyricProbe": "Dò nguồn lời cùng lúc",
 +    "parallelLyricProbeDesc": "Hỏi vài nguồn lời đầu tiên cùng một lúc thay vì lần lượt, để một nguồn chậm không bắt các nguồn sau phải chờ. Tốn thêm vài yêu cầu mỗi lần ghép; tắt để quay lại thứ tự cũ.",
      "localLyricsPriority": "Ưu tiên lời bài hát nội bộ",
      "localLyricsPriorityDesc": "Chọn lời bài hát ưu tiên khi bài hát nội bộ cũng có lời khớp trực tuyến. Nguồn lời chọn thủ công vẫn được giữ nguyên.",
      "localLyricsPriorityLocal": "Lời nội bộ",
-@@ -4201,7 +4206,9 @@ export default {
+@@ -4201,7 +4216,9 @@ export default {
      "invalidJsonFormat": "Định dạng JSON không hợp lệ",
      "pasteJsonHere": "Dán JSON vào đây...",
      "settingsHeadingSound": "Âm thanh & Thiết bị",
@@ -3539,10 +3705,27 @@ index 23ebf79..6ad6e9e 100644
      "transcodeFallbackDesc": "Trong ứng dụng Electron, dùng FFmpeg để khôi phục bài hát nội bộ và Navidrome mà Chromium không giải mã được. Tệp gốc không bị thay đổi.",
      "playbackFade": "Làm mờ khi tạm dừng và tiếp tục",
      "playbackFadeDesc": "Giảm âm dần trước khi tạm dừng và tăng dần khi tiếp tục thay vì ngắt âm đột ngột. Bỏ qua nếu âm thanh không đi qua bộ xử lý âm thanh.",
-@@ -4513,6 +4520,19 @@ export default {
+@@ -4513,6 +4530,36 @@ export default {
      "noDescription": "Chưa có mô tả",
    },
    "releaseNotes": {
++    "v0_9_21": {
++      "intro": "0.9.21 xử lý hai việc: tệp DSD vẫn không thể giải mã trên đầu xe (hệ thống không có bộ giải mã DSD), nên phát nhạc nay chuyển sang FLAC cùng tên; và các tiêu đề có dấu hỏi chưa sửa xong - nguyên nhân là mỗi lô sửa chỉ lấy 25 bài đầu, các bài sau không bao giờ đến lượt.",
++      "dsdSubstitute": {
++        "title": "DSD phát bằng FLAC cùng tên",
++        "description": "Danh sách bộ giải mã của đầu xe không có DSD (1-bit), ứng dụng không thể lách qua. Khi .dsf / .dff không phát được, ứng dụng tìm .flac cùng tên trong cùng thư mục (rồi trong thư viện theo thư mục và tên) và phát nó; tiêu đề, lời bài hát và ảnh bìa vẫn lấy từ bản ghi gốc, chỉ âm thanh lấy từ tệp khác. Nếu cả hai đều không có mới báo \u201ckhông giải mã được trên thiết bị này\u201d. Kèm theo script PC DSD轉FLAC.py chuyển DSD sang FLAC tại chỗ, nên đầu xe không cần cấu hình gì.",
++      },
++      "tagRepair": {
++        "title": "Sửa toàn bộ tiêu đề có dấu hỏi một lần",
++        "description": "Bản sửa trước chỉ xử lý 25 bài đầu: mỗi lô lấy từ đầu hàng đợi, bài không sửa được luôn chiếm chỗ, các bài sau không bao giờ đến lượt; thẻ không đọc được thì bị bỏ qua nên đường dự phòng theo tên tệp không hề chạy. Nay một lần khởi động quét toàn thư viện (20 bài mỗi lô, nhả luồng giữa các lô), bài lỗi được ghi nhớ để không thử lại, thẻ không đọc được vẫn dùng tên tệp. Có thêm dòng \u201cSửa ngay\u201d trong Cài đặt để quét lại toàn bộ.",
++      },
++      "fixes": {
++        "substitute": "Tìm FLAC cùng tên được cache 60 giây, danh sách thư viện 10 giây, không quét bộ nhớ mỗi lần phát.",
++        "queue": "Sửa dấu hỏi quét toàn thư viện một lần; bài lỗi được ghi nhớ và không chiếm chỗ nữa.",
++        "filename": "Thẻ không đọc được không còn bị bỏ qua; tên tệp được dùng làm tiêu đề.",
++        "manual": "Cài đặt \u2192 Lưu trữ \u2192 Sửa ngay quét lại mọi tiêu đề hỏng.",
++      }
++    },
 +    "v0_9_20": {
 +      "intro": "0.9.20 giúp ghép lời nhanh hơn: vài nguồn đầu được hỏi cùng lúc thay vì lần lượt, cùng một bài không bị tìm hai lần, và tra AMLL của QQ không còn thử hai id theo thứ tự.",
 +      "fastLyricMatch": {
@@ -3560,7 +3743,7 @@ index 23ebf79..6ad6e9e 100644
        "intro": "Dưới đây là các tính năng mới và cải tiến trong phiên bản 0.7.0.",
        "temperaVisualExpansion": {
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..add989f 100644
+index 0067e9a..fe825b7 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -3660,15 +3843,16 @@ index 0067e9a..add989f 100644
      "autoAiLyricSegmentationOn": "自动 AI 分词已开启",
      "autoAiLyricSegmentationOff": "自动 AI 分词已关闭",
      "lyricSourceChanged": "优先匹配歌词源已切换为{{source}}",
-@@ -934,6 +985,7 @@ export default {
+@@ -934,6 +985,8 @@ export default {
      "transcodeFallbackStarting": "正在转换当前无法解码的音频...",
      "transcodeFallbackReady": "音频转换完成，正在恢复播放",
      "transcodeFallbackFailed": "音频转换失败",
 +    "undecodableFormat": "{{format}} 这种格式车机没有解码器（DSD／APE／TAK 这类），先在电脑上转成 FLAC 再放进来",
++    "playingDecodableSubstitute": "正在播放同名转换文件",
      "lyricsSourceSwitched": "歌词来源已切换",
      "lyricFileIssueShifted": "「{{title}}」的歌词文件译文错位了一句，修复办法见播放面板的「本地」页",
      "clearedManualLyrics": "已清除手动匹配/上传的歌词",
-@@ -2583,6 +2635,7 @@ export default {
+@@ -2583,6 +2636,7 @@ export default {
      "communityQqHint": "{{number}} · 点击复制群号",
      "qqGroupNumberCopied": "群号已复制",
      "releaseNotes": "版本更新",
@@ -3676,7 +3860,7 @@ index 0067e9a..add989f 100644
      "releaseNotesDescription": "查看这个版本带来的变化",
      "majorUpdateLabel": "{{codename}} Update · 重大更新",
      "servicePackLabel": "{{codename}} Update SP{{servicePack}} · 重大更新",
-@@ -2796,6 +2849,7 @@ export default {
+@@ -2796,6 +2850,7 @@ export default {
      "settingsPageHome": "主页与歌单",
      "settingsPagePlayback": "播放控制",
      "settingsPageLyrics": "歌词",
@@ -3684,7 +3868,7 @@ index 0067e9a..add989f 100644
      "settingsPageGeneral": "通用",
      "settingsPageInteraction": "快捷操作",
      "settingsPageIntegration": "连接与集成",
-@@ -3125,6 +3179,13 @@ export default {
+@@ -3125,6 +3180,13 @@ export default {
      "memoryByProcess": "分进程",
      "memorySeriesUnavailable": "当前系统不提供这个数据",
      "reduceMotionSection": "降低动态效果",
@@ -3698,16 +3882,24 @@ index 0067e9a..add989f 100644
      "reduceMotionSectionDesc": "Folia 默认播放完整动画。打开某一项，那一处的动效就会降低。",
      "reduceMotionFollowSystem": "跟随系统设置",
      "reduceMotionFollowSystemDesc": "由系统的动画设置决定全部动效",
-@@ -3164,6 +3225,8 @@ export default {
+@@ -3164,6 +3226,16 @@ export default {
      "crossSourceSkipMatchingOnly": "只用于匹配",
      "keepProviderWordTiming": "保留平台自带的逐字歌词",
      "keepProviderWordTimingDesc": "Apple Music 的歌自带逐字歌词时，只有“歌词匹配优先级”选的歌词源也有逐字歌词才换掉它，其他歌词源不再搜索。关闭后和其他歌一样，按优先级在各歌词源里择优。",
++    "settingsHeadingLocalRepair": "本地曲库修补",
++    "repairLostTitles": "修复乱码标题",
++    "repairLostTitlesDesc": "车机探针解不出的标题、歌手会被写成 ? 或 �。这里回文件读原始标签字节再补一次；标签本身也坏了的，用文件名当标题。救不回来的会记下来，下次不再重试。",
++    "repairLostTitlesAction": "立即修复",
++    "repairLostTitlesRunning": "修复中…",
++    "repairLostTitlesProgress": "正在修复标题… {{done}} / {{total}}",
++    "repairLostTitlesDone": "标题修复完成：{{scanned}} 首里修好 {{fixed}} 首",
++    "repairLostTitlesDoneShort": "已修 {{fixed}} 首",
 +    "parallelLyricProbe": "并行探测歌词来源",
 +    "parallelLyricProbeDesc": "一次同时问前几个歌词来源，而不是一个一个问：某个来源慢的时候，后面的来源不必各等一遍。每次匹配会多发几个请求；关掉则回到原来逐个问的顺序。",
      "localLyricsPriority": "本地歌曲歌词优先级",
      "localLyricsPriorityDesc": "本地歌曲同时存在在线匹配歌词时，选择优先使用的歌词。手动指定的歌词来源不受影响。",
      "localLyricsPriorityLocal": "本地歌词",
-@@ -3336,6 +3399,10 @@ export default {
+@@ -3336,6 +3408,10 @@ export default {
      "uiZoom": "界面缩放",
      "uiZoomDesc": "按固定挡位缩放整个主窗口。系统缩放调得大时界面会显得挤，缩小一些能看到更多内容。妙控窗保持原来的大小。",
      "uiZoomStep": "缩放挡位",
@@ -3718,7 +3910,7 @@ index 0067e9a..add989f 100644
      "minimizeToTray": "最小化到托盘",
      "closeToTray": "关闭窗口时隐藏到托盘",
      "closeToTrayDesc": "点关闭按钮时不退出，隐藏到托盘继续播放",
-@@ -4201,7 +4268,9 @@ export default {
+@@ -4201,7 +4277,9 @@ export default {
      "invalidJsonFormat": "无效的 JSON 格式",
      "pasteJsonHere": "在此粘贴 JSON...",
      "settingsHeadingSound": "声音与设备",
@@ -3728,10 +3920,27 @@ index 0067e9a..add989f 100644
      "transcodeFallbackDesc": "遇到无法解码的歌曲时用 FFmpeg 转换，不修改原文件。",
      "playbackFade": "暂停/播放淡入淡出",
      "playbackFadeDesc": "暂停前淡出，恢复时淡入。",
-@@ -4513,6 +4582,286 @@ export default {
+@@ -4513,6 +4591,303 @@ export default {
      "noDescription": "暂无详细介绍",
    },
    "releaseNotes": {
++    "v0_9_21": {
++      "intro": "0.9.21 处理两件事：DSD 文件在车机上仍然解不了（车机系统根本没有 DSD 解码器），这版改成自动改播同名的 FLAC；以及上次没修完的问号标题——原因找到了，修复队列每批只认前 25 首，后面的歌永远轮不到。",
++      "dsdSubstitute": {
++        "title": "DSD 改播同名 FLAC",
++        "description": "车机的解码器列表里没有 DSD（1-bit 采样），这不是 App 能绕过去的。现在 .dsf / .dff 播不动时，App 先在同一个文件夹里找同名 .flac（再在曲库里按文件夹加同名找），找到就直接播它，歌名、歌词、封面仍用原来那条记录，只是换个文件出声；两边都没有才报「车机无法解码」。配套给了一个 PC 端脚本 DSD轉FLAC.py：转出来的 FLAC 放在原文件夹，车机这边不用再做任何设置。",
++      },
++      "tagRepair": {
++        "title": "问号标题全库一次修完",
++        "description": "上次只修了前 25 首：每一批都从队列开头挑，修不回来的歌一直占着位置，后面的永远轮不到；而且标签读不出来时直接跳过，按文件名补的退路根本没跑。现在一次启动扫描整个曲库（每批 20 首，批间让出主线程），修不好的记下来下次不再重试，读不到标签时也照文件名补。设置里多了一行「立即修复」，可以手动把整个曲库重扫一遍。",
++      },
++      "fixes": {
++        "substitute": "找同名 FLAC 有 60 秒缓存；曲库清单 10 秒内复用，不会每次播放都扫一遍存储。",
++        "queue": "问号修复改成一次扫完全库，修不回来的记住，下次启动不再占名额。",
++        "filename": "标签读不出来时不再跳过，直接用文件名补歌名。",
++        "manual": "设置 → 存储 → 立即修复，手动重扫整个曲库的坏标题。",
++      }
++    },
 +    "v0_9_20": {
 +      "intro": "0.9.20 让歌词匹配更快：排在前面的几个来源一起问，而不是一个一个问；同一首歌不再重复搜；QQ 的 AMLL 取词不再把 mid 和数字 ID 依次试。",
 +      "fastLyricMatch": {
@@ -4015,7 +4224,7 @@ index 0067e9a..add989f 100644
      "v0_7_0": {
        "intro": "以下是 0.7.0 的新功能与改进",
        "temperaVisualExpansion": {
-@@ -5228,6 +5577,10 @@ export default {
+@@ -5228,6 +5603,10 @@ export default {
      "capsuleOpensPalette": "点一下打开命令面板",
    },
    "localMusic": {
@@ -4026,7 +4235,7 @@ index 0067e9a..add989f 100644
      "foldersAndPlaylists": "文件夹",
      "albums": "专辑",
      "artists": "艺术家",
-@@ -5242,8 +5595,34 @@ export default {
+@@ -5242,8 +5621,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -4061,7 +4270,7 @@ index 0067e9a..add989f 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6430,13 @@ export default {
+@@ -6051,8 +6456,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -6907,7 +7116,7 @@ index 0000000..df20d8f
 +    }
 +}
 diff --git a/src/services/localMusicService.ts b/src/services/localMusicService.ts
-index 26a0181..6c3177c 100644
+index 26a0181..4056adc 100644
 --- a/src/services/localMusicService.ts
 +++ b/src/services/localMusicService.ts
 @@ -30,6 +30,17 @@ import { hasLocalCoverBinary } from './localCoverBinaryStore';
@@ -7372,13 +7581,106 @@ index 26a0181..6c3177c 100644
      ]);
  }
  
-@@ -1714,6 +2103,20 @@ async function cleanupDirHandleIfUnused(rootFolderName: string): Promise<void> {
+@@ -1711,9 +2100,112 @@ async function cleanupDirHandleIfUnused(rootFolderName: string): Promise<void> {
+     }
+ }
+ 
++// 車機解不開的格式（DSD／APE／TAK…）旁邊，常常放著同一首歌轉好的 FLAC。
++// 找到就用它播放：使用者要的是聽歌，不是看「無法解碼」四個字。
++const DECODABLE_SUBSTITUTE_EXTENSIONS = ['flac', 'wav', 'mp3', 'm4a', 'ogg', 'aac'] as const;
++/** 一首歌找過的結果（含找不到），切歌回來不用再試一遍；一分鐘後重找一次，剛轉好的 FLAC 才看得到。 */
++const DECODABLE_SUBSTITUTE_TTL_MS = 60_000;
++const decodableSubstituteCache = new Map<string, { at: number; substitute: DecodableSubstitute | null }>();
++
++type DecodableSubstitute = { linkedPath: string } | { song: LocalSong };
++
++const fileStemLower = (name: string): string => (name ?? '').replace(/\.([a-z0-9]{2,5})$/iu, '').toLowerCase();
++const directoryOf = (path: string): string => {
++    const at = path.lastIndexOf('/');
++    return at > 0 ? path.slice(0, at) : '';
++};
++
++// 連結模式：直接問原生層同一個資料夾裡有沒有 <同名>.<可解副檔名>，讀 1 byte 就夠確認存在。
++const findLinkedSubstitute = async (song: LocalSong): Promise<DecodableSubstitute | null> => {
++    const linkedPath = song.linkedFilePath;
++    if (!linkedPath) return null;
++    const directory = directoryOf(linkedPath);
++    const stem = fileStemLower(linkedPath);
++    for (const extension of DECODABLE_SUBSTITUTE_EXTENSIONS) {
++        const candidate = `${directory}/${stem}.${extension}`;
++        const probe = await fetchNativeRange(candidate, 1, 0);
++        if (probe && probe.byteLength > 0) return { linkedPath: candidate };
++    }
++    return null;
++};
++
++// 兩種模式都適用：曲庫裡有同一資料夾、同檔名（去掉副檔名）的可解檔案，就拿它播。
++let substituteSongsCache: { at: number; songs: LocalSong[] } | null = null;
++const loadSubstituteSongs = async (): Promise<LocalSong[]> => {
++    if (substituteSongsCache && Date.now() - substituteSongsCache.at < 10_000) return substituteSongsCache.songs;
++    const songs = await getLocalSongs();
++    substituteSongsCache = { at: Date.now(), songs };
++    return songs;
++};
++
++const findLibrarySubstitute = async (song: LocalSong): Promise<DecodableSubstitute | null> => {
++    const stem = fileStemLower(song.fileName);
++    if (!stem) return null;
++    const songs = await loadSubstituteSongs();
++    const found = songs.find(other =>
++        other.id !== song.id
++        && !isUnsupportedOnDevice(other.fileName)
++        && fileStemLower(other.fileName) === stem
++        && (!song.folderName || other.folderName === song.folderName),
++    );
++    return found ? { song: found } : null;
++};
++
++/** 為一首解不開的歌唱同一首歌的可解檔案；沒有就回 null。 */
++export async function findDecodableSubstitute(song: LocalSong): Promise<DecodableSubstitute | null> {
++    const cacheKey = song.linkedFilePath ?? `${song.folderName ?? ''}/${song.fileName}`;
++    const cached = decodableSubstituteCache.get(cacheKey);
++    if (cached && Date.now() - cached.at < DECODABLE_SUBSTITUTE_TTL_MS) return cached.substitute;
++    let result: DecodableSubstitute | null = null;
++    try {
++        result = await findLinkedSubstitute(song);
++    } catch (error) {
++        console.warn('[LocalMusic] Linked substitute probe failed:', error);
++    }
++    if (!result) {
++        try {
++            result = await findLibrarySubstitute(song);
++        } catch (error) {
++            console.warn('[LocalMusic] Library substitute lookup failed:', error);
++        }
++    }
++    decodableSubstituteCache.set(cacheKey, { at: Date.now(), substitute: result });
++    return result;
++}
++
++/** 曲庫變動（重新掃描、新增檔案）後，之前「找不到」的判斷要重來。 */
++export const clearDecodableSubstituteCache = (): void => {
++    decodableSubstituteCache.clear();
++    substituteSongsCache = null;
++};
++
  // Get audio blob from local song using fileHandle
  // Returns blob URL if fileHandle exists, null otherwise
- export async function getAudioFromLocalSong(song: LocalSong): Promise<string | null> {
+-export async function getAudioFromLocalSong(song: LocalSong): Promise<string | null> {
++export async function getAudioFromLocalSong(song: LocalSong, depth = 0): Promise<string | null> {
 +    // DSD／APE／WavPack／TAK／TTA 這台裝置根本沒有解碼器：不要把它交給 <audio>，也不要進原生轉碼。
 +    // （有的 ROM 讓 MediaExtractor 碰到 DSD 直接在原生層崩掉，JS 接不到，整個 App 閃退。）
 +    if (isUnsupportedOnDevice(song.fileName)) {
++        const substitute = await findDecodableSubstitute(song);
++        if (substitute && depth < 1) {
++            setStatusMessage({ type: 'info', text: i18n.t('status.playingDecodableSubstitute') });
++            if ('linkedPath' in substitute) {
++                const url = nativeAudioUrl(substitute.linkedPath);
++                if (url) return url;
++            } else {
++                return await getAudioFromLocalSong(substitute.song, depth + 1);
++            }
++        }
 +        setStatusMessage({ type: 'error', text: i18n.t('status.undecodableFormat', { format: unsupportedFormatLabel(song.fileName) }) });
 +        return null;
 +    }
@@ -7393,7 +7695,7 @@ index 26a0181..6c3177c 100644
      const fileHandle = await getAccessibleFileHandle(song);
  
      if (fileHandle) {
-@@ -1738,6 +2141,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
+@@ -1738,6 +2230,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
          }
      }
  
@@ -7410,7 +7712,7 @@ index 26a0181..6c3177c 100644
      // No accessible handle available - permission may need to be restored or the file moved.
      console.warn(`[LocalMusic] No accessible handle for song ${song.id}. Permission restore or re-import is required.`);
      return null;
-@@ -1745,6 +2158,15 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
+@@ -1745,6 +2247,15 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
  
  /** Resolves the current File for playback recovery without changing the song or minting a URL. */
  export async function getFileFromLocalSong(song: LocalSong): Promise<File | null> {
@@ -7426,7 +7728,7 @@ index 26a0181..6c3177c 100644
      const fileHandle = await getAccessibleFileHandle(song);
      if (fileHandle) {
          try {
-@@ -1755,6 +2177,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+@@ -1755,6 +2266,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
          }
      }
  
@@ -7436,7 +7738,7 @@ index 26a0181..6c3177c 100644
      const recoveredHandle = await recoverFileHandleFromPersistedDirectory(song);
      if (!recoveredHandle) return null;
      try {
-@@ -1774,14 +2199,22 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+@@ -1774,14 +2288,22 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
   * from its own handle. Mirrors getAudioFromLocalSong's resolution (accessible handle, else a recover)
   * but returns the ArrayBuffer. Null when no handle can be reached - permission not restored, or moved.
   */
@@ -7462,7 +7764,7 @@ index 26a0181..6c3177c 100644
      } catch (error) {
          console.error('[LocalMusic] Failed to read local bytes:', error);
          fileHandleMap.delete(song.id);
-@@ -1789,6 +2222,44 @@ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuf
+@@ -1789,6 +2311,44 @@ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuf
      }
  }
  
@@ -7507,7 +7809,7 @@ index 26a0181..6c3177c 100644
  // Extracts and persists one song's embedded cover after an explicit playback-time request.
  async function extractAndPersistSongCover(
      song: LocalSong,
-@@ -1880,6 +2351,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
+@@ -1880,6 +2440,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
      await Promise.all([
          dbDeleteLocalSongs(uniqueSongIds),
          ...uniqueSongIds.map(id => removeCachedCover(`cover_local_${id}`)),
@@ -7857,12 +8159,14 @@ index 0000000..72a4528
 +};
 diff --git a/src/services/localSongRawTagBackfill.ts b/src/services/localSongRawTagBackfill.ts
 new file mode 100644
-index 0000000..a950781
+index 0000000..baa585d
 --- /dev/null
 +++ b/src/services/localSongRawTagBackfill.ts
-@@ -0,0 +1,75 @@
+@@ -0,0 +1,145 @@
 +// src/services/localSongRawTagBackfill.ts
 +// v0.9.18：把「標籤壞成 � 或 ?」的歌，回檔案讀原始位元組補回來。
++// v0.9.21：一次啟動就掃完整庫，而不是每次啟動只補 25 首；修不了的歌記下來，下次不再重試，
++// 免得前 25 首永遠佔著名額、後面的歌排不到（那正是「有些歌一直是問號」的原因）。
 +//
 +// 為什麼要另開一支：localSongRawTags 不能直接 import localMusicService（那邊反過來 import 它，會成環），
 +// 所以「怎麼讀位元組」留在這裡，localSongRawTags 只負責解析與決定要不要補。
@@ -7878,9 +8182,30 @@ index 0000000..a950781
 +const HEAD_BYTES = 4 * 1024 * 1024;
 +/** APEv2、DSF 的內嵌 ID3 貼在檔尾。 */
 +const TAIL_BYTES = 512 * 1024;
++/** 每批處理幾首：批與批之間讓出主執行緒，兩千首也不會把車機卡住。 */
++const BATCH_SIZE = 20;
 +
-+/** 每次啟動補一批，避免 2000 多首一次讀檔把車機拖住。 */
-+const BATCH_SIZE = 25;
++// 試過但救不回來的歌 id（標籤本來就是「?」、檔名也壞、檔案讀不到）。記下來才不會每次啟動重試同一批。
++const ATTEMPTED_STORAGE_KEY = 'folia_raw_tag_repair_attempted';
++
++const readAttempted = (): Set<string> => {
++    if (typeof window === 'undefined') return new Set();
++    try {
++        const parsed = JSON.parse(localStorage.getItem(ATTEMPTED_STORAGE_KEY) || '[]');
++        return new Set(Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : []);
++    } catch {
++        return new Set();
++    }
++};
++
++const writeAttempted = (ids: Set<string>): void => {
++    if (typeof window === 'undefined') return;
++    try {
++        localStorage.setItem(ATTEMPTED_STORAGE_KEY, JSON.stringify([...ids]));
++    } catch {
++        // 額滿就算了：下次重試同一首歌也不致命。
++    }
++};
 +
 +const readRange = async (song: LocalSong, startAt: number, byteLength: number): Promise<ArrayBuffer | null> => {
 +    if (song.linkedFilePath) return await fetchNativeRange(song.linkedFilePath, byteLength, startAt);
@@ -7910,31 +8235,78 @@ index 0000000..a950781
 +    || hasLostChars(song.importedMetadata.artistNames.join(''))
 +    || hasLostChars(song.importedMetadata.albumName);
 +
++export interface LostTagRepairResult {
++    /** 掃過幾首壞掉的歌。 */
++    scanned: number;
++    /** 其中修好幾首。 */
++    fixed: number;
++}
++
++const yieldToMain = (): Promise<void> => new Promise<void>(resolve => {
++    setTimeout(resolve, 0);
++});
++
 +/**
-+ * 背景回填：只處理「標題／歌手／專輯壞掉」的歌，一批 25 首。
-+ * 大小寫與順序不重要，重點是每次啟動都能往前推進一點。
++ * 回填全庫：標題／歌手／專輯壞掉的歌逐首回檔案讀原始標籤。
++ * `includeAttempted` 為 true 時連上次試過的也重來（手動「重跑全部」用）。
 + */
-+export const backfillLostTagSongs = async (batchSize = BATCH_SIZE): Promise<number> => {
++export const repairLostTags = async (options: {
++    includeAttempted?: boolean;
++    onProgress?: (done: number, total: number) => void;
++} = {}): Promise<LostTagRepairResult> => {
++    const attempted = options.includeAttempted ? new Set<string>() : readAttempted();
++    let scanned = 0;
++    let fixed = 0;
 +    try {
 +        const songs = await getLocalSongs();
-+        const targets = songs.filter(isLost).slice(0, batchSize);
-+        if (targets.length === 0) return 0;
-+        const patched: LocalSong[] = [];
-+        for (const song of targets) {
-+            const tags = await readSongRawTags(song);
-+            if (!tags) continue;
-+            const fixed = planTagPatch(song, tags);
-+            if (fixed) patched.push(fixed);
++        const targets = songs.filter(song => isLost(song) && !attempted.has(song.id));
++        const total = targets.length;
++        if (total === 0) return { scanned: 0, fixed: 0 };
++
++        for (let start = 0; start < targets.length; start += BATCH_SIZE) {
++            const chunk = targets.slice(start, start + BATCH_SIZE);
++            const patched: LocalSong[] = [];
++            for (const song of chunk) {
++                scanned += 1;
++                attempted.add(song.id);
++                const tags = await readSongRawTags(song);
++                // 標籤讀不到（容器不認、檔案讀取失敗）時照樣往檔名退：標題至少還能從檔名救回來。
++                const next = planTagPatch(song, tags ?? {});
++                if (next) patched.push(next);
++            }
++            if (patched.length > 0) {
++                await saveLocalSongs(patched);
++                fixed += patched.length;
++            }
++            writeAttempted(attempted);
++            options.onProgress?.(Math.min(scanned, total), total);
++            // 讓出主執行緒：車機一邊播歌一邊掃，不要一次吃掉幾秒。
++            await yieldToMain();
 +        }
-+        if (patched.length === 0) return 0;
-+        await saveLocalSongs(patched);
-+        window.dispatchEvent(new CustomEvent('folia-local-music-updated'));
-+        console.info(`[RawTags] repaired ${patched.length} song(s) from raw tag bytes`);
-+        return patched.length;
++        if (fixed > 0) {
++            window.dispatchEvent(new CustomEvent('folia-local-music-updated'));
++            console.info(`[RawTags] repaired ${fixed} of ${scanned} song(s) from raw tag bytes`);
++        }
++        return { scanned, fixed };
 +    } catch (error) {
-+        console.warn('[RawTags] backfill failed', error);
-+        return 0;
++        console.warn('[RawTags] repair failed', error);
++        return { scanned, fixed };
 +    }
++};
++
++/** 清掉「試過了」的記錄，下一次啟動（或手動）會從頭再掃一遍。 */
++export const resetLostTagRepairAttempts = (): void => {
++    if (typeof window === 'undefined') return;
++    localStorage.removeItem(ATTEMPTED_STORAGE_KEY);
++};
++
++/**
++ * 背景回填：只處理「標題／歌手／專輯壞掉」的歌，一次啟動掃完整庫（每批 20 首，批與批之間讓出主執行緒）。
++ * 修不回來的歌記下來，下次啟動不會再由它們佔住名額。
++ */
++export const backfillLostTagSongs = async (): Promise<number> => {
++    const result = await repairLostTags();
++    return result.fixed;
 +};
 diff --git a/src/services/localSongRawTags.ts b/src/services/localSongRawTags.ts
 new file mode 100644
@@ -10347,6 +10719,109 @@ index 0000000..4b966b1
 +            0xB8, 0xC3, 0xCB, 0xC0, 0xB5, 0xC4, 0xCE, 0xC2, 0xC8, 0xE1,
 +        ]);
 +        expect(decodeLyricBytes(gbk)).toBe('[00:00.00]该死的温柔');
++    });
++});
+diff --git a/test/unit/localSongRawTagBackfill.test.ts b/test/unit/localSongRawTagBackfill.test.ts
+new file mode 100644
+index 0000000..799e1f6
+--- /dev/null
++++ b/test/unit/localSongRawTagBackfill.test.ts
+@@ -0,0 +1,97 @@
++import { beforeEach, describe, expect, it, vi } from 'vitest';
++
++// test/unit/localSongRawTagBackfill.test.ts
++// 全库回填：修不了的歌不能永远占住每批的名额（v0.9.18 每次启动只补 25 首，前面救不回来的那批
++// 会让后面的歌永远轮不到）。这里验：修好多少、几首一起推进、试过的下次不再读。
++
++vi.mock('@/services/db', () => ({
++    getLocalSongs: vi.fn(),
++    saveLocalSongs: vi.fn(async () => undefined),
++}));
++vi.mock('@/services/localMusicService', () => ({
++    getLocalSongRangeBytes: vi.fn(async () => null),
++}));
++vi.mock('@/services/nativeLinkedStorage', () => ({
++    fetchNativeRange: vi.fn(),
++}));
++
++import { getLocalSongs, saveLocalSongs } from '@/services/db';
++import { fetchNativeRange } from '@/services/nativeLinkedStorage';
++import { repairLostTags, resetLostTagRepairAttempts } from '@/services/localSongRawTagBackfill';
++
++// 記憶體版 localStorage：模組只在讀寫「試過了」的名單時用到它。
++const store = new Map<string, string>();
++
++const song = (id: string, overrides: Record<string, unknown> = {}) => ({
++    id,
++    fileName: `${id}.mp3`,
++    filePath: `/storage/emulated/0/Music/${id}.mp3`,
++    linkedFilePath: `/storage/emulated/0/Music/${id}.mp3`,
++    duration: 1000,
++    fileSize: 1024,
++    mimeType: 'audio/mpeg',
++    addedAt: 0,
++    title: '???',
++    titleOrigin: 'tag',
++    importedMetadata: { title: '???', artistNames: ['???'], albumName: '???' },
++    ...overrides,
++});
++
++// 一份最小可解析的 ID3v2.4（UTF-8 frame），標題「晴天」。
++const id3 = (title: string): ArrayBuffer => {
++    const payload = [3, ...Array.from(new TextEncoder().encode(title))];
++    const frames = [...Array.from('TIT2').map(char => char.charCodeAt(0)), 0, 0, 0, payload.length, 0, 0, ...payload];
++    const bytes = Uint8Array.from([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, (frames.length >>> 7) & 0x7f, frames.length, ...frames]);
++    return bytes.buffer as ArrayBuffer;
++};
++
++describe('repairLostTags', () => {
++    beforeEach(() => {
++        store.clear();
++        vi.stubGlobal('window', { addEventListener: () => {}, dispatchEvent: () => {} });
++        vi.stubGlobal('localStorage', {
++            getItem: (key: string) => store.get(key) ?? null,
++            setItem: (key: string, value: string) => { store.set(key, value); },
++            removeItem: (key: string) => { store.delete(key); },
++        });
++        resetLostTagRepairAttempts();
++        vi.mocked(getLocalSongs).mockReset();
++        vi.mocked(saveLocalSongs).mockClear();
++        vi.mocked(fetchNativeRange).mockReset();
++    });
++
++    it('fixes a title from the raw tag bytes and counts what it scanned', async () => {
++        vi.mocked(getLocalSongs).mockResolvedValue([song('a')] as never);
++        vi.mocked(fetchNativeRange).mockImplementation(async (_path, length) => id3('晴天').slice(0, length));
++
++        const result = await repairLostTags();
++
++        expect(result).toEqual({ scanned: 1, fixed: 1 });
++        const saved = vi.mocked(saveLocalSongs).mock.calls[0][0] as Array<{ id: string; title: string }>;
++        expect(saved[0]).toMatchObject({ id: 'a', title: '晴天' });
++    });
++
++    it('keeps going past a song it cannot fix, and does not read it again next time', async () => {
++        // a 的檔名本身也壞掉（連檔名退路都沒有），b 可以從標籤救回來。
++        vi.mocked(getLocalSongs).mockResolvedValue([song('a', { fileName: '???.mp3' }), song('b')] as never);
++        vi.mocked(fetchNativeRange).mockImplementation(async path => (
++            path === '/storage/emulated/0/Music/b.mp3' ? id3('七里香') : null
++        ));
++
++        expect(await repairLostTags()).toEqual({ scanned: 2, fixed: 1 });
++        // 第二輪：兩首都讀過了（一成一敗），不再掃任何一首。
++        expect(await repairLostTags()).toEqual({ scanned: 0, fixed: 0 });
++    });
++
++    it('falls back to the file name when the tags themselves are damaged', async () => {
++        vi.mocked(getLocalSongs).mockResolvedValue([song('c', { fileName: '03_夜曲_周杰伦.flac' })] as never);
++        // 標籤整個讀不到：只能靠檔名。
++        vi.mocked(fetchNativeRange).mockResolvedValue(null);
++
++        const result = await repairLostTags();
++
++        expect(result).toEqual({ scanned: 1, fixed: 1 });
++        const saved = vi.mocked(saveLocalSongs).mock.calls[0][0] as Array<{ title: string }>;
++        expect(saved[0].title).toBe('夜曲 周杰伦');
 +    });
 +});
 diff --git a/test/unit/localSongRawTags.test.ts b/test/unit/localSongRawTags.test.ts
