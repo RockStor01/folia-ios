@@ -21,7 +21,7 @@ index 39ec48c..114cb4d 100644
      <script src="/runtime-config.js"></script>
    <script type="importmap">
 diff --git a/package.json b/package.json
-index 6976461..fbb63bf 100644
+index 6976461..e8c5248 100644
 --- a/package.json
 +++ b/package.json
 @@ -8,7 +8,7 @@
@@ -29,7 +29,7 @@ index 6976461..fbb63bf 100644
    },
    "private": true,
 -  "version": "0.8.0",
-+  "version": "0.9.18",
++  "version": "0.9.19",
    "license": "AGPL-3.0",
    "type": "module",
    "main": "electron/main.cjs",
@@ -1552,12 +1552,12 @@ index 5de4bf3..af66827 100644
      );
  };
 diff --git a/src/components/modal/newFeaturesRelease.ts b/src/components/modal/newFeaturesRelease.ts
-index e49a39c..27cb66d 100644
+index e49a39c..47ad213 100644
 --- a/src/components/modal/newFeaturesRelease.ts
 +++ b/src/components/modal/newFeaturesRelease.ts
 @@ -1,4 +1,4 @@
 -import { ListMusic, MessageSquareText, Puzzle, SlidersVertical, Sparkles, Store } from 'lucide-react';
-+import { FileAudio, KeyRound, Languages, ListChecks, MonitorOff, Music2, Play, RefreshCw, Search, ShieldCheck, SpellCheck, Type } from 'lucide-react';
++import { FileAudio, Image as ImageIcon, KeyRound, Languages, ListChecks, MonitorOff, Music2, Play, RefreshCw, Search, ShieldCheck, SpellCheck, Type } from 'lucide-react';
  import type { LucideIcon } from 'lucide-react';
  
  // src/components/modal/newFeaturesRelease.ts
@@ -1570,13 +1570,13 @@ index e49a39c..27cb66d 100644
      /** 重大更新：介绍上方显示「<代号> Update · 重大更新」标签；代号不翻译，文案在 help.majorUpdateLabel。
       *  servicePack：同一重大更新的热修复版，标签改成「<代号> Update SP<n> · 重大更新」，文案在 help.servicePackLabel。 */
      majorUpdate?: { codename: string; servicePack?: number };
-@@ -18,14 +20,10 @@ type NewFeaturesRelease = {
+@@ -18,14 +20,9 @@ type NewFeaturesRelease = {
  
  // Defines the current release's cards; their localized text lives under i18nKey in every locale.
  export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
 -    i18nKey: 'releaseNotes.v0_8_0',
 -    majorUpdate: { codename: 'Severance' },
-+    i18nKey: 'releaseNotes.v0_9_18',
++    i18nKey: 'releaseNotes.v0_9_19',
      features: [
 -        { id: 'sourceMods', icon: Puzzle },
 -        { id: 'modMarket', icon: Store },
@@ -1584,10 +1584,9 @@ index e49a39c..27cb66d 100644
 -        { id: 'moments', icon: MessageSquareText },
 -        { id: 'stemMixer', icon: SlidersVertical },
 -        { id: 'moreDetails', icon: Sparkles },
-+        { id: 'tagPlaceholder', icon: SpellCheck },
-+        { id: 'undecodable', icon: FileAudio },
++        { id: 'coverFallback', icon: ImageIcon },
      ],
-+    fixes: ['question', 'filename', 'backfill', 'dsd'],
++    fixes: ['blob', 'sw', 'retry'],
  };
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
@@ -2616,7 +2615,7 @@ index 2f367df..197931e 100644
              enabled
              && window.electron?.requestTranscodeFallback
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..ff55050 100644
+index 86f3b6d..8222700 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -2828,10 +2827,22 @@ index 86f3b6d..ff55050 100644
      "transcodeFallbackDesc": "Converts tracks that cannot be decoded with FFmpeg. The file is not changed.",
      "playbackFade": "Fade on pause and resume",
      "playbackFadeDesc": "Fades out before pausing and back in on resume.",
-@@ -4513,6 +4507,261 @@ export default {
+@@ -4513,6 +4507,273 @@ export default {
      "noDescription": "No description available",
    },
    "releaseNotes": {
++    "v0_9_19": {
++      "intro": "0.9.19 fixes “album art disappeared”: local covers used to be served entirely by the PWA service worker from OPFS at /__folia_cover/, so when the head unit's WebView never registers the worker every cover 404s. The page now reads OPFS itself and falls back to blob: URLs.",
++      "coverFallback": {
++        "title": "Covers no longer depend on the service worker",
++        "description": "Local covers live in OPFS. They used to be served through the service worker; with no worker (old WebView, failed precache update, right after an update) every request 404s and lists, player and playlists go blank. This build catches the failed image, reads the bytes from OPFS directly and swaps in a blob: URL — one read per cover, at most 120 cached. When the worker works, this path never runs.",
++      },
++      "fixes": {
++        "blob": "Failed covers retry through an OPFS→blob: URL instead of the service worker.",
++        "sw": "Cover 404s caused by a missing or stale service worker are absorbed by the fallback.",
++        "retry": "One read per cover even when several lists ask at once; a blob URL is never attached to another song's image.",
++      }
++    },
 +    "v0_9_18": {
 +      "intro": "0.9.18 fixes titles turning into question marks: on some head units the media probe doesn't emit U+FFFD but plain '?'. The bytes are equally gone, so the app re-reads the raw tag bytes from the file and only falls back to the file name as a last resort.",
 +      "tagPlaceholder": {
@@ -3090,7 +3101,7 @@ index 86f3b6d..ff55050 100644
      "v0_7_0": {
        "intro": "Here are the new features and improvements in version 0.7.0.",
        "temperaVisualExpansion": {
-@@ -5228,6 +5477,10 @@ export default {
+@@ -5228,6 +5489,10 @@ export default {
      "capsuleOpensPalette": "Click to open the command palette",
    },
    "localMusic": {
@@ -3101,7 +3112,7 @@ index 86f3b6d..ff55050 100644
      "foldersAndPlaylists": "Folders",
      "albums": "Albums",
      "artists": "Artists",
-@@ -5242,8 +5495,34 @@ export default {
+@@ -5242,8 +5507,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -3136,7 +3147,7 @@ index 86f3b6d..ff55050 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6332,13 @@ export default {
+@@ -6053,8 +6344,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -3152,7 +3163,7 @@ index 86f3b6d..ff55050 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/in.ts b/src/i18n/locales/in.ts
-index fac0d47..dac89c8 100644
+index fac0d47..6d2424a 100644
 --- a/src/i18n/locales/in.ts
 +++ b/src/i18n/locales/in.ts
 @@ -934,6 +934,7 @@ export default {
@@ -3181,10 +3192,22 @@ index fac0d47..dac89c8 100644
      "transcodeFallbackDesc": "Mengonversi trek yang tidak dapat didekode dengan FFmpeg. Berkas tidak diubah.",
      "playbackFade": "Fade saat jeda dan lanjut",
      "playbackFadeDesc": "Fade keluar sebelum jeda dan masuk kembali saat lanjut.",
-@@ -4513,6 +4517,178 @@ export default {
+@@ -4513,6 +4517,190 @@ export default {
      "noDescription": "Tidak ada deskripsi tersedia"
    },
    "releaseNotes": {
++    "v0_9_19": {
++      "intro": "0.9.19 memperbaiki “sampul album tidak muncul”: sampul lokal sepenuhnya dilayani service worker PWA dari OPFS di /__folia_cover/, jadi bila WebView head unit tidak mendaftarkan worker, semua sampul 404. Halaman kini membaca OPFS sendiri dan memakai URL blob: sebagai cadangan.",
++      "coverFallback": {
++        "title": "Sampul tidak lagi bergantung pada service worker",
++        "description": "Sampul lokal disimpan di OPFS. Sebelumnya ditampilkan lewat service worker; tanpa worker (WebView lama, precache gagal, tepat setelah pembaruan) semua permintaan 404 dan daftar, pemutar serta playlist jadi kosong. Versi ini menangkap gambar yang gagal, membaca byte dari OPFS langsung lalu memasang URL blob: — satu baca per sampul, maksimal 120 di-cache. Bila worker berjalan normal, jalur ini tidak pernah dipakai.",
++      },
++      "fixes": {
++        "blob": "Sampul gagal dicoba ulang lewat OPFS→URL blob:, bukan service worker.",
++        "sw": "404 sampul akibat service worker hilang atau usang diserap jalur cadangan.",
++        "retry": "Satu baca per sampul walau beberapa daftar meminta bersamaan; URL blob tidak pernah dipasang ke gambar lagu lain.",
++      }
++    },
 +    "v0_9_18": {
 +      "intro": "0.9.18 fixes titles turning into question marks: on some head units the media probe doesn't emit U+FFFD but plain '?'. The bytes are equally gone, so the app re-reads the raw tag bytes from the file and only falls back to the file name as a last resort.",
 +      "tagPlaceholder": {
@@ -3383,7 +3406,7 @@ index 23ebf79..336af7d 100644
      "playbackFade": "Làm mờ khi tạm dừng và tiếp tục",
      "playbackFadeDesc": "Giảm âm dần trước khi tạm dừng và tăng dần khi tiếp tục thay vì ngắt âm đột ngột. Bỏ qua nếu âm thanh không đi qua bộ xử lý âm thanh.",
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..1c3ffef 100644
+index 0067e9a..8b2453a 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -3533,10 +3556,22 @@ index 0067e9a..1c3ffef 100644
      "transcodeFallbackDesc": "遇到无法解码的歌曲时用 FFmpeg 转换，不修改原文件。",
      "playbackFade": "暂停/播放淡入淡出",
      "playbackFadeDesc": "暂停前淡出，恢复时淡入。",
-@@ -4513,6 +4578,261 @@ export default {
+@@ -4513,6 +4578,273 @@ export default {
      "noDescription": "暂无详细介绍",
    },
    "releaseNotes": {
++    "v0_9_19": {
++      "intro": "0.9.19 修「專輯圖片都不顯示」：封面原本全靠 PWA 的 service worker 從 OPFS 回答 /__folia_cover/ 這條路徑，車機 WebView 沒把 worker 註冊起來時就是整批 404。現在前端自己讀 OPFS、開 blob: 網址兜底。",
++      "coverFallback": {
++        "title": "封面不再全靠 service worker",
++        "description": "本地封面存在 OPFS。以前顯示封面要經過 service worker，worker 不在（老 WebView、precache 更新失敗、剛更新完）就全部變成 404，清單、播放頁、歌單一片空白。這版在載入失敗時接管那張圖：直接從 OPFS 讀出位元組、開一個 blob: 網址換上去，同一張只讀一次、最多快取 120 張。worker 正常時這段永遠不會被觸發。",
++      },
++      "fixes": {
++        "blob": "封面載入失敗時改用 OPFS→blob: 網址重試，不再依賴 service worker。",
++        "sw": "service worker 更新／未註冊導致的封面 404 由兜底路徑吸收。",
++        "retry": "同一張封面被多個清單同時要求時只讀一次；切歌後不會把 blob 網址拍到別的圖上。",
++      }
++    },
 +    "v0_9_18": {
 +      "intro": "0.9.18 修「歌名變成問號」：有些車機的媒體探針解不開標籤時不是丟 �，而是直接丟成 ?，位元組一樣救不回來，所以改成回檔案讀原始位元組，讀不出來才用檔名。",
 +      "tagPlaceholder": {
@@ -3795,7 +3830,7 @@ index 0067e9a..1c3ffef 100644
      "v0_7_0": {
        "intro": "以下是 0.7.0 的新功能与改进",
        "temperaVisualExpansion": {
-@@ -5228,6 +5548,10 @@ export default {
+@@ -5228,6 +5560,10 @@ export default {
      "capsuleOpensPalette": "点一下打开命令面板",
    },
    "localMusic": {
@@ -3806,7 +3841,7 @@ index 0067e9a..1c3ffef 100644
      "foldersAndPlaylists": "文件夹",
      "albums": "专辑",
      "artists": "艺术家",
-@@ -5242,8 +5566,34 @@ export default {
+@@ -5242,8 +5578,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -3841,7 +3876,7 @@ index 0067e9a..1c3ffef 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6401,13 @@ export default {
+@@ -6051,8 +6413,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -6369,6 +6404,168 @@ index 0000000..d8a16cb
 +
 +    return { cutoffHz, refDb, transitionHz };
 +};
+diff --git a/src/services/localCoverBinaryStore.ts b/src/services/localCoverBinaryStore.ts
+index ee96c03..ec561d9 100644
+--- a/src/services/localCoverBinaryStore.ts
++++ b/src/services/localCoverBinaryStore.ts
+@@ -101,6 +101,26 @@ const readOpfsDescriptor = async (
+   }
+ };
+ 
++/**
++ * 直接把封面位元組讀成 Blob（v0.9.19）。
++ * 存在的理由：網頁版靠 PWA service worker 回答 /____folia_cover/ 這條路徑，
++ * 車機的 WebView 若沒把 worker 註冊起來（或 worker 更新失敗），封面就整批 404。
++ * 這條 API 讓前端可以自己讀 OPFS，再用 blob: 網址顯示，不再受 worker 影響。
++ */
++export const readLocalCoverBinaryBlob = async (assetId: string): Promise<Blob | null> => {
++    if (!isValidLocalCoverAssetId(assetId)) return null;
++    if (hasElectronBridge()) return null;
++    const directory = await getOpfsDirectory(false);
++    if (!directory) return null;
++    const record = await readOpfsDescriptor(directory, assetId);
++    if (!record) return null;
++    try {
++        return record.file.slice(0, record.file.size, record.descriptor.mimeType);
++    } catch {
++        return null;
++    }
++};
++
+ export const hasLocalCoverBinary = async (assetId: string): Promise<boolean> => {
+   if (!isValidLocalCoverAssetId(assetId)) return false;
+   if (hasElectronBridge()) return window.electron!.hasLocalCoverAsset(assetId);
+diff --git a/src/services/localCoverBlobFallback.ts b/src/services/localCoverBlobFallback.ts
+new file mode 100644
+index 0000000..4270b85
+--- /dev/null
++++ b/src/services/localCoverBlobFallback.ts
+@@ -0,0 +1,104 @@
++// src/services/localCoverBlobFallback.ts
++// 封面顯示的最後一道保險（v0.9.19）。
++//
++// 網頁／車機版的封面是走 /__folia_cover/<assetId> 這條路徑，由 PWA 的 service worker 從 OPFS 讀出來回應。
++// 問題是：車機的 WebView 不一定肯把 worker 註冊起來（老 WebView、precache 太大、更新失敗），
++// 一旦 worker 不在，封面就整批變成 404——清單、播放頁、歌單全部空白，看起來就是「專輯圖片都不見了」。
++//
++// 這支模組不改任何元件：它在 window 上掛一個捕獲階段的 error 監聽，撿到載入失敗的本地封面 <img>，
++// 自己從 OPFS 讀出位元組、開一個 blob: 網址換上去。worker 正常時永遠不會被觸發，worker 壞掉時它兜底。
++
++import { isLocalCoverAssetUrl } from './localCoverAssetUrl';
++import { readLocalCoverBinaryBlob } from './localCoverBinaryStore';
++
++const COVER_URL_PATTERN = /\/__folia_cover\/([^/?#]+)/;
++const ASSET_ID_PATTERN = /^sha256:[0-9a-f]{64}$/;
++/** blob 網址開太多會吃記憶體，超過這個數量就回收最舊的。 */
++const MAX_BLOB_URLS = 120;
++
++const blobUrls = new Map<string, string>();
++
++/** 從封面網址反推 assetId；不是本地封面就回 null。 */
++export const coverAssetIdFromUrl = (url: string | null | undefined): string | null => {
++    if (!url) return null;
++    const match = COVER_URL_PATTERN.exec(url);
++    if (!match) return null;
++    let decoded: string;
++    try {
++        decoded = decodeURIComponent(match[1]);
++    } catch {
++        return null;
++    }
++    return ASSET_ID_PATTERN.test(decoded) ? decoded : null;
++};
++
++const remember = (assetId: string, url: string): string => {
++    if (blobUrls.size >= MAX_BLOB_URLS) {
++        const oldest = blobUrls.keys().next().value;
++        if (oldest) {
++            const stale = blobUrls.get(oldest);
++            blobUrls.delete(oldest);
++            if (stale) URL.revokeObjectURL(stale);
++        }
++    }
++    blobUrls.set(assetId, url);
++    return url;
++};
++
++/** 取這個 assetId 的 blob 網址；讀不到回 null（表示封面真的不在這台裝置上）。 */
++export const resolveLocalCoverBlobUrl = async (assetId: string): Promise<string | null> => {
++    const cached = blobUrls.get(assetId);
++    if (cached) return cached;
++    const blob = await readLocalCoverBinaryBlob(assetId);
++    if (!blob) return null;
++    return remember(assetId, URL.createObjectURL(blob));
++};
++
++const pending = new Map<string, Promise<string | null>>();
++
++/** 同一張封面同時被好幾個 <img> 要求時只讀一次。 */
++const resolveOnce = (assetId: string): Promise<string | null> => {
++    const cached = blobUrls.get(assetId);
++    if (cached) return Promise.resolve(cached);
++    const inFlight = pending.get(assetId);
++    if (inFlight) return inFlight;
++    const task = (async () => {
++        try {
++            return await resolveLocalCoverBlobUrl(assetId);
++        } catch (error) {
++            console.warn('[LocalCoverFallback] read failed', assetId, error);
++            return null;
++        } finally {
++            pending.delete(assetId);
++        }
++    })();
++    pending.set(assetId, task);
++    return task;
++};
++
++const swapImage = async (image: HTMLImageElement): Promise<void> => {
++    const current = image.getAttribute('src');
++    const assetId = coverAssetIdFromUrl(current);
++    if (!assetId) return;
++    const blobUrl = await resolveOnce(assetId);
++    // 換之前再確認一次：使用者可能已經切到別的歌，這個 <img> 的 src 換人了。
++    if (blobUrl && image.isConnected && image.getAttribute('src') === current) {
++        image.src = blobUrl;
++    }
++};
++
++/**
++ * 接住載入失敗的封面。
++ * 注意 error 事件不冒泡，所以要在 window 上以 capture=true 聽；
++ * image 的 error 只觸發一次，換上 blob 網址後若還失敗就由瀏覽器的破圖處理，不再進迴圈。
++ */
++export const installLocalCoverBlobFallback = (): void => {
++    if (typeof window === 'undefined') return;
++    window.addEventListener('error', event => {
++        const target = event.target;
++        if (!(target instanceof HTMLImageElement)) return;
++        const source = target.currentSrc || target.getAttribute('src');
++        if (!isLocalCoverAssetUrl(source)) return;
++        void swapImage(target);
++    }, true);
++};
+diff --git a/src/services/localCoverRuntime.ts b/src/services/localCoverRuntime.ts
+index 3894b13..cb0f2c2 100644
+--- a/src/services/localCoverRuntime.ts
++++ b/src/services/localCoverRuntime.ts
+@@ -1,6 +1,7 @@
+ import { isLocalCoverWebRuntimeSupported } from './localCoverBinaryStore';
+ import { migrateLegacyLocalCoverAssetsInBackground } from './localCoverAssetService';
+ import { isLocalCoverAssetUrl } from './localCoverAssetUrl';
++import { installLocalCoverBlobFallback } from './localCoverBlobFallback';
+ 
+ // src/services/localCoverRuntime.ts
+ // Re-requests local covers that failed before the Web resource route served them, then starts resumable legacy migration.
+@@ -18,6 +19,8 @@ const retryBrokenLocalCoverImages = (): void => {
+ };
+ 
+ export const initializeLocalCoverRuntime = (): void => {
++  // v0.9.19：車機 WebView 不一定註冊得起 worker，封面會整批 404。先掛一道 OPFS→blob: 的兜底。
++  installLocalCoverBlobFallback();
+   if (isLocalCoverWebRuntimeSupported() && 'serviceWorker' in navigator) {
+     // /__folia_cover/ is answered by the PWA worker (vite.config.ts imports public/folia-cover-sw.js
+     // into it), which vite-plugin-pwa registers. Startup does not wait for it: on a first visit it only
 diff --git a/src/services/localImportedAudioStore.ts b/src/services/localImportedAudioStore.ts
 new file mode 100644
 index 0000000..df20d8f
@@ -9368,6 +9565,39 @@ index ec0678e..d8102b0 100644
      ])('resolves $name', async ({ dev, flag, enabled }) => {
          vi.resetModules();
          vi.stubEnv('DEV', dev);
+diff --git a/test/unit/localCoverBlobFallback.test.ts b/test/unit/localCoverBlobFallback.test.ts
+new file mode 100644
+index 0000000..351dd1a
+--- /dev/null
++++ b/test/unit/localCoverBlobFallback.test.ts
+@@ -0,0 +1,27 @@
++import { describe, expect, it } from 'vitest';
++import { coverAssetIdFromUrl } from '@/services/localCoverBlobFallback';
++
++// test/unit/localCoverBlobFallback.test.ts
++// v0.9.19：封面 404 時要能從 /__folia_cover/ 網址反推 assetId，才讀得到 OPFS 裡的位元組。
++
++const ASSET = 'sha256:' + 'a'.repeat(64);
++
++describe('coverAssetIdFromUrl', () => {
++    it('解出編碼過的 assetId', () => {
++        expect(coverAssetIdFromUrl(`/__folia_cover/${encodeURIComponent(ASSET)}`)).toBe(ASSET);
++        expect(coverAssetIdFromUrl(`https://localhost/__folia_cover/${encodeURIComponent(ASSET)}?size=1024`)).toBe(ASSET);
++    });
++
++    it('不是本地封面網址就回 null', () => {
++        expect(coverAssetIdFromUrl('blob:https://localhost/xyz')).toBeNull();
++        expect(coverAssetIdFromUrl('https://example.com/__folia_cover/nope')).toBeNull();
++        expect(coverAssetIdFromUrl('')).toBeNull();
++        expect(coverAssetIdFromUrl(undefined)).toBeNull();
++    });
++
++    it('格式不對的 assetId 也不採用', () => {
++        expect(coverAssetIdFromUrl(`/__folia_cover/${encodeURIComponent('sha256:123')}`)).toBeNull();
++        expect(coverAssetIdFromUrl('/__folia_cover/sha256%3A' + 'B'.repeat(64))).toBeNull();
++        expect(coverAssetIdFromUrl('/__folia_cover/%E0%A4%A')).toBeNull();
++    });
++});
 diff --git a/test/unit/localSongFileLyrics.test.ts b/test/unit/localSongFileLyrics.test.ts
 new file mode 100644
 index 0000000..4b966b1
