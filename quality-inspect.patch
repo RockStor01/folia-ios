@@ -21,7 +21,7 @@ index 39ec48c..114cb4d 100644
      <script src="/runtime-config.js"></script>
    <script type="importmap">
 diff --git a/package.json b/package.json
-index 6976461..e8c5248 100644
+index 6976461..eb619da 100644
 --- a/package.json
 +++ b/package.json
 @@ -8,7 +8,7 @@
@@ -29,7 +29,7 @@ index 6976461..e8c5248 100644
    },
    "private": true,
 -  "version": "0.8.0",
-+  "version": "0.9.19",
++  "version": "0.9.20",
    "license": "AGPL-3.0",
    "type": "module",
    "main": "electron/main.cjs",
@@ -153,7 +153,7 @@ index d674656..9adcd2f 100644
          );
          if (overtaken()) return 'stale';
 diff --git a/src/components/app/playback/start/useLibraryPlaybackController.ts b/src/components/app/playback/start/useLibraryPlaybackController.ts
-index ed3feda..a2464ef 100644
+index ed3feda..c0bf577 100644
 --- a/src/components/app/playback/start/useLibraryPlaybackController.ts
 +++ b/src/components/app/playback/start/useLibraryPlaybackController.ts
 @@ -72,6 +72,7 @@ import { useLibraryStore } from '../../../../stores/useLibraryStore';
@@ -188,6 +188,22 @@ index ed3feda..a2464ef 100644
  
      const loadCurrentSongLyricPreview = useCallback(async (): Promise<LyricData | null> => {
          if (!currentSong) {
+@@ -1490,6 +1497,7 @@ export function useLibraryPlaybackController({
+                     album: matchContext.album,
+                     preferredSource: settingsLyricSettings.preferredAlternativeLyricSource,
+                     metadataCandidate: matchContext.metadataCandidate,
++                    parallelSources: settingsLyricSettings.parallelLyricProbe,
+                 });
+ 
+                 if (!bestMatch) {
+@@ -1596,6 +1604,7 @@ export function useLibraryPlaybackController({
+                 providerCandidate: ownLyricSource
+                     ? { providerId: ownLyricSource.id, song: currentSong, lyricsResult: ownLyricsResult }
+                     : undefined,
++                parallelSources: settingsLyricSettings.parallelLyricProbe,
+             });
+ 
+             if (!bestMatch) {
 diff --git a/src/components/audioQuality/OverviewChart.tsx b/src/components/audioQuality/OverviewChart.tsx
 new file mode 100644
 index 0000000..29b78f9
@@ -1552,12 +1568,12 @@ index 5de4bf3..af66827 100644
      );
  };
 diff --git a/src/components/modal/newFeaturesRelease.ts b/src/components/modal/newFeaturesRelease.ts
-index e49a39c..47ad213 100644
+index e49a39c..4fb6c1c 100644
 --- a/src/components/modal/newFeaturesRelease.ts
 +++ b/src/components/modal/newFeaturesRelease.ts
 @@ -1,4 +1,4 @@
 -import { ListMusic, MessageSquareText, Puzzle, SlidersVertical, Sparkles, Store } from 'lucide-react';
-+import { FileAudio, Image as ImageIcon, KeyRound, Languages, ListChecks, MonitorOff, Music2, Play, RefreshCw, Search, ShieldCheck, SpellCheck, Type } from 'lucide-react';
++import { FileAudio, Image as ImageIcon, KeyRound, Languages, ListChecks, MonitorOff, Music2, Play, RefreshCw, Search, ShieldCheck, SpellCheck, Type, Zap } from 'lucide-react';
  import type { LucideIcon } from 'lucide-react';
  
  // src/components/modal/newFeaturesRelease.ts
@@ -1576,7 +1592,7 @@ index e49a39c..47ad213 100644
  export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
 -    i18nKey: 'releaseNotes.v0_8_0',
 -    majorUpdate: { codename: 'Severance' },
-+    i18nKey: 'releaseNotes.v0_9_19',
++    i18nKey: 'releaseNotes.v0_9_20',
      features: [
 -        { id: 'sourceMods', icon: Puzzle },
 -        { id: 'modMarket', icon: Store },
@@ -1584,9 +1600,9 @@ index e49a39c..47ad213 100644
 -        { id: 'moments', icon: MessageSquareText },
 -        { id: 'stemMixer', icon: SlidersVertical },
 -        { id: 'moreDetails', icon: Sparkles },
-+        { id: 'coverFallback', icon: ImageIcon },
++        { id: 'fastLyricMatch', icon: Zap },
      ],
-+    fixes: ['blob', 'sw', 'retry'],
++    fixes: ['parallel', 'cache', 'dedupe', 'amll'],
  };
 diff --git a/src/components/modal/settings/navigation/settingsNavModel.ts b/src/components/modal/settings/navigation/settingsNavModel.ts
 index 1ea56f3..629323e 100644
@@ -1892,6 +1908,44 @@ index e98c8a4..4f02916 100644
              <Group def={MOTION} foot={t('options.reduceMotionSectionDesc')}>
                  <Row option={O.followSystem} hint={t('options.reduceMotionFollowSystemDesc')}>
                      <Toggle checked={motion.followSystem} onChange={motion.setFollowSystem} />
+diff --git a/src/components/modal/settings/pages/LyricsPage.tsx b/src/components/modal/settings/pages/LyricsPage.tsx
+index 6706953..201e1eb 100644
+--- a/src/components/modal/settings/pages/LyricsPage.tsx
++++ b/src/components/modal/settings/pages/LyricsPage.tsx
+@@ -29,6 +29,7 @@ const O = {
+     autoBest: option(SOURCE, 'autoUseBestLyric', 'options.autoUseBestLyric'),
+     matchPriority: option(SOURCE, 'lyricMatchPriority', 'settings.lyricMatchPriority'),
+     keepProviderWordTiming: option(SOURCE, 'keepProviderWordTiming', 'options.keepProviderWordTiming'),
++    parallelLyricProbe: option(SOURCE, 'parallelLyricProbe', 'options.parallelLyricProbe'),
+     localPriority: option(SOURCE, 'localLyricsPriority', 'options.localLyricsPriority'),
+     globalOffset: option(ADJUST, 'globalLyricTimelineOffset', 'options.globalLyricTimelineOffset'),
+     filter: option(ADJUST, 'lyricFilterRegex', 'options.lyricFilterRegex'),
+@@ -54,6 +55,7 @@ const LyricsPage: React.FC = () => {
+         autoBest: state.autoUseBestLyric,
+         preferredSource: state.preferredAlternativeLyricSource,
+         keepProviderWordTiming: state.keepProviderWordTiming,
++        parallelLyricProbe: state.parallelLyricProbe,
+         localPriority: state.localLyricsPriority,
+         formatOrder: state.localLyricFormatOrder,
+         globalOffsetMs: state.globalLyricTimelineOffsetMs,
+@@ -61,6 +63,7 @@ const LyricsPage: React.FC = () => {
+         setAutoBest: state.handleToggleAutoUseBestLyric,
+         setPreferredSource: state.handleSetPreferredAlternativeLyricSource,
+         setKeepProviderWordTiming: state.handleToggleKeepProviderWordTiming,
++        setParallelLyricProbe: state.handleToggleParallelLyricProbe,
+         setLocalPriority: state.handleSetLocalLyricsPriority,
+         setFormatOrder: state.handleSetLocalLyricFormatOrder,
+         setAutoAiSegmentation: state.handleToggleAutoAiLyricSegmentation,
+@@ -146,6 +149,9 @@ const LyricsPage: React.FC = () => {
+                 <Row option={O.keepProviderWordTiming} note={t('options.keepProviderWordTimingDesc')}>
+                     <Toggle checked={lyric.keepProviderWordTiming} onChange={lyric.setKeepProviderWordTiming} />
+                 </Row>
++                <Row option={O.parallelLyricProbe} note={t('options.parallelLyricProbeDesc')}>
++                    <Toggle checked={lyric.parallelLyricProbe} onChange={lyric.setParallelLyricProbe} />
++                </Row>
+                 <Row
+                     option={O.localPriority}
+                     hint={t(lyric.localPriority === 'local' ? 'options.localLyricsPriorityLocalDesc' : 'options.localLyricsPriorityOnlineDesc')}
 diff --git a/src/components/modal/settings/pages/PlaybackPage.tsx b/src/components/modal/settings/pages/PlaybackPage.tsx
 index 54fee9c..8bd1ea0 100644
 --- a/src/components/modal/settings/pages/PlaybackPage.tsx
@@ -2615,7 +2669,7 @@ index 2f367df..197931e 100644
              enabled
              && window.electron?.requestTranscodeFallback
 diff --git a/src/i18n/locales/en.ts b/src/i18n/locales/en.ts
-index 86f3b6d..8222700 100644
+index 86f3b6d..2d9f704 100644
 --- a/src/i18n/locales/en.ts
 +++ b/src/i18n/locales/en.ts
 @@ -1,77 +1,47 @@
@@ -2776,7 +2830,16 @@ index 86f3b6d..8222700 100644
      "homeTreeHints": "←→ fold",
      "homeBatchHints": "Ins select · {{mod}}+A all · {{mod}}+Enter play · {{mod}}+Shift+Enter queue",
      "homeSelection": "{{count}} selected · {{tracks}} songs",
-@@ -934,6 +913,7 @@ export default {
+@@ -703,6 +682,8 @@ export default {
+     "autoBestLyricOff": "Auto-use best lyrics disabled",
+     "keepProviderWordTimingOn": "Platform word-timed lyrics kept",
+     "keepProviderWordTimingOff": "Platform word-timed lyrics no longer kept",
++    "parallelLyricProbeOn": "Lyric sources probed together",
++    "parallelLyricProbeOff": "Lyric sources probed one at a time",
+     "autoAiLyricSegmentationOn": "Automatic AI segmentation on",
+     "autoAiLyricSegmentationOff": "Automatic AI segmentation off",
+     "lyricSourceChanged": "Preferred lyric source switched to {{source}}",
+@@ -934,6 +915,7 @@ export default {
      "transcodeFallbackStarting": "Converting unsupported audio for playback...",
      "transcodeFallbackReady": "Audio converted; resuming playback",
      "transcodeFallbackFailed": "Audio conversion failed",
@@ -2784,7 +2847,7 @@ index 86f3b6d..8222700 100644
      "lyricsSourceSwitched": "Lyrics source switched",
      "lyricFileIssueShifted": "Translations in the lyric file for \"{{title}}\" are off by one line. See the Folder tab of the player panel for a fix",
      "clearedManualLyrics": "Cleared manually matched/uploaded lyrics",
-@@ -2796,6 +2776,7 @@ export default {
+@@ -2796,6 +2778,7 @@ export default {
      "settingsPageHome": "Home & playlists",
      "settingsPagePlayback": "Playback",
      "settingsPageLyrics": "Lyrics",
@@ -2792,7 +2855,7 @@ index 86f3b6d..8222700 100644
      "settingsPageGeneral": "General",
      "settingsPageInteraction": "Shortcuts",
      "settingsPageIntegration": "Connections",
-@@ -3125,6 +3106,13 @@ export default {
+@@ -3125,6 +3108,13 @@ export default {
      "memoryByProcess": "By process",
      "memorySeriesUnavailable": "Not reported on this platform",
      "reduceMotionSection": "Reduce motion",
@@ -2806,7 +2869,16 @@ index 86f3b6d..8222700 100644
      "reduceMotionSectionDesc": "Folia plays full animation by default. Turn an item on to reduce motion there.",
      "reduceMotionFollowSystem": "Follow system setting",
      "reduceMotionFollowSystemDesc": "The system's animation setting decides all motion",
-@@ -3336,6 +3324,10 @@ export default {
+@@ -3164,6 +3154,8 @@ export default {
+     "crossSourceSkipMatchingOnly": "is used only for matching",
+     "keepProviderWordTiming": "Keep platform word-timed lyrics",
+     "keepProviderWordTimingDesc": "When an Apple Music song comes with word-timed lyrics, they are replaced only if the source chosen in Lyric match priority has word-timed lyrics too; no other source is searched. Turn off to pick among all sources by priority, like any other song.",
++    "parallelLyricProbe": "Probe lyric sources together",
++    "parallelLyricProbeDesc": "Ask the first few lyric sources at the same time instead of one after another, so a slow source no longer makes every source after it wait. Uses a few more requests per match; turn off to keep the old one-by-one order.",
+     "localLyricsPriority": "Local song lyrics priority",
+     "localLyricsPriorityDesc": "Choose which lyrics are used first when a local song also has an online match. Manual lyric source choices are preserved.",
+     "localLyricsPriorityLocal": "Local lyrics",
+@@ -3336,6 +3328,10 @@ export default {
      "uiZoom": "Interface zoom",
      "uiZoomDesc": "Zoom the whole main window by a fixed step. With a large display scale in Windows the window feels cramped; zoom out to see more. The remote control window keeps its size.",
      "uiZoomStep": "Zoom",
@@ -2817,7 +2889,7 @@ index 86f3b6d..8222700 100644
      "minimizeToTray": "Minimize to tray",
      "closeToTray": "Close window to tray",
      "closeToTrayDesc": "The close button hides the window to the tray instead of quitting",
-@@ -4201,7 +4193,9 @@ export default {
+@@ -4201,7 +4197,9 @@ export default {
      "invalidJsonFormat": "Invalid JSON format",
      "pasteJsonHere": "Paste JSON here...",
      "settingsHeadingSound": "Sound & devices",
@@ -2827,10 +2899,23 @@ index 86f3b6d..8222700 100644
      "transcodeFallbackDesc": "Converts tracks that cannot be decoded with FFmpeg. The file is not changed.",
      "playbackFade": "Fade on pause and resume",
      "playbackFadeDesc": "Fades out before pausing and back in on resume.",
-@@ -4513,6 +4507,273 @@ export default {
+@@ -4513,6 +4511,286 @@ export default {
      "noDescription": "No description available",
    },
    "releaseNotes": {
++    "v0_9_20": {
++      "intro": "0.9.20 makes lyric matching quicker: the sources at the head of the order are asked together instead of one after another, the same words are not searched twice, and the QQ AMLL lookup no longer tries its two ids in sequence.",
++      "fastLyricMatch": {
++        "title": "Lyric matching without the queue",
++        "description": "Matching used to be strictly one source at a time: search, wait, fetch, wait, then the next. A source that answered slowly cost every source after it its own wait. This build starts the first few sources' searches and fetches at the same time, then still decides in the original priority order, so which source wins does not change: whichever answers first no longer sets the pace. The chorus ranges one source lends another are still applied, even when both were fetched together. It is a switch (Lyric settings → Probe lyric sources together) and it is on by default; the cost is a few more requests per match, and turning it off restores the old one-by-one order.",
++      },
++      "fixes": {
++        "parallel": "The first three sources are searched and fetched at once; the winner is still chosen by priority, in order.",
++        "cache": "A match found for the same title, artist and length is reused for 15 minutes; a “nothing found” result for 3, so a song without lyrics is not re-searched on every play.",
++        "dedupe": "The prefetch and the playback that follows it now share one run instead of starting two.",
++        "amll": "The QQ AMLL lookup asks its mid and numeric id at the same time, and the AMLL search is kept for a minute (one album's songs cost one search).",
++      }
++    },
 +    "v0_9_19": {
 +      "intro": "0.9.19 fixes “album art disappeared”: local covers used to be served entirely by the PWA service worker from OPFS at /__folia_cover/, so when the head unit's WebView never registers the worker every cover 404s. The page now reads OPFS itself and falls back to blob: URLs.",
 +      "coverFallback": {
@@ -3101,7 +3186,7 @@ index 86f3b6d..8222700 100644
      "v0_7_0": {
        "intro": "Here are the new features and improvements in version 0.7.0.",
        "temperaVisualExpansion": {
-@@ -5228,6 +5489,10 @@ export default {
+@@ -5228,6 +5506,10 @@ export default {
      "capsuleOpensPalette": "Click to open the command palette",
    },
    "localMusic": {
@@ -3112,7 +3197,7 @@ index 86f3b6d..8222700 100644
      "foldersAndPlaylists": "Folders",
      "albums": "Albums",
      "artists": "Artists",
-@@ -5242,8 +5507,34 @@ export default {
+@@ -5242,8 +5524,34 @@ export default {
      "sortByModifiedDate": "Modified date",
      "sortByAlbumTrack": "Album number",
      "sortAscending": "Ascending",
@@ -3147,7 +3232,7 @@ index 86f3b6d..8222700 100644
      "importing": "Importing...",
      "importPlaylist": "Import Playlist",
      "importingPlaylist": "Importing playlist...",
-@@ -6053,8 +6344,13 @@ export default {
+@@ -6053,8 +6361,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "How should your library look?",
@@ -3163,10 +3248,19 @@ index 86f3b6d..8222700 100644
        "title": "Grid",
        "tag": "Classic",
 diff --git a/src/i18n/locales/in.ts b/src/i18n/locales/in.ts
-index fac0d47..6d2424a 100644
+index fac0d47..6b9904e 100644
 --- a/src/i18n/locales/in.ts
 +++ b/src/i18n/locales/in.ts
-@@ -934,6 +934,7 @@ export default {
+@@ -703,6 +703,8 @@ export default {
+     "autoBestLyricOff": "Fitur lirik terbaik otomatis dimatikan",
+     "keepProviderWordTimingOn": "Lirik per kata bawaan platform dipertahankan",
+     "keepProviderWordTimingOff": "Lirik per kata bawaan platform tidak lagi dipertahankan",
++    "parallelLyricProbeOn": "Sumber lirik diprobe bersamaan",
++    "parallelLyricProbeOff": "Sumber lirik diprobe satu per satu",
+     "autoAiLyricSegmentationOn": "Segmentasi AI otomatis aktif",
+     "autoAiLyricSegmentationOff": "Segmentasi AI otomatis nonaktif",
+     "lyricSourceChanged": "Sumber lirik utama diganti ke {{source}}",
+@@ -934,6 +936,7 @@ export default {
      "transcodeFallbackStarting": "Mengonversi audio yang tidak didukung untuk pemutaran...",
      "transcodeFallbackReady": "Audio selesai dikonversi; melanjutkan pemutaran",
      "transcodeFallbackFailed": "Konversi audio gagal",
@@ -3174,7 +3268,7 @@ index fac0d47..6d2424a 100644
      "lyricsSourceSwitched": "Sumber lirik diganti",
      "lyricFileIssueShifted": "Terjemahan di file lirik \"{{title}}\" bergeser satu baris. Lihat tab Folder di panel pemutar untuk cara memperbaikinya",
      "clearedManualLyrics": "Lirik yang dicocokkan/diunggah manual dihapus",
-@@ -2796,6 +2797,7 @@ export default {
+@@ -2796,6 +2799,7 @@ export default {
      "settingsPageHome": "Beranda & playlist",
      "settingsPagePlayback": "Pemutaran",
      "settingsPageLyrics": "Lirik",
@@ -3182,7 +3276,16 @@ index fac0d47..6d2424a 100644
      "settingsPageGeneral": "Umum",
      "settingsPageInteraction": "Pintasan",
      "settingsPageIntegration": "Koneksi & integrasi",
-@@ -4201,7 +4203,9 @@ export default {
+@@ -3164,6 +3168,8 @@ export default {
+     "crossSourceSkipMatchingOnly": "hanya dipakai untuk pencocokan",
+     "keepProviderWordTiming": "Pertahankan lirik per kata bawaan platform",
+     "keepProviderWordTimingDesc": "Saat lagu Apple Music punya lirik per kata bawaan, lirik itu hanya diganti jika sumber yang dipilih di Prioritas pencocokan lirik juga punya lirik per kata; sumber lain tidak dicari. Matikan untuk memilih dari semua sumber sesuai prioritas, seperti lagu lain.",
++    "parallelLyricProbe": "Probe sumber lirik bersamaan",
++    "parallelLyricProbeDesc": "Tanyakan beberapa sumber lirik teratas sekaligus, bukan satu per satu, agar sumber yang lambat tidak membuat sumber setelahnya menunggu. Memakai beberapa permintaan tambahan tiap pencocokan; matikan untuk urutan lama.",
+     "localLyricsPriority": "Prioritas lirik lagu lokal",
+     "localLyricsPriorityDesc": "Pilih lirik mana yang digunakan pertama kali saat lagu lokal juga memiliki kecocokan online. Pilihan sumber lirik manual tetap dipertahankan.",
+     "localLyricsPriorityLocal": "Lirik lokal",
+@@ -4201,7 +4207,9 @@ export default {
      "invalidJsonFormat": "Format JSON tidak valid",
      "pasteJsonHere": "Tempel JSON di sini...",
      "settingsHeadingSound": "Suara & perangkat",
@@ -3192,10 +3295,23 @@ index fac0d47..6d2424a 100644
      "transcodeFallbackDesc": "Mengonversi trek yang tidak dapat didekode dengan FFmpeg. Berkas tidak diubah.",
      "playbackFade": "Fade saat jeda dan lanjut",
      "playbackFadeDesc": "Fade keluar sebelum jeda dan masuk kembali saat lanjut.",
-@@ -4513,6 +4517,190 @@ export default {
+@@ -4513,6 +4521,203 @@ export default {
      "noDescription": "Tidak ada deskripsi tersedia"
    },
    "releaseNotes": {
++    "v0_9_20": {
++      "intro": "0.9.20 membuat pencocokan lirik lebih cepat: beberapa sumber teratas ditanyakan bersamaan, kata yang sama tidak dicari dua kali, dan pencarian AMLL QQ tidak lagi mencoba dua id secara berurutan.",
++      "fastLyricMatch": {
++        "title": "Pencocokan lirik tanpa antre",
++        "description": "Dulu pencocokan berjalan satu per satu: cari, tunggu, ambil, tunggu, lalu sumber berikutnya. Sumber yang lambat membuat semua sumber sesudahnya menunggu lagi. Versi ini mengirim pencarian dan pengambilan beberapa sumber pertama sekaligus, lalu tetap memutuskan dengan urutan prioritas yang sama, jadi sumber pemenang tidak berubah. Rentang chorus yang dipinjamkan satu sumber ke sumber lain tetap diterapkan. Ini sakelar (Pengaturan lirik → Probe sumber lirik bersamaan), aktif secara bawaan; biayanya beberapa permintaan tambahan per pencocokan.",
++      },
++      "fixes": {
++        "parallel": "Tiga sumber teratas dicari dan diambil sekaligus; pemenang tetap dipilih menurut prioritas.",
++        "cache": "Hasil untuk judul, artis, dan durasi yang sama dipakai ulang 15 menit; hasil kosong 3 menit, agar lagu tanpa lirik tidak dicari ulang tiap diputar.",
++        "dedupe": "Prefetch dan pemutaran sesudahnya berbagi satu proses, bukan dua.",
++        "amll": "Pencarian AMLL QQ mengirim mid dan id numerik sekaligus; pencarian AMLL dipakai ulang satu menit.",
++      }
++    },
 +    "v0_9_19": {
 +      "intro": "0.9.19 memperbaiki “sampul album tidak muncul”: sampul lokal sepenuhnya dilayani service worker PWA dari OPFS di /__folia_cover/, jadi bila WebView head unit tidak mendaftarkan worker, semua sampul 404. Halaman kini membaca OPFS sendiri dan memakai URL blob: sebagai cadangan.",
 +      "coverFallback": {
@@ -3384,10 +3500,19 @@ index fac0d47..6d2424a 100644
        "intro": "Berikut fitur baru dan peningkatan di versi 0.7.0.",
        "temperaVisualExpansion": {
 diff --git a/src/i18n/locales/vi.ts b/src/i18n/locales/vi.ts
-index 23ebf79..336af7d 100644
+index 23ebf79..6ad6e9e 100644
 --- a/src/i18n/locales/vi.ts
 +++ b/src/i18n/locales/vi.ts
-@@ -2796,6 +2796,7 @@ export default {
+@@ -703,6 +703,8 @@ export default {
+     "autoBestLyricOff": "Đã tắt tự dùng lời tối ưu",
+     "keepProviderWordTimingOn": "Đã giữ lời từng từ có sẵn của nền tảng",
+     "keepProviderWordTimingOff": "Không còn giữ lời từng từ có sẵn của nền tảng",
++    "parallelLyricProbeOn": "Đã dò nguồn lời cùng lúc",
++    "parallelLyricProbeOff": "Đã dò nguồn lời lần lượt",
+     "autoAiLyricSegmentationOn": "Đã bật tự tách từ bằng AI",
+     "autoAiLyricSegmentationOff": "Đã tắt tự tách từ bằng AI",
+     "lyricSourceChanged": "Đã chuyển nguồn lời ưu tiên sang {{source}}",
+@@ -2796,6 +2798,7 @@ export default {
      "settingsPageHome": "Trang chủ & Danh sách phát",
      "settingsPagePlayback": "Điều khiển phát lại",
      "settingsPageLyrics": "Lời bài hát",
@@ -3395,7 +3520,16 @@ index 23ebf79..336af7d 100644
      "settingsPageGeneral": "Cài đặt chung",
      "settingsPageInteraction": "Phím tắt & Thao tác nhanh",
      "settingsPageIntegration": "Kết nối & Tích hợp",
-@@ -4201,7 +4202,9 @@ export default {
+@@ -3164,6 +3167,8 @@ export default {
+     "crossSourceSkipMatchingOnly": "chỉ dùng để khớp",
+     "keepProviderWordTiming": "Giữ lời từng từ có sẵn của nền tảng",
+     "keepProviderWordTimingDesc": "Khi bài trên Apple Music có sẵn lời từng từ, chỉ thay lời đó nếu nguồn chọn ở Ưu tiên khớp lời bài hát cũng có lời từng từ; không tìm ở nguồn khác. Tắt để chọn trong mọi nguồn theo thứ tự ưu tiên như các bài khác.",
++    "parallelLyricProbe": "Dò nguồn lời cùng lúc",
++    "parallelLyricProbeDesc": "Hỏi vài nguồn lời đầu tiên cùng một lúc thay vì lần lượt, để một nguồn chậm không bắt các nguồn sau phải chờ. Tốn thêm vài yêu cầu mỗi lần ghép; tắt để quay lại thứ tự cũ.",
+     "localLyricsPriority": "Ưu tiên lời bài hát nội bộ",
+     "localLyricsPriorityDesc": "Chọn lời bài hát ưu tiên khi bài hát nội bộ cũng có lời khớp trực tuyến. Nguồn lời chọn thủ công vẫn được giữ nguyên.",
+     "localLyricsPriorityLocal": "Lời nội bộ",
+@@ -4201,7 +4206,9 @@ export default {
      "invalidJsonFormat": "Định dạng JSON không hợp lệ",
      "pasteJsonHere": "Dán JSON vào đây...",
      "settingsHeadingSound": "Âm thanh & Thiết bị",
@@ -3405,8 +3539,28 @@ index 23ebf79..336af7d 100644
      "transcodeFallbackDesc": "Trong ứng dụng Electron, dùng FFmpeg để khôi phục bài hát nội bộ và Navidrome mà Chromium không giải mã được. Tệp gốc không bị thay đổi.",
      "playbackFade": "Làm mờ khi tạm dừng và tiếp tục",
      "playbackFadeDesc": "Giảm âm dần trước khi tạm dừng và tăng dần khi tiếp tục thay vì ngắt âm đột ngột. Bỏ qua nếu âm thanh không đi qua bộ xử lý âm thanh.",
+@@ -4513,6 +4520,19 @@ export default {
+     "noDescription": "Chưa có mô tả",
+   },
+   "releaseNotes": {
++    "v0_9_20": {
++      "intro": "0.9.20 giúp ghép lời nhanh hơn: vài nguồn đầu được hỏi cùng lúc thay vì lần lượt, cùng một bài không bị tìm hai lần, và tra AMLL của QQ không còn thử hai id theo thứ tự.",
++      "fastLyricMatch": {
++        "title": "Ghép lời không phải xếp hàng",
++        "description": "Trước đây việc ghép chạy tuần tự: tìm, chờ, lấy, chờ, rồi nguồn tiếp theo. Một nguồn chậm khiến mọi nguồn sau phải chờ thêm. Bản này gửi tìm kiếm và lấy lời của vài nguồn đầu cùng lúc, rồi vẫn quyết định theo đúng thứ tự ưu tiên, nên nguồn thắng không đổi. Khoảng chorus một nguồn cho nguồn khác vẫn được áp dụng. Đây là công tắc (Cài đặt lời → Dò nguồn lời cùng lúc), mặc định bật; cái giá là thêm vài yêu cầu mỗi lần ghép.",
++      },
++      "fixes": {
++        "parallel": "Ba nguồn đầu được tìm và lấy cùng lúc; nguồn thắng vẫn chọn theo ưu tiên.",
++        "cache": "Kết quả cho cùng tên bài, ca sĩ, độ dài được dùng lại 15 phút; kết quả rỗng 3 phút, để bài không có lời không bị tìm lại mỗi lần phát.",
++        "dedupe": "Tải trước và lần phát ngay sau đó dùng chung một lần chạy.",
++        "amll": "Tra AMLL của QQ gửi mid và id số cùng lúc; kết quả tìm AMLL dùng lại trong một phút.",
++      }
++    },
+     "v0_7_0": {
+       "intro": "Dưới đây là các tính năng mới và cải tiến trong phiên bản 0.7.0.",
+       "temperaVisualExpansion": {
 diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
-index 0067e9a..8b2453a 100644
+index 0067e9a..add989f 100644
 --- a/src/i18n/locales/zh-CN.ts
 +++ b/src/i18n/locales/zh-CN.ts
 @@ -1,6 +1,46 @@
@@ -3497,7 +3651,16 @@ index 0067e9a..8b2453a 100644
      "homeTreeHints": "←→ 折叠",
      "homeBatchHints": "Ins 选中 · {{mod}}+A 全选 · {{mod}}+Enter 播放 · {{mod}}+Shift+Enter 入队",
      "homeSelection": "已选 {{count}} 项 · {{tracks}} 首",
-@@ -934,6 +983,7 @@ export default {
+@@ -703,6 +752,8 @@ export default {
+     "autoBestLyricOff": "自动使用最佳歌词已关闭",
+     "keepProviderWordTimingOn": "已保留平台自带的逐字歌词",
+     "keepProviderWordTimingOff": "平台自带的逐字歌词不再优先保留",
++    "parallelLyricProbeOn": "已改为并行探测歌词来源",
++    "parallelLyricProbeOff": "已改为逐个探测歌词来源",
+     "autoAiLyricSegmentationOn": "自动 AI 分词已开启",
+     "autoAiLyricSegmentationOff": "自动 AI 分词已关闭",
+     "lyricSourceChanged": "优先匹配歌词源已切换为{{source}}",
+@@ -934,6 +985,7 @@ export default {
      "transcodeFallbackStarting": "正在转换当前无法解码的音频...",
      "transcodeFallbackReady": "音频转换完成，正在恢复播放",
      "transcodeFallbackFailed": "音频转换失败",
@@ -3505,7 +3668,7 @@ index 0067e9a..8b2453a 100644
      "lyricsSourceSwitched": "歌词来源已切换",
      "lyricFileIssueShifted": "「{{title}}」的歌词文件译文错位了一句，修复办法见播放面板的「本地」页",
      "clearedManualLyrics": "已清除手动匹配/上传的歌词",
-@@ -2583,6 +2633,7 @@ export default {
+@@ -2583,6 +2635,7 @@ export default {
      "communityQqHint": "{{number}} · 点击复制群号",
      "qqGroupNumberCopied": "群号已复制",
      "releaseNotes": "版本更新",
@@ -3513,7 +3676,7 @@ index 0067e9a..8b2453a 100644
      "releaseNotesDescription": "查看这个版本带来的变化",
      "majorUpdateLabel": "{{codename}} Update · 重大更新",
      "servicePackLabel": "{{codename}} Update SP{{servicePack}} · 重大更新",
-@@ -2796,6 +2847,7 @@ export default {
+@@ -2796,6 +2849,7 @@ export default {
      "settingsPageHome": "主页与歌单",
      "settingsPagePlayback": "播放控制",
      "settingsPageLyrics": "歌词",
@@ -3521,7 +3684,7 @@ index 0067e9a..8b2453a 100644
      "settingsPageGeneral": "通用",
      "settingsPageInteraction": "快捷操作",
      "settingsPageIntegration": "连接与集成",
-@@ -3125,6 +3177,13 @@ export default {
+@@ -3125,6 +3179,13 @@ export default {
      "memoryByProcess": "分进程",
      "memorySeriesUnavailable": "当前系统不提供这个数据",
      "reduceMotionSection": "降低动态效果",
@@ -3535,7 +3698,16 @@ index 0067e9a..8b2453a 100644
      "reduceMotionSectionDesc": "Folia 默认播放完整动画。打开某一项，那一处的动效就会降低。",
      "reduceMotionFollowSystem": "跟随系统设置",
      "reduceMotionFollowSystemDesc": "由系统的动画设置决定全部动效",
-@@ -3336,6 +3395,10 @@ export default {
+@@ -3164,6 +3225,8 @@ export default {
+     "crossSourceSkipMatchingOnly": "只用于匹配",
+     "keepProviderWordTiming": "保留平台自带的逐字歌词",
+     "keepProviderWordTimingDesc": "Apple Music 的歌自带逐字歌词时，只有“歌词匹配优先级”选的歌词源也有逐字歌词才换掉它，其他歌词源不再搜索。关闭后和其他歌一样，按优先级在各歌词源里择优。",
++    "parallelLyricProbe": "并行探测歌词来源",
++    "parallelLyricProbeDesc": "一次同时问前几个歌词来源，而不是一个一个问：某个来源慢的时候，后面的来源不必各等一遍。每次匹配会多发几个请求；关掉则回到原来逐个问的顺序。",
+     "localLyricsPriority": "本地歌曲歌词优先级",
+     "localLyricsPriorityDesc": "本地歌曲同时存在在线匹配歌词时，选择优先使用的歌词。手动指定的歌词来源不受影响。",
+     "localLyricsPriorityLocal": "本地歌词",
+@@ -3336,6 +3399,10 @@ export default {
      "uiZoom": "界面缩放",
      "uiZoomDesc": "按固定挡位缩放整个主窗口。系统缩放调得大时界面会显得挤，缩小一些能看到更多内容。妙控窗保持原来的大小。",
      "uiZoomStep": "缩放挡位",
@@ -3546,7 +3718,7 @@ index 0067e9a..8b2453a 100644
      "minimizeToTray": "最小化到托盘",
      "closeToTray": "关闭窗口时隐藏到托盘",
      "closeToTrayDesc": "点关闭按钮时不退出，隐藏到托盘继续播放",
-@@ -4201,7 +4264,9 @@ export default {
+@@ -4201,7 +4268,9 @@ export default {
      "invalidJsonFormat": "无效的 JSON 格式",
      "pasteJsonHere": "在此粘贴 JSON...",
      "settingsHeadingSound": "声音与设备",
@@ -3556,10 +3728,23 @@ index 0067e9a..8b2453a 100644
      "transcodeFallbackDesc": "遇到无法解码的歌曲时用 FFmpeg 转换，不修改原文件。",
      "playbackFade": "暂停/播放淡入淡出",
      "playbackFadeDesc": "暂停前淡出，恢复时淡入。",
-@@ -4513,6 +4578,273 @@ export default {
+@@ -4513,6 +4582,286 @@ export default {
      "noDescription": "暂无详细介绍",
    },
    "releaseNotes": {
++    "v0_9_20": {
++      "intro": "0.9.20 让歌词匹配更快：排在前面的几个来源一起问，而不是一个一个问；同一首歌不再重复搜；QQ 的 AMLL 取词不再把 mid 和数字 ID 依次试。",
++      "fastLyricMatch": {
++        "title": "歌词匹配不再排队",
++        "description": "以前匹配是严格串行的：搜一个、等、取词、等，再下一个。某个来源慢，后面的来源就各自再等一遍。这版把前几个来源的搜索与取词同时发出去，判定仍然按原来的优先顺序走，所以胜出的来源不变，只是不再由最慢的那个定节奏。一个来源借给另一个的副歌区间照旧会补上，即使两边是一起取的。这是设置项（歌词设置 → 并行探测歌词来源），默认开；代价是每次匹配多发几个请求，关掉即回到原来逐个问的顺序。",
++      },
++      "fixes": {
++        "parallel": "前三个来源同时搜、同时取词；胜出者仍按优先顺序判定。",
++        "cache": "同一个歌名、歌手、时长找到的结果复用 15 分钟；「找不到」只记 3 分钟，没有歌词的歌不会每次播放都重搜一遍。",
++        "dedupe": "预取和随后的播放共用一次运行，不再各跑一遍。",
++        "amll": "QQ 的 AMLL 取词把 mid 和数字 ID 同时查；AMLL 搜索一分钟内复用，同一张专辑只搜一次。",
++      }
++    },
 +    "v0_9_19": {
 +      "intro": "0.9.19 修「專輯圖片都不顯示」：封面原本全靠 PWA 的 service worker 從 OPFS 回答 /__folia_cover/ 這條路徑，車機 WebView 沒把 worker 註冊起來時就是整批 404。現在前端自己讀 OPFS、開 blob: 網址兜底。",
 +      "coverFallback": {
@@ -3830,7 +4015,7 @@ index 0067e9a..8b2453a 100644
      "v0_7_0": {
        "intro": "以下是 0.7.0 的新功能与改进",
        "temperaVisualExpansion": {
-@@ -5228,6 +5560,10 @@ export default {
+@@ -5228,6 +5577,10 @@ export default {
      "capsuleOpensPalette": "点一下打开命令面板",
    },
    "localMusic": {
@@ -3841,7 +4026,7 @@ index 0067e9a..8b2453a 100644
      "foldersAndPlaylists": "文件夹",
      "albums": "专辑",
      "artists": "艺术家",
-@@ -5242,8 +5578,34 @@ export default {
+@@ -5242,8 +5595,34 @@ export default {
      "sortByModifiedDate": "修改日期",
      "sortByAlbumTrack": "专辑号",
      "sortAscending": "升序",
@@ -3876,7 +4061,7 @@ index 0067e9a..8b2453a 100644
      "importing": "导入中...",
      "importPlaylist": "导入歌单",
      "importingPlaylist": "正在导入歌单...",
-@@ -6051,8 +6413,13 @@ export default {
+@@ -6051,8 +6430,13 @@ export default {
    },
    "librarySuiteOnboarding": {
      "title": "资料库用哪种界面？",
@@ -6722,7 +6907,7 @@ index 0000000..df20d8f
 +    }
 +}
 diff --git a/src/services/localMusicService.ts b/src/services/localMusicService.ts
-index 26a0181..93fa7be 100644
+index 26a0181..6c3177c 100644
 --- a/src/services/localMusicService.ts
 +++ b/src/services/localMusicService.ts
 @@ -30,6 +30,17 @@ import { hasLocalCoverBinary } from './localCoverBinaryStore';
@@ -7170,7 +7355,16 @@ index 26a0181..93fa7be 100644
  /** Imports a folder the caller already holds instead of asking the picker (the dev mock song's OPFS folder). */
  export async function importDirectoryHandle(dirHandle: FileSystemDirectoryHandle): Promise<LocalSong[]> {
      return await runLocalFolderMutation(() => importFolderContents(dirHandle));
-@@ -1614,6 +2000,7 @@ export async function deleteLocalSong(id: string): Promise<void> {
+@@ -1453,6 +1839,8 @@ export async function matchLyrics(song: LocalSong): Promise<LyricData | null> {
+                         preferredSource: shouldUseBestLyric ? settingsLyricSettings.preferredAlternativeLyricSource : undefined,
+                         metadataCandidate: matchContext.metadataCandidate,
+                         exactMatchOnly: Boolean(matchContext.metadataCandidate && !shouldUseBestLyric),
++                        // 车机上本地曲库的首次匹配是用户直接等着的：来源并行问，慢的那个不再拖累后面的。
++                        parallelSources: settingsLyricSettings.parallelLyricProbe,
+                     },
+                 );
+ 
+@@ -1614,6 +2002,7 @@ export async function deleteLocalSong(id: string): Promise<void> {
      await Promise.all([
          dbDeleteLocalSong(id),
          removeCachedCover(`cover_local_${id}`),
@@ -7178,7 +7372,7 @@ index 26a0181..93fa7be 100644
      ]);
  }
  
-@@ -1714,6 +2101,20 @@ async function cleanupDirHandleIfUnused(rootFolderName: string): Promise<void> {
+@@ -1714,6 +2103,20 @@ async function cleanupDirHandleIfUnused(rootFolderName: string): Promise<void> {
  // Get audio blob from local song using fileHandle
  // Returns blob URL if fileHandle exists, null otherwise
  export async function getAudioFromLocalSong(song: LocalSong): Promise<string | null> {
@@ -7199,7 +7393,7 @@ index 26a0181..93fa7be 100644
      const fileHandle = await getAccessibleFileHandle(song);
  
      if (fileHandle) {
-@@ -1738,6 +2139,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
+@@ -1738,6 +2141,16 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
          }
      }
  
@@ -7216,7 +7410,7 @@ index 26a0181..93fa7be 100644
      // No accessible handle available - permission may need to be restored or the file moved.
      console.warn(`[LocalMusic] No accessible handle for song ${song.id}. Permission restore or re-import is required.`);
      return null;
-@@ -1745,6 +2156,15 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
+@@ -1745,6 +2158,15 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
  
  /** Resolves the current File for playback recovery without changing the song or minting a URL. */
  export async function getFileFromLocalSong(song: LocalSong): Promise<File | null> {
@@ -7232,7 +7426,7 @@ index 26a0181..93fa7be 100644
      const fileHandle = await getAccessibleFileHandle(song);
      if (fileHandle) {
          try {
-@@ -1755,6 +2175,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+@@ -1755,6 +2177,9 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
          }
      }
  
@@ -7242,7 +7436,7 @@ index 26a0181..93fa7be 100644
      const recoveredHandle = await recoverFileHandleFromPersistedDirectory(song);
      if (!recoveredHandle) return null;
      try {
-@@ -1774,14 +2197,22 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
+@@ -1774,14 +2199,22 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
   * from its own handle. Mirrors getAudioFromLocalSong's resolution (accessible handle, else a recover)
   * but returns the ArrayBuffer. Null when no handle can be reached - permission not restored, or moved.
   */
@@ -7268,7 +7462,7 @@ index 26a0181..93fa7be 100644
      } catch (error) {
          console.error('[LocalMusic] Failed to read local bytes:', error);
          fileHandleMap.delete(song.id);
-@@ -1789,6 +2220,44 @@ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuf
+@@ -1789,6 +2222,44 @@ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuf
      }
  }
  
@@ -7313,7 +7507,7 @@ index 26a0181..93fa7be 100644
  // Extracts and persists one song's embedded cover after an explicit playback-time request.
  async function extractAndPersistSongCover(
      song: LocalSong,
-@@ -1880,6 +2349,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
+@@ -1880,6 +2351,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
      await Promise.all([
          dbDeleteLocalSongs(uniqueSongIds),
          ...uniqueSongIds.map(id => removeCachedCover(`cover_local_${id}`)),
@@ -8742,6 +8936,60 @@ index 4ba30ac..2fb8660 100644
      playbackReportEnabled: state.playbackReportEnabled,
      playbackFadeEnabled: state.playbackFadeEnabled,
      autoSkipUnplayable: state.autoSkipUnplayable,
+diff --git a/src/stores/useLyricSettingsStore.ts b/src/stores/useLyricSettingsStore.ts
+index 3501f95..8c2d873 100644
+--- a/src/stores/useLyricSettingsStore.ts
++++ b/src/stores/useLyricSettingsStore.ts
+@@ -75,6 +75,9 @@ const readStoredPreferredAlternativeLyricSource = (): LyricProviderSource => {
+ const LYRIC_LINE_RULES_KEY = 'lyrics_filter_rules';
+ const AUTO_AI_LYRIC_SEGMENTATION_KEY = 'lyrics_auto_ai_segmentation';
+ const KEEP_PROVIDER_WORD_TIMING_KEY = 'lyrics_keep_provider_word_timing';
++// 匹配歌词时把排在前面的几个来源一起问，而不是一个一个问（autoMatchBestLyric 的 parallelSources）。
++// 设备本地的效率开关：车机上一个来源卡住时，后面的来源不必各等一遍。
++const PARALLEL_LYRIC_PROBE_KEY = 'lyrics_parallel_probe';
+ // The single expression older versions saved. Read once into a rule; written back on every save
+ // (or removed with that rule), so an older version still filters the same lines.
+ const LEGACY_LYRIC_FILTER_PATTERN_KEY = 'lyrics_filter_pattern';
+@@ -142,6 +145,8 @@ export type LyricSettingsState = {
+     lyricStaffPattern: string;
+     /** Run AI word segmentation by itself on a song that has none saved yet (issue #960). */
+     autoAiLyricSegmentation: boolean;
++    /** Ask a few lyric sources at once instead of one after another (faster, a few more requests). */
++    parallelLyricProbe: boolean;
+     handleToggleAutoUseBestLyric: (enable: boolean) => void;
+     handleSetPreferredAlternativeLyricSource: (source: LyricProviderSource) => void;
+     handleToggleKeepProviderWordTiming: (enable: boolean) => void;
+@@ -154,6 +159,7 @@ export type LyricSettingsState = {
+     handleSetLyricStaffAbsorbMode: (mode: LyricStaffAbsorbMode) => void;
+     handleSetLyricStaffPattern: (pattern: string) => void;
+     handleToggleAutoAiLyricSegmentation: (enable: boolean) => void;
++    handleToggleParallelLyricProbe: (enable: boolean) => void;
+ };
+ 
+ export const useLyricSettingsStore = create<LyricSettingsState>((set, get) => ({
+@@ -170,6 +176,7 @@ export const useLyricSettingsStore = create<LyricSettingsState>((set, get) => ({
+     lyricStaffPattern: getStoredString('lyrics_staff_pattern', ''),
+     // Off by default: every song it runs on is a paid model request.
+     autoAiLyricSegmentation: getStoredBoolean(AUTO_AI_LYRIC_SEGMENTATION_KEY, false),
++    parallelLyricProbe: getStoredBoolean(PARALLEL_LYRIC_PROBE_KEY, true),
+     handleToggleAutoUseBestLyric: (enable) => {
+         setStoredBoolean('auto_use_best_lyric', enable);
+         set({ autoUseBestLyric: enable });
+@@ -281,6 +288,14 @@ export const useLyricSettingsStore = create<LyricSettingsState>((set, get) => ({
+             text: i18n.t('notifications.' + (enable ? 'autoAiLyricSegmentationOn' : 'autoAiLyricSegmentationOff')),
+         });
+     },
++    handleToggleParallelLyricProbe: (enable) => {
++        setStoredBoolean(PARALLEL_LYRIC_PROBE_KEY, enable);
++        set({ parallelLyricProbe: enable });
++        setStatusMessage({
++            type: 'info',
++            text: i18n.t('notifications.' + (enable ? 'parallelLyricProbeOn' : 'parallelLyricProbeOff')),
++        });
++    },
+ }));
+ 
+ /** The lyric-sourcing half of the former settings snapshot. */
 diff --git a/src/types.ts b/src/types.ts
 index 7dcb74b..041c411 100644
 --- a/src/types.ts
@@ -9034,6 +9282,384 @@ index c89a5ba..d9a1b83 100644
    };
  };
  
+diff --git a/src/utils/lyrics/autoMatchBestLyric.ts b/src/utils/lyrics/autoMatchBestLyric.ts
+index ef67c3b..6430f36 100644
+--- a/src/utils/lyrics/autoMatchBestLyric.ts
++++ b/src/utils/lyrics/autoMatchBestLyric.ts
+@@ -24,7 +24,15 @@ const PROVIDER_SEARCH_TIMEOUT_MS = 3500;
+ const PROVIDER_LYRIC_TIMEOUT_MS = 5000;
+ const AUTO_MATCH_SEARCH_LIMIT = 10;
+ const AUTO_MATCH_MIN_SCORE = 75;
++// How many sources at the head of the order are searched and fetched together (parallelSources).
++const PARALLEL_SOURCE_WIDTH = 3;
+ const SHOULD_LOG_MATCH_DETAILS = import.meta.env.DEV;
++// A match found for these words is reused rather than searched again, so playing the same song twice,
++// or a prefetch racing the playback that follows it, costs one run instead of two. A miss expires
++// sooner: lyrics that were not there may be there later.
++const MATCH_CACHE_TTL_HIT_MS = 15 * 60_000;
++const MATCH_CACHE_TTL_MISS_MS = 3 * 60_000;
++const MATCH_CACHE_LIMIT = 200;
+ 
+ const hasChorusMarkers = (lyrics: LyricData | null): boolean => (
+     Boolean(lyrics?.lines.some(line => line.isChorus))
+@@ -49,6 +57,12 @@ export interface AutoMatchBestLyricOptions {
+      * any other source's.
+      */
+     keepOwnWordTiming?: boolean;
++    /**
++     * Ask the sources at the head of the order together instead of one after another: the same source
++     * still wins, and a source that answers slowly no longer costs every source after it its wait.
++     * Off by default, because it sends a few more requests per run.
++     */
++    parallelSources?: boolean;
+     /** Another name the artist may be listed under; asked for only when the given one finds nothing. */
+     alternateArtist?: () => Promise<string | null>;
+     /**
+@@ -195,7 +209,21 @@ async function matchUnderArtist(
+     const activeProviderChorusRanges: ChorusRange[] = providerCandidate?.lyricsResult.chorusRanges ?? [];
+     // The chorus ranges a source that shares them (NetEase) gave in this run.
+     let sharedChorusRanges: ChorusRange[] = [];
+-    const bestCandidates = new Map<LyricProviderSource, SongResult | null>();
++    // A platform source's song for the title and artist: the active song when it is that
++    // platform's own, the song picked in the metadata dialog when there is one, else the best of
++    // one search, made only while the source is on offer. Found once in a run — the promise is
++    // what is kept, so the sources can be searched at the same time.
++    const bestCandidates = new Map<LyricProviderSource, Promise<SongResult | null>>();
++    const getBestCandidate = (source: LyricProviderSource): Promise<SongResult | null> => {
++        const found = bestCandidates.get(source);
++        if (found) return found;
++        const promise = findBestCandidate(source).catch(error => {
++            console.warn(`[autoMatchBestLyric] ${source} search failed:`, error);
++            return null;
++        });
++        bestCandidates.set(source, promise);
++        return promise;
++    };
+     // Written by the steps below; the cast keeps the type wide for the reads after them.
+     let lineByLineFallback = null as AutoMatchBestLyricMatch | null;
+ 
+@@ -208,17 +236,9 @@ async function matchUnderArtist(
+     const searchOrder = options.exactMatchOnly && options.metadataCandidate
+         ? [options.metadataCandidate.source]
+         : buildLyricSourceOrder(preferredSource);
+-
+-    // A platform source's song for the title and artist: the active song when it is that
+-    // platform's own, the song picked in the metadata dialog when there is one, else the best of
+-    // one search, made only while the source is on offer. Found once in a run.
+-    const getBestCandidate = async (source: LyricProviderSource): Promise<SongResult | null> => {
+-        const found = bestCandidates.get(source);
+-        if (found !== undefined) return found;
+-        const candidate = await findBestCandidate(source);
+-        bestCandidates.set(source, candidate);
+-        return candidate;
+-    };
++    // The sources at the head of the order, asked together (parallelSources). The order of the pick
++    // is still the loop's own: nothing about which source wins depends on how these were fetched.
++    const parallelSources = options.parallelSources === true && !options.exactMatchOnly;
+ 
+     const findBestCandidate = async (source: LyricProviderSource): Promise<SongResult | null> => {
+         if (providerCandidate?.providerId === source) return providerCandidate.song;
+@@ -252,6 +272,7 @@ async function matchUnderArtist(
+         return selectBestCandidate(source, songs, targetSong);
+     };
+ 
++
+     // The source's lyrics for `song`: those already in hand when it is the active song, else fetched.
+     const getProcessed = async (source: LyricProviderSource, song: SongResult): Promise<ProviderLyricsResult | null> => {
+         const access = getLyricSourceAccess(source);
+@@ -334,19 +355,54 @@ async function matchUnderArtist(
+         };
+     };
+ 
++    // One platform source's candidate and its lyrics, fetched ahead of the decision that reads them
++    // (parallelSources only). Nothing here writes the run's state: the chorus ranges it lends are kept
++    // in the result, so fetching these together cannot change which source wins.
++    type PreparedSource = {
++        source: LyricProviderSource;
++        song: SongResult;
++        processed: ProviderLyricsResult;
++        linesOnly: boolean;
++        /** The chorus ranges this source lends to a later source (NetEase's), as it gave them. */
++        lentChorusRanges: ChorusRange[];
++    };
++    const preparedSources = new Map<LyricProviderSource, Promise<PreparedSource | null>>();
++    const prepareSource = (source: LyricProviderSource): Promise<PreparedSource | null> => {
++        const found = preparedSources.get(source);
++        if (found) return found;
++        const promise = (async (): Promise<PreparedSource | null> => {
++            const linesOnly = getLyricSource(source)?.linesOnly === true;
++            const song = await getBestCandidate(source);
++            if (!song) return null;
++            const processed = await getProcessed(source, song);
++            if (!processed) return null;
++            const access = getLyricSourceAccess(source);
++            const lentChorusRanges = !linesOnly && access.sharesChorusRanges && processed.chorusRanges
++                ? processed.chorusRanges
++                : [];
++            return { source, song, processed, linesOnly, lentChorusRanges };
++        })().catch(error => {
++            console.warn(`[autoMatchBestLyric] ${source} search/fetch failed:`, error);
++            return null;
++        });
++        preparedSources.set(source, promise);
++        return promise;
++    };
++
+     // Asks one platform source for its candidate's lyrics. Answers what ends the pick (a
+     // word-by-word match, the lines of the song picked in the metadata dialog when only that song
+     // is wanted, or a pure-music verdict); any other lines are kept as the fallback.
+     const tryPlatformSource = async (source: LyricProviderSource): Promise<AutoMatchBestLyricResult> => {
+-        const linesOnly = getLyricSource(source)?.linesOnly;
++        const ready = parallelSources ? await prepareSource(source) : null;
++        const linesOnly = ready ? ready.linesOnly : getLyricSource(source)?.linesOnly;
+         // Lines-only lyrics can be the fallback, never the word-by-word match, so such a source
+         // is not asked once another source has given lines.
+         if (linesOnly && lineByLineFallback) return null;
+ 
+-        const song = await getBestCandidate(source);
++        const song = ready?.song ?? await getBestCandidate(source);
+         if (!song) return null;
+         console.log(`[autoMatchBestLyric] Checking ${source} candidate: "${song.name}" by "${song.artists?.map(artist => artist.name).join(', ')}"`);
+-        const processed = await getProcessed(source, song);
++        const processed = ready?.processed ?? await getProcessed(source, song);
+         if (!processed) return null;
+ 
+         const access = getLyricSourceAccess(source);
+@@ -355,8 +411,11 @@ async function matchUnderArtist(
+                 console.log(`[autoMatchBestLyric] ${source} candidate "${song.name}" is pure music. Skipping alternative lyric sources.`);
+                 return { isPureMusic: true, source, id: song.id };
+             }
+-            if (access.sharesChorusRanges && processed.chorusRanges && processed.chorusRanges.length > 0) {
+-                sharedChorusRanges = processed.chorusRanges;
++            const lentChorusRanges = ready
++                ? ready.lentChorusRanges
++                : (access.sharesChorusRanges && processed.chorusRanges ? processed.chorusRanges : []);
++            if (lentChorusRanges.length > 0) {
++                sharedChorusRanges = lentChorusRanges;
+             }
+         }
+         if (!hasRenderableLyrics(processed.lyrics)) return null;
+@@ -371,6 +430,12 @@ async function matchUnderArtist(
+             kgHash: song.kgHash,
+             song,
+         };
++        // A source fetched ahead of the sources before it could not be lent the chorus ranges they
++        // gave (they were not known then): mark its chorus here instead of losing them. The marks it
++        // made itself stay as they are.
++        if (parallelSources && !access.marksChorusOnFetch && !hasChorusMarkers(match.lyrics) && sharedChorusRanges.length > 0) {
++            match.lyrics = applyChorusRangesByTime(match.lyrics, sharedChorusRanges);
++        }
+         const acceptsExactNonWordByWord = options.exactMatchOnly
+             && isSelectedMetadataCandidate(source, song, options.metadataCandidate);
+         if (!linesOnly && (processed.lyrics.isWordByWord || acceptsExactNonWordByWord)) {
+@@ -382,6 +447,14 @@ async function matchUnderArtist(
+         return null;
+     };
+ 
++    // The head of the order, fetched together: the loop below still decides in order, so the same
++    // source wins, but the fetches wait on the network once rather than once per source.
++    if (parallelSources) {
++        for (const source of searchOrder.slice(0, PARALLEL_SOURCE_WIDTH)) {
++            if (getLyricSource(source)?.platform) void prepareSource(source);
++        }
++    }
++
+     // AMLL DB uses NetEase and QQ song IDs: try the metadata-selected candidate first.
+     // The NetEase candidate follows when available.
+     const tryAmllDb = async (): Promise<AutoMatchBestLyricResult> => {
+@@ -479,6 +552,46 @@ async function matchUnderArtist(
+ 
+ const INSTRUMENTAL_MARKER = /instrumental|\binst\b|off\s*vocal|karaoke|伴奏|カラオケ|インスト/iu;
+ 
++// One run's result, kept for the same words for a while: another run for them is not searched again.
++const matchCache = new Map<string, { at: number; result: AutoMatchBestLyricResult }>();
++// Runs in progress, by the same key: a prefetch and the playback that follows it share one run.
++const runsInFlight = new Map<string, Promise<AutoMatchBestLyricResult>>();
++
++const trimMatchCache = (): void => {
++    if (matchCache.size <= MATCH_CACHE_LIMIT) return;
++    const oldestKey = matchCache.keys().next().value;
++    if (oldestKey !== undefined) matchCache.delete(oldestKey);
++};
++
++/** Drops the matches kept for these words: for a test, or where the lyric sources were replaced. */
++export function clearAutoMatchBestLyricCache(): void {
++    matchCache.clear();
++    runsInFlight.clear();
++}
++
++/**
++ * The key two runs must share to be the same search: the words, the length, and the choices that
++ * change which source is asked. A run of a song whose own lyrics are in hand (providerCandidate)
++ * is not cached: its answer depends on those lyrics, not on the words alone.
++ */
++const matchCacheKeyFor = (
++    title: string,
++    artist: string,
++    durationMs: number,
++    options: AutoMatchBestLyricOptions,
++): string | null => {
++    if (options.providerCandidate || options.metadataCandidate || options.exactMatchOnly) return null;
++    const lower = (value: string) => value.trim().toLowerCase().replace(/\s+/gu, ' ');
++    return [
++        lower(title),
++        lower(artist),
++        lower(options.album ?? ''),
++        String(Math.round(durationMs / 1000)),
++        options.preferredSource ?? '',
++        options.keepOwnWordTiming === false ? 'own-off' : 'own-on',
++    ].join('\u0000');
++};
++
+ // A song's provider may name the artist differently from the lyric sources, which then find
+ // nothing; `options.alternateArtist` gives the search one more go under the other name.
+ export async function autoMatchBestLyric(
+@@ -486,6 +599,62 @@ export async function autoMatchBestLyric(
+     artist: string,
+     durationMs: number,
+     options: AutoMatchBestLyricOptions = {}
++): Promise<AutoMatchBestLyricResult> {
++    const cacheKey = matchCacheKeyFor(title, artist, durationMs, options);
++    if (cacheKey === null) {
++        return await runAutoMatchBestLyric(title, artist, durationMs, options);
++    }
++
++    const cached = matchCache.get(cacheKey);
++    if (cached) {
++        const ttl = cached.result ? MATCH_CACHE_TTL_HIT_MS : MATCH_CACHE_TTL_MISS_MS;
++        if (Date.now() - cached.at < ttl) {
++            console.log('[autoMatchBestLyric] Reused the match found for these words earlier');
++            return cached.result;
++        }
++        matchCache.delete(cacheKey);
++    }
++
++    const running = runsInFlight.get(cacheKey);
++    if (running) {
++        console.log('[autoMatchBestLyric] Waiting on the run already going for these words');
++        return await running;
++    }
++
++    const run = runAutoMatchBestLyric(title, artist, durationMs, options)
++        .then((result) => {
++            matchCache.set(cacheKey, { at: Date.now(), result });
++            trimMatchCache();
++            return result;
++        })
++        .finally(() => {
++            runsInFlight.delete(cacheKey);
++        });
++    runsInFlight.set(cacheKey, run);
++    return await run;
++}
++
++async function runAutoMatchBestLyric(
++    title: string,
++    artist: string,
++    durationMs: number,
++    options: AutoMatchBestLyricOptions
++): Promise<AutoMatchBestLyricResult> {
++    const startedAt = Date.now();
++    try {
++        return await pickBestLyric(title, artist, durationMs, options);
++    } finally {
++        // How long one run took, so a slow match is one line away from where it spent the time.
++        console.log(`[autoMatchBestLyric] "${title}" by "${artist}" took ${Date.now() - startedAt}ms`);
++    }
++}
++
++/** The pick itself: the sources of the order asked in turn, then the retries under other names. */
++async function pickBestLyric(
++    title: string,
++    artist: string,
++    durationMs: number,
++    options: AutoMatchBestLyricOptions
+ ): Promise<AutoMatchBestLyricResult> {
+     // The sources left out of this run, and why, said once (crossSource.ts); the steps below pass them over.
+     participants('lyrics', { report: true });
+diff --git a/src/utils/lyrics/providers/amllDbProvider.ts b/src/utils/lyrics/providers/amllDbProvider.ts
+index 52046e0..e7eba6d 100644
+--- a/src/utils/lyrics/providers/amllDbProvider.ts
++++ b/src/utils/lyrics/providers/amllDbProvider.ts
+@@ -13,6 +13,11 @@ import {
+ 
+ const AMLL_DB_CACHE_LIMIT = 200;
+ const lyricsCache = new Map<string, Promise<LyricData | null>>();
++// The official search of the same words, kept for a minute: several songs of one album, or the same
++// song matched again, then cost no request each.
++const AMLL_DB_SEARCH_CACHE_TTL_MS = 60_000;
++const AMLL_DB_SEARCH_CACHE_LIMIT = 100;
++const searchCache = new Map<string, { at: number; promise: Promise<AmllApiSongItem[] | null> }>();
+ 
+ type AmllDbMusicId = number | string | null | undefined;
+ 
+@@ -22,6 +27,7 @@ const normalizeMusicIds = (ids: readonly AmllDbMusicId[]): string[] => ids
+ 
+ export function clearAmllDbLyricsCache(): void {
+     lyricsCache.clear();
++    searchCache.clear();
+ }
+ 
+ // AMLL 里 QQ 歌曲有的按 mid 收录，有的按数字 ID 收录（约 2:1），两种都要试；mid 在前。
+@@ -76,30 +82,44 @@ function fetchAmllDbLyricsCached(platform: AmllDbPlatform, id: string): Promise<
+     return request;
+ }
+ 
+-// 传入多个 ID 时按顺序逐个查询，返回第一个有歌词的结果
++// 传入多个 ID 时一起查询，取按 ID 顺序第一个有歌词的结果
++// （QQ 的 mid 和数字 ID 各是一次请求，串行时第二个 ID 要等第一个超时才轮到）
+ export async function fetchAmllDbLyrics(
+     platform: AmllDbPlatform,
+     musicId: AmllDbMusicId | readonly AmllDbMusicId[],
+ ): Promise<LyricData | null> {
+-    for (const id of normalizeMusicIds(Array.isArray(musicId) ? musicId : [musicId])) {
+-        const lyrics = await fetchAmllDbLyricsCached(platform, id);
+-        if (lyrics) {
+-            return lyrics;
+-        }
+-    }
+-    return null;
++    const ids = normalizeMusicIds(Array.isArray(musicId) ? musicId : [musicId]);
++    if (ids.length === 0) return null;
++    if (ids.length === 1) return await fetchAmllDbLyricsCached(platform, ids[0]);
++    const results = await Promise.all(ids.map(id => fetchAmllDbLyricsCached(platform, id)));
++    return results.find(Boolean) ?? null;
+ }
+ 
+ // 官方搜索。没有结果返回空列表；限流、服务端错误、网络错误返回 null，调用方据此区分「搜不到」和「没搜成」
++// 同样的查询一分钟内只发一次（同一张专辑的多首歌、同一首歌再次匹配都吃这一份结果）
+ export async function searchAmllDbSongs(
+     params: AmllApiSearchParams,
+     pageSize: number,
+ ): Promise<AmllApiSongItem[] | null> {
+-    try {
+-        const page = await getAmllApiData<AmllApiSearchPage>(buildAmllApiSearchUrl(params, pageSize));
+-        return page ? page.items : null;
+-    } catch (error) {
+-        console.warn('[AMLLDB] Search failed:', params, error);
+-        return null;
++    const key = `${JSON.stringify(params)}\u0000${pageSize}`;
++    const cached = searchCache.get(key);
++    if (cached && Date.now() - cached.at < AMLL_DB_SEARCH_CACHE_TTL_MS) {
++        return await cached.promise;
++    }
++
++    const promise = (async (): Promise<AmllApiSongItem[] | null> => {
++        try {
++            const page = await getAmllApiData<AmllApiSearchPage>(buildAmllApiSearchUrl(params, pageSize));
++            return page ? page.items : null;
++        } catch (error) {
++            console.warn('[AMLLDB] Search failed:', params, error);
++            return null;
++        }
++    })();
++    searchCache.set(key, { at: Date.now(), promise });
++    if (searchCache.size > AMLL_DB_SEARCH_CACHE_LIMIT) {
++        const oldestKey = searchCache.keys().next().value;
++        if (oldestKey !== undefined) searchCache.delete(oldestKey);
+     }
++    return await promise;
+ }
 diff --git a/src/utils/settingsAnchorModel.ts b/src/utils/settingsAnchorModel.ts
 index 2622b3d..67b5a09 100644
 --- a/src/utils/settingsAnchorModel.ts
@@ -10024,6 +10650,136 @@ index 0000000..c85cda7
 +        expect(findReportEntry(song('/music/晴天.flac', 30_000_100))?.verdict).toBe('trueLossless');
 +        expect(findReportEntry(song('晴天.flac', 12_000_000))).toBeUndefined();
 +        expect(findReportEntry(song('不存在.flac', 1))).toBeUndefined();
++    });
++});
+diff --git a/test/unit/lyrics/autoMatchBestLyric.test.ts b/test/unit/lyrics/autoMatchBestLyric.test.ts
+index 73fa6ea..f31315c 100644
+--- a/test/unit/lyrics/autoMatchBestLyric.test.ts
++++ b/test/unit/lyrics/autoMatchBestLyric.test.ts
+@@ -1,6 +1,6 @@
+ // @builtin-sources
+ import { beforeEach, describe, expect, it, vi } from 'vitest';
+-import { autoMatchBestLyric, type AutoMatchProviderCandidate } from '@/utils/lyrics/autoMatchBestLyric';
++import { autoMatchBestLyric, clearAutoMatchBestLyricCache, type AutoMatchProviderCandidate } from '@/utils/lyrics/autoMatchBestLyric';
+ import { neteaseApi } from '../../../sources/netease/core/netease';
+ import { processNeteaseLyrics } from '@/utils/lyrics/neteaseProcessing';
+ import { searchKugouLyrics, fetchKugouLyrics } from '../../manual/kugouLyricProvider';
+@@ -66,6 +66,8 @@ describe('autoMatchBestLyric', () => {
+ 
+     beforeEach(() => {
+         vi.resetAllMocks();
++        // The matches kept for the words of one test would answer the next one (same title, artist, length).
++        clearAutoMatchBestLyricCache();
+         fetchAmllDbLyricsMock.mockResolvedValue(null);
+         vi.spyOn(qqProvider().search!, 'searchSongs').mockImplementation(async (query, limit, offset) => {
+             const items = (await searchQQLyricsMock(query, limit, offset) ?? []) as UnifiedSong[];
+diff --git a/test/unit/lyrics/autoMatchFastPath.test.ts b/test/unit/lyrics/autoMatchFastPath.test.ts
+new file mode 100644
+index 0000000..4026df1
+--- /dev/null
++++ b/test/unit/lyrics/autoMatchFastPath.test.ts
+@@ -0,0 +1,103 @@
++// @builtin-sources
++import { beforeEach, describe, expect, it, vi } from 'vitest';
++import { autoMatchBestLyric, clearAutoMatchBestLyricCache } from '@/utils/lyrics/autoMatchBestLyric';
++import { getOnlineMusicProvider } from '@/services/onlineMusic/providerRegistry';
++
++// test/unit/lyrics/autoMatchFastPath.test.ts
++// The three things that make a match cost less: the same words are not searched twice, two runs for
++// them at once are one run, and asking the sources together changes no winner.
++
++const lyricsOf = (isWordByWord: boolean) => ({
++    lines: [{ fullText: 'Test lyric', startTime: 0, endTime: 1, words: [] }],
++    isWordByWord,
++});
++
++const qqSong = (name: string) => ({
++    id: 201,
++    name,
++    artists: [{ id: 1, name: 'Artist Name' }],
++    album: { id: 2, name: 'Album' },
++    durationMs: 200000,
++    qqMid: 'qq-mid',
++    sourceRef: { kind: 'online' as const, providerId: 'qq', mediaId: '201' },
++});
++
++const spyQq = (songs: unknown[], wordByWord: boolean) => {
++    const provider = getOnlineMusicProvider('qq')!;
++    const search = vi.spyOn(provider.search!, 'searchSongs').mockResolvedValue({
++        items: songs as never,
++        hasMore: false,
++        nextOffset: 1,
++    });
++    const fetch = vi.spyOn(provider.lyrics!, 'getLyrics').mockResolvedValue({
++        lyrics: lyricsOf(wordByWord) as never,
++        isPureMusic: false,
++    });
++    return { search, fetch };
++};
++
++describe('the fast path of the lyric match', () => {
++    beforeEach(() => {
++        vi.restoreAllMocks();
++        clearAutoMatchBestLyricCache();
++    });
++
++    it('answers a second run for the same words without searching again', async () => {
++        const { search } = spyQq([qqSong('Same Words')], true);
++
++        const first = await autoMatchBestLyric('Same Words', 'Artist Name', 200000, { preferredSource: 'qq' });
++        expect(first).toMatchObject({ source: 'qq', id: 201 });
++        const searched = search.mock.calls.length;
++        expect(searched).toBeGreaterThan(0);
++
++        const second = await autoMatchBestLyric('Same Words', 'Artist Name', 200000, { preferredSource: 'qq' });
++        expect(second).toEqual(first);
++        expect(search.mock.calls.length).toBe(searched);
++    });
++
++    it('shares one run between two runs started at the same time', async () => {
++        const { search } = spyQq([qqSong('One Run')], true);
++
++        const [a, b] = await Promise.all([
++            autoMatchBestLyric('One Run', 'Artist Name', 200000, { preferredSource: 'qq' }),
++            autoMatchBestLyric('One Run', 'Artist Name', 200000, { preferredSource: 'qq' }),
++        ]);
++
++        expect(a).toEqual(b);
++        expect(search.mock.calls.length).toBe(1);
++    });
++
++    it('asks the sources together and still gives the same match, in the same order', async () => {
++        // QQ answers with lines only; the word-by-word lyric is the next source's.
++        spyQq([qqSong('Order Kept')], false);
++        const netease = getOnlineMusicProvider('netease')!;
++        vi.spyOn(netease.search!, 'searchSongs').mockResolvedValue({
++            items: [{
++                id: 101,
++                name: 'Order Kept',
++                artists: [{ id: 1, name: 'Artist Name' }],
++                album: { id: 2, name: 'Album' },
++                durationMs: 200000,
++                sourceRef: { kind: 'online', providerId: 'netease', mediaId: '101' },
++            }] as never,
++            hasMore: false,
++            nextOffset: 1,
++        });
++        vi.spyOn(netease.lyrics!, 'getLyrics').mockResolvedValue({
++            lyrics: lyricsOf(true) as never,
++            isPureMusic: false,
++            chorusRanges: [],
++        });
++
++        const serial = await autoMatchBestLyric('Order Kept', 'Artist Name', 200000, { preferredSource: 'qq' });
++        clearAutoMatchBestLyricCache();
++        const parallel = await autoMatchBestLyric('Order Kept', 'Artist Name', 200000, {
++            preferredSource: 'qq',
++            parallelSources: true,
++        });
++
++        expect(parallel).toBeTruthy();
++        expect(parallel).toMatchObject({ source: 'netease', id: 101, lyrics: { isWordByWord: true } });
++        expect((parallel as { source: string }).source).toBe((serial as { source: string } | null)?.source);
 +    });
 +});
 diff --git a/test/unit/settings/settingsNavModel.test.ts b/test/unit/settings/settingsNavModel.test.ts
